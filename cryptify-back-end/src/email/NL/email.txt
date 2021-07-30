@@ -1,0 +1,7 @@
+{{sender}} heeft je bestanden gestuurd
+
+--------------------------------------------
+{{content}}
+--------------------------------------------
+
+Download link: {{url}}

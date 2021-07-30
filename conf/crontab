@@ -1,0 +1,1 @@
+0 0 * * * /usr/bin/find  /home/cryptify/data -name "*" -type f -mtime +14 -delete

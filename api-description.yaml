@@ -1,0 +1,202 @@
+openapi: "3.0.3"
+info:
+  title: "Cryptify API"
+  description: "This is the cryptify server that manages encrypted files."
+  version: "1.0.0"
+tags:
+- name: "File upload"
+  description: "Upload files"
+- name: "File download"
+  description: "Download files"
+paths:
+  /fileupload/init:
+    post:
+        tags:
+        - "File upload"
+        summary: "Initialize multipart file upload"
+        operationId: "initFileUpload"
+        requestBody:
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  sender:
+                    type: "string"
+                    format: "email"
+                  recipient:
+                    type: "string"
+                    format: "email"
+                  fileSize:
+                    type: "number"
+                  mailContent:
+                    type: "string"
+                  mailLang:
+                    type: "string"
+        responses:
+          "200":
+            description: "Successful operation"
+            headers:
+                cryptifytoken:
+                  description: "Identifies the initial version of the file to be uploaded. Needs to be passed into the file part upload request."
+                  required: true
+                  schema:
+                    type: "string"
+            content:
+              application/json:
+                schema:
+                  type: "object"
+                  properties:
+                    id:
+                      type: "string"
+                      format: "uuid"
+  /fileupload/{uuid}:
+    put:
+      tags:
+      - "File upload"
+      summary: "Upload a file part"
+      operationId: "uploadFilePart"
+      parameters:
+      - in: "header"
+        name: "cryptifytoken"
+        description:
+          "Identifies the version of the upload file parts. Part of the header from the last fileupload response."
+        schema:
+          type: "string"
+        required: true
+      - in: "header"
+        name: "Content-Range"
+        description:
+          "Which offset of a file is sent, example: `bytes 200-1000/*`."
+        schema:
+          type: "string"
+        required: true
+      - in: "path"
+        name: "uuid"
+        required: true
+        description: "The unique identifier received when initializing file upload."
+        schema:
+          type: "string"
+          format: "uuid"
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: "string"
+              format: "binary"
+      responses:
+        "200":
+          description: "Successful operation."
+          headers:
+            cryptifytoken:
+              required: true
+              schema:
+                description: "Identifies the new version of the upload file parts. Needs to be passed into the next file part upload request."
+                type: "string"
+        "409":
+          description: "Server file parts cryptifytoken differs from cryptifytoken in request."
+          headers:
+            cryptifytoken:
+              required: true
+              schema:
+                description:
+                  "Identifies the version of the upload file parts. Needs to be passed into the next file part upload request."
+                type: "string"
+        "400":
+          description: "One of the input parameters is incorrect."
+          content:
+              application/json:
+                schema:
+                  type: "object"
+                  properties:
+                    message:
+                      type: "string"
+        "404":
+          description: "Partially uploaded file does not exist."
+
+  /fileupload/finalize/{uuid}:
+    post:
+      tags:
+      - "File upload"
+      summary: "Finalize multipart file upload and send mail to recipient"
+      operationId: "finalizeFileUpload"
+      parameters:
+      - in: "header"
+        name: "cryptifytoken"
+        description:
+          "Identifies the version of the upload file parts. Part of the header from the last fileupload response."
+        schema:
+          type: "string"
+        required: true
+      - in: "header"
+        name: "Content-Range"
+        description:
+          "Indicates the final file size: `bytes */1073741824`."
+        schema:
+          type: "string"
+        required: true
+      - in: "path"
+        name: "uuid"
+        description: "The unique identifier received when initializing file upload."
+        required: true
+        schema:
+          type: "string"
+          format: "uuid"
+      responses:
+        "200":
+          description: "Successful operation"
+        "409":
+          description: "Server file parts cryptifytoken differs from cryptifytoken in request"
+          headers:
+            cryptifytoken:
+              required: true
+              schema:
+                description: "Identifies the version of the upload file parts. Needs to be passed into the next file part upload request."
+                type: "string"
+        "400":
+          description: "One of the input parameters is incorrect."
+          content:
+              application/json:
+                schema:
+                  type: "object"
+                  properties:
+                    message:
+                      type: "string"
+        "404":
+          description: "Partially upload file does not exist."
+        "422":
+          description: "Data is missing to form complete file."
+   
+  /filedownload/{uuid}:
+    get:
+      tags:
+      - "File download"
+      summary: "Download a file"
+      operationId: "downloadFile"
+      parameters:
+      - in: "path"
+        name: "uuid"
+        required: true
+        description: "The unique identifier received when initializing file upload."
+        schema:
+          type: "string"
+          format: "uuid"
+      responses:
+        "200":
+          description: "Successful operation."
+          content:
+            application/cryptify+octet-stream:
+              schema:
+                type: "string"
+                format: "binary"
+        "400":
+          description: "One of the input parameters is incorrect."
+          content:
+              application/json:
+                schema:
+                  type: "object"
+                  properties:
+                    message:
+                      type: "string"
+        "404":
+          description: "Uploaded file does not exist."

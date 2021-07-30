@@ -1,0 +1,29 @@
+.crypt-file-upload-box {
+  height: 22.9em;
+}
+
+@media only screen and (max-width: 1170px) {
+  .crypt-file-upload-box {
+    height: 22.9em;
+  }
+}
+
+@media only screen and (max-width: 500px) {
+  .crypt-file-upload-box {
+    height: 12.5em
+  }
+}
+
+.crypt-select-protection-input-box textarea {
+  font-size: 1.25em;
+  border: 0;
+  box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
+  -webkit-transition: box-shadow 0.3s;
+  transition: box-shadow 0.3s;
+  width: 100%;
+  resize: vertical;
+}
+
+.crypt-select-protection-input-box textarea:focus {
+  outline: none;
+}
