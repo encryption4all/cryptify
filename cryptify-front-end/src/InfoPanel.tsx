@@ -64,7 +64,7 @@ class InfoPanel extends React.Component<InfoPanelProps, InfoPanelState> {
         <div className="info-panel-content">
           <p dangerouslySetInnerHTML={{ __html: getTranslation(this.props.lang).infoPanel_aboutContent }} >
           </p>
-          <p>
+          <p className="info-panel-know-more-irma">
             <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
             <span className="get-irma-text"
               style={{

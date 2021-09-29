@@ -5,7 +5,6 @@ import App from './App';
 import { Client } from '@e4a/irmaseal-client'
 
 document.addEventListener("DOMContentLoaded", () => {
-  // @ts-ignore
   let downloadUuid: string | null = null;
   const uuid = new URLSearchParams(window.location.search).get("download");
   const uuidRegex = /(\w{8}-(\w{4}-){3}\w{12})/;

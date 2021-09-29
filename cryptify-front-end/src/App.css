@@ -27,6 +27,51 @@
   src: url('./resources/fonts/karla-bold-italic.woff') format('woff')
 }
 
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-size: 100%;
+	font: inherit;
+	vertical-align: baseline;
+}
+
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure, 
+footer, header, hgroup, menu, nav, section {
+	display: block;
+}
+body {
+	line-height: 1;
+}
+ol, ul {
+	list-style: none;
+}
+blockquote, q {
+	quotes: none;
+}
+blockquote:before, blockquote:after,
+q:before, q:after {
+	content: '';
+	content: none;
+}
+table {
+	border-collapse: collapse;
+	border-spacing: 0;
+}
+
 :root {
   --cryptify-bg-color: #e7f0f5;
   --cryptify-bg-highlight-color: #aedcf5;
@@ -161,7 +206,7 @@
 }
 
 .crypt-select-protection-input-box input[type=text] {
-  font-size: 1.25em;
+  font-size: 1.1em;
   border: 0;
   box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
   width: 100%;
@@ -231,6 +276,7 @@
   line-height: 1.6em;
   padding-top: 0.4em;
   padding-bottom: 0.4em;
+  margin-top: 1em;
 }
 
 .crypt-btn-cancel {
@@ -256,6 +302,7 @@
   margin-right: auto;
   width: 15em;
   margin-bottom: 1em;
+  margin-top: 1em;
 }
 
 @media only screen and (max-width: 500px) {

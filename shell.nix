@@ -11,6 +11,8 @@ in pkgs.stdenv.mkDerivation {
     pkgs.nodejs-12_x
     pkgs.nodePackages.typescript
     pkgs.nodePackages.create-react-app
+    pkgs.nodePackages.webpack
+    pkgs.nodePackages.webpack-cli
     pkgs.wasm-pack
   ];
 

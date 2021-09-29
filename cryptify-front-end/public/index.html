@@ -32,19 +32,6 @@
     <title>Cryptify - Encryption made easy</title>
   </head>
   <body>
-    <script>
-      window.thirdPartyCookiesAvailable = false;
-      var receiveMessage = function (evt) {
-        if (evt.data === 'MM:3PCunsupported') {
-          window.thirdPartyCookiesAvailable = false;
-        } else if (evt.data === 'MM:3PCsupported') {
-          window.thirdPartyCookiesAvailable = true;
-        }
-        console.log(window.thirdPartyCookiesAvailable);
-      };
-      window.addEventListener("message", receiveMessage, false);
-    </script>
-    <iframe src="https://mindmup.github.io/3rdpartycookiecheck/start.html" style="display:none" ></iframe>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <!--

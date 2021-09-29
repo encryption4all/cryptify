@@ -13,7 +13,6 @@ const map = new Map()
 // This should be called once per download
 // Each event has a dataChannel that the data will be piped through
 self.onmessage = event => {
-  console.log("received message in sw.js");
   // We send a heartbeat every x secound to keep the
   // service worker alive if a transferable stream is not sent
   if (event.data === 'ping') {
@@ -41,8 +40,6 @@ self.onmessage = event => {
   } else {
     metadata[0] = createStream(port)
   }
-
-  console.log("received message in sw.js 2");
 
   map.set(downloadUrl, metadata)
   port.postMessage({ download: downloadUrl })
@@ -75,23 +72,18 @@ function createStream (port) {
 self.onfetch = event => {
   const url = event.request.url
 
-  console.log("received message in sw.js onfetch 1");
-
   // this only works for Firefox
   if (url.endsWith('/ping')) {
     return event.respondWith(new Response('pong'))
   }
 
   const hijacke = map.get(url)
-  console.log("received message in sw.js onfetch 2");
+
   if (!hijacke) return null
-  console.log("received message in sw.js onfetch 3");
 
   const [ stream, data, port ] = hijacke
 
   map.delete(url)
-
-  console.log("received message in sw.js onfetch 4");
 
   // Not comfortable letting any user control all headers
   // so we only copy over the length & disposition
@@ -105,8 +97,6 @@ self.onfetch = event => {
     'X-WebKit-CSP': "default-src 'none'",
     'X-XSS-Protection': '1; mode=block'
   })
-
-  console.log("received message in sw.js onfetch 5");
 
   let headers = new Headers(data.headers || {})
 
@@ -124,7 +114,6 @@ self.onfetch = event => {
     responseHeaders.set('Content-Length', data.size)
   }
 
-  console.log("received message in sw.js onfetch 6");
   let fileName = typeof data === 'string' ? data : data.filename
   if (fileName) {
     console.warn('Depricated')
@@ -133,10 +122,7 @@ self.onfetch = event => {
     responseHeaders.set('Content-Disposition', "attachment; filename*=UTF-8''" + fileName)
   }
 
-  console.log("received message in sw.js onfetch 7");
-
   event.respondWith(new Response(stream, { headers: responseHeaders }));
-  console.log("received message in sw.js onfetch 8");
 
   port.postMessage({ debug: 'Download started' })
 }

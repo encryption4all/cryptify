@@ -43,13 +43,13 @@
   }
 
   .info-panel-about-letter {
-    padding-left: calc(20%)!important;
-    width: calc(35%)!important;
+    padding-left: calc(30%)!important;
+    width: calc(25%)!important;
   }
 
   .info-panel-help-letter {
-    padding-left: calc(20%)!important;
-    width: calc(35%)!important;
+    padding-left: calc(30%)!important;
+    width: calc(25%)!important;
   }
 }
 
@@ -66,12 +66,12 @@
 
   .info-panel-about-letter {
     padding-left: calc(30%)!important;
-    width: calc(35%)!important;
+    width: calc(25%)!important;
   }
 
   .info-panel-help-letter {
     padding-left: calc(30%)!important;
-    width: calc(35%)!important;
+    width: calc(25%)!important;
   }
 }
 
@@ -97,7 +97,7 @@
   }
 }
 
-@media only screen and (max-width: 1350px) {
+@media only screen and (max-width: 1430px) {
   .info-panel-header {
     padding-left: 7.5rem;
     padding-right: 7.5rem;
@@ -109,17 +109,17 @@
   }
 
   .info-panel-about-letter {
-    padding-left: calc(25%)!important;
-    width: calc(45%)!important;
+    padding-left: calc(35%)!important;
+    width: calc(30%)!important;
   }
 
   .info-panel-help-letter {
-    padding-left: calc(25%)!important;
-    width: calc(45%)!important;
+    padding-left: calc(35%)!important;
+    width: calc(30%)!important;
   }
 }
 
-@media only screen and (max-width: 1250px) {
+@media only screen and (max-width: 1300px) {
   .info-panel-header {
     padding-left: 4.2rem;
     padding-right: 4.2rem;
@@ -131,8 +131,8 @@
   }
 
   .info-panel-about-letter {
-    padding-left: calc(25%)!important;
-    width: calc(50%)!important;
+    padding-left: calc(30%)!important;
+    width: calc(40%)!important;
   }
 
   .info-panel-help-letter {
@@ -201,14 +201,17 @@
 
 .info-panel-about-letter {
   padding-left: calc(30%);
-  width: calc(35%);
-  top: 3.3rem;
+  width: calc(27%);
   position: relative;
 }
 
 .info-panel-help-letter {
   padding-left: calc(25%);
   width: calc(60%);
+}
+
+.info-panel-know-more-irma {
+  padding-top: 1em;
 }
 
 .info-panel-content .irma-logo {

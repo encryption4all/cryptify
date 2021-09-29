@@ -1,9 +1,8 @@
 import React from 'react';
 import './App.css';
 import headerLogo from './resources/cryptify-dark.svg';
-import { Client } from '@e4a/irmaseal-client'
+import { Client } from '@e4a/irmaseal-client';
 
-import 'bigint-polyfill'; // Required for older safari
 import InfoPanel from './InfoPanel';
 import EncryptPanel from './EncryptPanel';
 import DecryptPanel from './DecryptPanel';
@@ -53,14 +52,8 @@ class App extends React.Component<AppProps, AppState> {
     });
   }
 
-  contentPanel(thirdPartyCookiesAvailable: boolean) {
-    if (thirdPartyCookiesAvailable === false) {
-      return <div>
-        <p className="cookie-text">{getTranslation(this.state.lang).app_cookieText1}</p>
-        <p className="cookie-text">{getTranslation(this.state.lang).app_cookieText2}</p>
-      </div>
-    }
-    else if (this.props.downloadUuid) {
+  contentPanel() {
+    if (this.props.downloadUuid) {
       return <DecryptPanel
         lang={this.state.lang}
         downloadUuid={this.props.downloadUuid}
@@ -73,14 +66,10 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   render() {
-    const thirdPartyCookies = (window as any).thirdPartyCookiesAvailable === true ? true : false;
     let panelClass = null;
     let panelHeader = null;
-    if (thirdPartyCookies === false) {
-      panelClass = "cookie-panel";
-      panelHeader = getTranslation(this.state.lang).app_cookieHeader;
-    }
-    else if (this.props.downloadUuid) {
+    // @ts-ignore
+    if (this.props.downloadUuid) {
       panelClass = "decrypt-panel";
       panelHeader = getTranslation(this.state.lang).decryptPanel_header;
     }
@@ -100,7 +89,7 @@ class App extends React.Component<AppProps, AppState> {
               { panelHeader }
             </div>
           </div>
-          {this.contentPanel(thirdPartyCookies)}
+          {this.contentPanel()}
         </div>
         <InfoPanel lang={this.state.lang} onSetLang={(l: Lang) => this.setLang(l)}/>
       </div>

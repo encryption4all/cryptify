@@ -37,7 +37,7 @@ let sw = null
 let scope = ''
 
 function registerWorker() {
-  return navigator.serviceWorker.getRegistration('./').then(swReg => {
+  return navigator.serviceWorker.getRegistration('./sw.js').then(swReg => {
     return swReg || navigator.serviceWorker.register('sw.js', { scope: './' })
   }).then(swReg => {
     const swRegTmp = swReg.installing || swReg.waiting

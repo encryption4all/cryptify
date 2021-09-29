@@ -248,7 +248,9 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       decrypt: false,
     })) as TransformStream;
 
+    // @ts-ignore
     const cryptChunker = toTransform(this.props.sealClient.createChunker({})) as TransformStream;
+    // @ts-ignore
     const uploadChunker = toTransform(new TransformStream(new Chunker({ chunkSize: UPLOAD_CHUNK_SIZE }))) as TransformStream;
 
     // Create streams that takes all input files and zips them into
@@ -273,7 +275,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
 
     // This is not 100% accurate due to zip and irmaseal
     // header but it's close enough for the UI.
-    const finished = new Promise<void>(async (resolve, _) => {
+    const finished = new Promise<void>(async (resolve, reject) => {
       const fileStream = toWritable(getFileStoreStream(
         this.state.abort,
         this.state.sender,
@@ -283,11 +285,12 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         (n, last) => this.reportProgress(resolve, n, last)
       )) as WritableStream;
       
-      await readable
+      readable
         .pipeThrough(cryptChunker)
         .pipeThrough(sealer)
         .pipeThrough(uploadChunker)
-        .pipeTo(fileStream);
+        .pipeTo(fileStream)
+        .catch(reject);
     });
 
     await finished;
@@ -450,10 +453,11 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         </div>
         <div className="crypt-select-protection-input-box">
           <h4>{ getTranslation(this.props.lang).encryptPanel_message }</h4>
-          <textarea required={false}
-                rows={7}
-                value={this.state.message}
-                onChange={(e) => this.onChangeMessage(e)}
+          <textarea
+            required={false}
+            rows={4}
+            value={this.state.message}
+            onChange={(e) => this.onChangeMessage(e)}
           />
         </div>
         <button

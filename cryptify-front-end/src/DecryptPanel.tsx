@@ -1,7 +1,7 @@
 import "./DecryptPanel.css"
 import React from 'react';
 import CryptFileList from './CryptFileList';
-import { Client } from '@e4a/irmaseal-client'
+import { Client } from '@e4a/irmaseal-client';
 import createProgressReporter from './ProgressReporter';
 import streamSaver from 'streamsaver';
 import mkIrmaErr from './IrmaErrMod';
@@ -35,9 +35,7 @@ const IrmaCore = require('@privacybydesign/irma-core');
 const IrmaWeb = require('@privacybydesign/irma-web');
 const IrmaClient = require('@privacybydesign/irma-client');
 
-// TODO: If we get local mitm.html + sw.js working we wouldn't
-// need third party cookies.
-// streamSaver.mitm = "https://cryptify.nl/mitm.html?version=2.0.5";
+streamSaver.mitm = "https://cryptify.nl/mitm.html?version=2.0.0";
 
 enum DecryptionState {
   IrmaSession = 1,
@@ -257,7 +255,8 @@ export default class DecryptPanel extends React.Component<DecryptProps, DecryptS
     })) as TransformStream<Uint8Array, Uint8Array>;
 
     const chunker = toTransform(
-      this.props.sealClient.createChunker({ offset: this.state.decryptInfo.header.byteLength })
+      // @ts-ignore
+      this.props.sealClient.createChunker({ offset: this.state.decryptInfo.header.byteLength }) 
     ) as TransformStream<Uint8Array, Uint8Array>;
     
     const rawFileStream = streamSaver.createWriteStream(this.state.fakeFile.name);

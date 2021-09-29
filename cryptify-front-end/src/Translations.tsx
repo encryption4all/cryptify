@@ -19,11 +19,6 @@ type Translation = {
   tryAgain: string;
   timeremaining: (remaining: number) => string;
 
-  // main page
-  app_cookieHeader: string;
-  app_cookieText1: string;
-  app_cookieText2: string;
-
   // cryptFileInput
   cryptFileInput_dropFiles: string;
   cryptFileInput_clickFiles: string;
@@ -119,11 +114,6 @@ const english: Translation = {
     }
   },
 
-  // main page
-  app_cookieHeader: "Cookies",
-  app_cookieText1: "You have disabled third party cookies. Cryptify requires third party cookies to be enabled to function correctly.",
-  app_cookieText2: "This is because Cryptify uses a third party service worker(StreamSaver.js) to stream files. Using a Service worker like this requires third party cookies permission.",
-
   // cryptFileInput
   cryptFileInput_dropFiles: "Drag & drop files",
   cryptFileInput_clickFiles: "Or click the button below",
@@ -161,11 +151,11 @@ const english: Translation = {
   encryptPanel_another: "Send another",
 
   // infoPanel
-  infoPanel_about: "Cryptify",
-  infoPanel_help: "Help",
-  infoPanel_privacyPolicy: "Privacy policy",
+  infoPanel_about: "CRYPTIFY",
+  infoPanel_help: "HELP",
+  infoPanel_privacyPolicy: "PRIVACY POLICY",
   infoPanel_aboutHeader: "Private and secure file sharing",
-  infoPanel_aboutContent: "With Cryptify you can safely and privacy friendly send files. Every file is encrypted specifically for the reciever. Only that person can decrypt that file. To do that the e-mail adres must be shown. For this the identification app <b><a href=\"https://irma.app/\">IRMA</u></a> is used",
+  infoPanel_aboutContent: "With Cryptify you can safely send files in a privacy-friendly manner. Every file is encrypted specifically for the receiver. Only that person can decrypt that file. To do that the email address must be shown. For this the identification app <b><a href=\"https://irma.app/\">IRMA</u></a> is used.",
   infoPanel_aboutIrmaInfo: "Want to know more about the IRMA-app?",
   infoPanel_helpHeader: "Help",
   infoPanel_helpShareHeader: "I want to share a file",
@@ -178,7 +168,7 @@ const english: Translation = {
   infoPanel_helpShareOutro: "The recipient will receive an email informing them that you have shared a file with them; the email also contains instructions on how to proceed. If you have provided a message, it will be included in the email. By using Cryptify you assume that the receiver already uses the IRMA app, or is willing to install the app and use it for the purpose of receiving your files.",
   infoPanel_helpReceivedHeader: "A file has been shared with me",
   infoPanel_helpReceivedInstallIrmaIntro: "To download and decrypt the file, you need the IRMA app. With the IRMA app, you can prove that you are the intended recipient and decrypt the files:",
-  infoPanel_helpReceivedInstallStep1: "Install the free IRMA app (available for <a href=\"https://apps.apple.com/app/irma-authenticatie/id1294092994\">IOS</a> and <a href=\"https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=en\">Android</a>)",
+  infoPanel_helpReceivedInstallStep1: "Install the free IRMA app (available on the <a href=\"https://apps.apple.com/app/irma-authenticatie/id1294092994\">App Store</a> on IOS. <a href=\"https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=en\">Google Play Store</a> and <a href=\"https://f-droid.org/en/packages/org.irmacard.cardemu/\">F-Droid</a> on Android)",
   infoPanel_helpReceivedInstallStep2: "Add your email address as a card into your IRMA app. You can do this <a href=\"https://sidnemailissuer.irmaconnect.nl/uitgifte/email/\">here</a>.",
   infoPanel_helpReceivedInstallIrmaOutro: "Installing and setting up IRMA only needs to be done once!",
   infoPanel_helpReceivedUseIrma: "If you have IRMA installed, you can download and decrypt the files: ",
@@ -186,7 +176,7 @@ const english: Translation = {
   infoPanel_helpReceivedUseStep2: "If you are using a computer, scan the QR code on the Cryptify website with your IRMA app. If you are using a mobile phone, click the button to open the IRMA app.",
   infoPanel_helpReceivedUseStep3: "The IRMA app asks you whether you wish to disclose your email address to Cryptify. This is necessary to prove that you are the intended recipient.",
   infoPanel_helpReceivedUseStep4: "After disclosing your email address, the file is automatically downloaded and decrypted. Wait until the process is complete.",
-  infoPanel_helpReceivedUseStep5: "You can find the your file in the download folder of your browser.",
+  infoPanel_helpReceivedUseStep5: "You can find the decrypted file in the download folder of your browser.",
   infoPanel_privacyPolicyHeader: "Privacy policy",
   infoPanel_privacyPolicyContent: "<p>Cryptify is a platform for sharing (large) files securely and easily between two users. Files shared via Cryptify are encrypted. Users must first use the IRMA app (irma.app) to prove that they are the intended recipient before they can decrypt the files. This is the essence of Cryptify. Cryptify is offered for free, as a social service, to make encrypted file sharing easy for everyone. Cryptify was developed with support from <a href=\"https://www.sidnfonds.nl/\">SIDN fonds</a>.</p><p>The Cryptify service is offered in collaboration between the company <a href=\"https://www.procolix.com/\">ProcoliX</a> and the <a href=\"https://privacybydesign.foundation/\">Privacy by Design Foundation</a>. ProcoliX and the foundation are jointly responsible for data processing. ProcoliX and the Privacy by Design Foundation are both data controllers, and each processes part of the data, as described in more detail below. Only data that is necessary for the Cryptify service is processed.</p><p>ProcoliX temporarily stores the encrypted files provided by users. ProcoliX cannot see the contents of these files because they are encrypted. Each file is accompanied by the email address of the intended recipient. The email address of the recipient and the encrypted files are kept for a maximum of 2 weeks and then are automatically deleted. ProcoliX processes email addresses to notify recipients by email about the files that have been uploaded for them. Both the sender's email address and the recipient's email address are used for this notification. Sent emails and email addresses are not stored by ProcoliX. Other technical personal data, such as IP addresses, are stored and deleted according to <a href=\"https://www.procolix.com/wp-content/uploads/2021/06/Algemene-voorwaarden-ProcoliX-v2.2.pdf\">ProcoliX's general policy</a>. When everything is running normally, this data is deleted after two days.</p><p>The Privacy by Design Foundation only processes the email addresses of recipients. These are needed to enable encryption and decryption via Cryptify. The processing of email addresses is done before the decryption. To decrypt files, a recipient must reveal his/her email address with the IRMA app, thus proving that he/she is the intended recipient. The server to which the visitor reveals his/her email address is managed by the Privacy by Design Foundation. When a user reveals his/her email address with IRMA, a private key associated with the email address is supplied by the server. That key is used to decrypt the files in the user's web browser. The visitor's email address is then immediately deleted by the server at the foundation. In particular, the foundation does not keep a log of email addresses. Other technical personal data, such as IP addresses, are also not stored.</p><p>ProcoliX temporarily stores the encrypted files but does not have access to the cryptographic keys (private keys) required for decryption. The Privacy by Design Foundation generates the private keys but does not have access to the encrypted files. ProcoliX and the foundation do not conspire to jointly decrypt files behind the backs of users.</p><p>Technical changes to the Cryptify system, or any new services, may result in modification of this privacy policy. ProcoliX and the Privacy by Design Foundation reserve the right to make such changes and will announce the new privacy policy as soon as possible via this page.</p><p>For any questions, comments, or complaints about this processing by ProcoliX and the Privacy by Design Foundation for Cryptify, please contactthe Cryptify team at <a href=\"mailto:info@cryptify.nl\">info@cryptify.nl</a>. or complaints about the processingof data by ProcoliX, the Authority for the Protection of Personal Data can also be contacted.</p>",
 };
@@ -217,11 +207,6 @@ const dutch: Translation = {
       return `Nog meer dan een dag.`;
     }
   },
-
-  // main page
-  app_cookieHeader: "Cookies",
-  app_cookieText1: "U heeft cookies van derde partijen niet toegestaan. Om Cryptify te gebruiken moeten cookies van derde partijen toegestaan zijn.",
-  app_cookieText2: "Cryptify maakt gebruikt van een derde partij service worker(StreamSaver.js) om bestanden te kunnen streamen. Om deze Service worker te gebruiken moeten cookies van derde partijen toegestaan zijn.",
 
   cryptFileInput_dropFiles: "Drag & drop bestanden",
   cryptFileInput_clickFiles: "Of klik op de knop hieronder",
@@ -259,9 +244,9 @@ const dutch: Translation = {
   encryptPanel_another: "Nog iets versturen",
 
   // infoPanel
-  infoPanel_about: "Cryptify",
-  infoPanel_help: "Help",
-  infoPanel_privacyPolicy: "Privacybeleid",
+  infoPanel_about: "CRYPTIFY",
+  infoPanel_help: "HELP",
+  infoPanel_privacyPolicy: "PRIVACYBELEID",
   infoPanel_aboutHeader: "Veilig en privacy-vriendelijk bestanden delen",
   infoPanel_aboutContent: "Met Cryptify kun je veilig en privacy-vriendelijk bestanden versturen. Ieder bestand wordt persoonlijk versleuteld, voor de ontvanger. Alleen die persoon kan het bestand ontsleutelen. Daarvoor moet het eigen mobiele nummer getoond worden. Hiervoor wordt de identificatie app  <b><a href=\"https://irma.app/\">IRMA</u></a> gebruikt.",
   infoPanel_aboutIrmaInfo: "meer weten over de IRMA-app?",
@@ -275,8 +260,8 @@ const dutch: Translation = {
   infoPanel_helpShareStep5: "Klik op \"Versleutelen & verzenden\" en wacht to het proces is voltooid en een bevestiging wordt getoond.",
   infoPanel_helpShareOutro: "De ontvanger ontvangt een e-mail met de melding dat u een bestand met hem/haar hebt gedeeld. Als u een bericht heeft toegevoegd, zal dit in de e-mail worden opgenomen. Door Cryptify te gebruiken gaat u er van uit dat de ontvanger de IRMA app heeft, of de app will installeren en gebruiken om uw files te ontvangen.",
   infoPanel_helpReceivedHeader: "Er is een bestand met mij gedeeld",
-  infoPanel_helpReceivedInstallIrmaIntro: "Om het bestand te downloaden en te ontsleutelen, heeb je de IRMA app nodig. Met de IRMA-app kan je bewijzen dat jij de bedoelde ontvanger bent en de bestanden ontsleutelen:",
-  infoPanel_helpReceivedInstallStep1: "Installeer de gratis IRMA-app (beschikbaar voor <a href=\"https://apps.apple.com/nl/app/irma-authenticatie/id1294092994\">IOS</a>. en <a href=\"https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=nl\">Android</a>.)",
+  infoPanel_helpReceivedInstallIrmaIntro: "Om het bestand te downloaden en te ontsleutelen, heb je de IRMA app nodig. Met de IRMA-app kan je bewijzen dat jij de bedoelde ontvanger bent en de bestanden ontsleutelen:",
+  infoPanel_helpReceivedInstallStep1: "Installeer de gratis IRMA-app (beschikbaar voor <a href=\"https://apps.apple.com/nl/app/irma-authenticatie/id1294092994\">App Store</a> op IOS. <a href=\"https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=nl\">Google Play Store</a> en <a href=\"https://f-droid.org/nl/packages/org.irmacard.cardemu/\">F-Droid</a> op Android.)",
   infoPanel_helpReceivedInstallStep2: "Voeg uw e-mailadres toe aan uw IRMA-app. U kunt dit <a href=\"https://sidnemailissuer.irmaconnect.nl/uitgifte/email/\">hier</a> doen.",
   infoPanel_helpReceivedInstallIrmaOutro: "Het installeren en instellen van IRMA hoeft maar één keer te gebeuren!",
   infoPanel_helpReceivedUseIrma: "Als u IRMA heeft geïnstalleerd, kunt u de bestanden downloaden en ontsleutelen:",

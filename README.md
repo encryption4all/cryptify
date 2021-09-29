@@ -25,7 +25,7 @@ docker-compose up
 
 * Clone the project 
 
-      git clone git@gitlab.science.ru.nl:irma/cryptify.git
+      git clone git@github.com:privacybydesign/cryptify.git
 
 * Install nodejs 14 and rust
 
