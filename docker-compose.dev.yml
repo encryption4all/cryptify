@@ -1,0 +1,45 @@
+version: '3'
+services:
+  backend:
+    image: rust:1.56
+    user: "$USER_ID:$GROUP_ID"
+    volumes:
+      - './cryptify-back-end/:/app'
+    working_dir: /app
+    environment:
+      ROCKET_ENV: development
+      ROCKET_CONFIG: 'config.toml'
+    command: "cargo run"
+
+  frontend:
+    image: node:17
+    # build:
+    #   context: .
+    #   dockerfile: frontend.dev.Dockerfile
+    user: "$USER_ID:$GROUP_ID"
+    stdin_open: true
+    volumes:
+      - './cryptify-front-end/node_modules:/app/node_modules'
+      - './cryptify-front-end/:/app'
+    working_dir: /app
+    environment:
+      NODE_OPTIONS: '--openssl-legacy-provider'
+    command: "npm start"
+
+  nginx:
+    image: nginx:1.18
+    depends_on:
+      - backend
+    volumes:
+      - './dist/frontend/:/var/www/html/:ro'
+      - './conf/nginx.conf:/etc/nginx/nginx.conf:ro'
+    ports: [ '127.0.0.1:80:80' ]
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.0
+    environment:
+      MH_API_BIND_ADDR: 0.0.0.0:1080
+      MH_UI_BIND_ADDR: 0.0.0.0:1080
+      MH_SMTP_BIND_ADDR: 0.0.0.0:1025
+      TZ: Europe/Amsterdam
+    ports: [ "127.0.0.1:1080:1080" ]
