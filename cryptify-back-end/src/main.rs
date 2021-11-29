@@ -276,9 +276,9 @@ async fn upload_chunk(
         Err(_) => return Ok(None),
     };
 
-    // if end > state.file_size || start >= end || state.uploaded != start {
-    //     return Err(Error::BadRequest(Some("Incorrect Content-Range header".to_owned())));
-    // }
+    if end > state.file_size || start >= end || state.uploaded != start {
+        return Err(Error::BadRequest(Some("Incorrect Content-Range header".to_owned())));
+    }
 
     file.seek(std::io::SeekFrom::Start(start))
         .await
@@ -343,9 +343,9 @@ async fn upload_finalize(config: &State<CryptifyConfig>, store: &State<Store>, h
     };
     let state = state.lock().await;
 
-    // if headers.content_range.size != Some(state.file_size) { || state.uploaded != state.file_size {
-    //     return Err(Error::UnprocessableEntity(None));
-    // }
+    if headers.content_range.size != Some(state.file_size) { || state.uploaded != state.file_size {
+        return Err(Error::UnprocessableEntity(None));
+    }
 
     send_email(config, &state, uuid).await.map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
 
