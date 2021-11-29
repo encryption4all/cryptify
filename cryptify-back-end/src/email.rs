@@ -3,14 +3,14 @@ use crate::store::FileState;
 
 use askama::Template;
 
-use chrono::{TimeZone, format::Locale};
+use chrono::{format::Locale, TimeZone};
 
 use lettre::{
     message::header::ContentType, transport::smtp::authentication::Credentials, Message,
     SmtpTransport, Transport,
 };
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Language {
@@ -67,8 +67,12 @@ struct EmailTemplate<'a> {
 
 fn format_file_size(size: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let i = ((size as f64).log10() / (1024 as f64).log10()).floor();
-    format!("{:.1} {}", (size as f64 / (1024 as f64).powi(i as i32)), UNITS[i as usize])
+    let i = ((size as f64).log10() / (1024_f64).log10()).floor();
+    format!(
+        "{:.1} {}",
+        (size as f64 / (1024_f64).powi(i as i32)),
+        UNITS[i as usize]
+    )
 }
 
 fn format_date(date: i64, lang: &Language) -> String {

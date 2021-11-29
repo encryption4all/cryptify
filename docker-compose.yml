@@ -9,7 +9,7 @@ services:
       - './dist/backend/server:/app/backend'
       - './conf/config.toml:/app/config.toml'
     working_dir: /app
-    command: "bash -c 'mkdir -p /tmp/data && mkdir -p /tmp/metadata && /app/backend'"
+    command: "bash -c 'mkdir -p /tmp/data && /app/backend'"
     environment:
       ROCKET_ENV: production
       ROCKET_CONFIG: 'config.toml'

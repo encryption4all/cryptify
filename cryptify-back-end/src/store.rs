@@ -67,7 +67,7 @@ impl Store {
 
     pub fn get(&self, id: &str) -> Option<Arc<rocket::tokio::sync::Mutex<FileState>>> {
         let state = self.shared.state.lock().unwrap(); // this will only panic if we already panicked elsewhere while holding the mutex, which is fine.
-        state.files.get(id).map(|v| v.clone())
+        state.files.get(id).cloned()
     }
 }
 

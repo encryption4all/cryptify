@@ -1,7 +1,6 @@
 mod config;
 mod email;
 mod error;
-mod metadata;
 mod store;
 
 use crate::config::CryptifyConfig;
@@ -11,18 +10,18 @@ use crate::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
-use sha2::Digest;
 use rand::Rng;
+use sha2::Digest;
 use std::fmt::Write;
 
-use chrono;
-
 use rocket::fs::FileServer;
-use rocket::tokio::{fs::{OpenOptions, File}, io::{AsyncWriteExt, AsyncSeekExt}};
+use rocket::tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncSeekExt, AsyncWriteExt},
+};
 use rocket::{
     data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, request::FromRequest,
-    response::Responder, routes, serde::json::Json, Data,
-    State,
+    response::Responder, routes, serde::json::Json, Data, State,
 };
 
 use serde::{Deserialize, Serialize};
@@ -45,9 +44,9 @@ struct InitResponse {
 
 struct CryptifyToken(String);
 
-impl Into<Header<'static>> for CryptifyToken {
-    fn into(self) -> Header<'static> {
-        Header::new("cryptifytoken", self.0)
+impl From<CryptifyToken> for Header<'static> {
+    fn from(token: CryptifyToken) -> Header<'static> {
+        Header::new("cryptifytoken", token.0)
     }
 }
 
@@ -58,21 +57,15 @@ struct InitResponder {
 }
 
 #[post("/fileupload/init", data = "<request>")]
-async fn upload_init(config: &State<CryptifyConfig>, store: &State<Store>, request: Json<InitBody>) -> Result<InitResponder, Error> {
+async fn upload_init(
+    config: &State<CryptifyConfig>,
+    store: &State<Store>,
+    request: Json<InitBody>,
+) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
-    let uuid =  uuid::Uuid::new_v4().to_hyphenated().to_string();
-    let metadata = metadata::Metadata {
-        date: current_time,
-        expires: current_time + 120960,
-    };
+    let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
 
-    if let Some(e) = metadata.save(config, &uuid).await.err() {
-        log::error!("{}", e);
-        return Err(Error::InternalServerError(None));
-    }
-
-    match File::create(Path::new(config.data_dir()).join(&uuid))
-        .await {
+    match File::create(Path::new(config.data_dir()).join(&uuid)).await {
         Ok(v) => v,
         Err(e) => {
             log::error!("{}", e);
@@ -84,25 +77,29 @@ async fn upload_init(config: &State<CryptifyConfig>, store: &State<Store>, reque
 
     match request.recipient.parse() {
         Ok(recipient) => {
-            store.create(uuid.clone(), FileState {
-                cryptify_token: init_cryptify_token.clone(),
-                uploaded: 0,
-                expires: metadata.expires,
-                sender: request.sender.clone(),
-                recipient,
-                mail_content: request.mail_content.clone(),
-                mail_lang: request.mail_lang.clone(),
-            });
+            store.create(
+                uuid.clone(),
+                FileState {
+                    cryptify_token: init_cryptify_token.clone(),
+                    uploaded: 0,
+                    expires: current_time + 120960,  //
+                    sender: request.sender.clone(),
+                    recipient,
+                    mail_content: request.mail_content.clone(),
+                    mail_lang: request.mail_lang.clone(),
+                },
+            );
 
             Ok(InitResponder {
-                inner: Json(InitResponse {
-                    uuid: uuid,
-                }),
+                inner: Json(InitResponse { uuid }),
 
-                cryptify_token: CryptifyToken(init_cryptify_token.into()),
+                cryptify_token: CryptifyToken(init_cryptify_token),
             })
         }
-        Err(e) => Err(Error::BadRequest(Some(format!("Could not parse e-mail address: {}", e))))
+        Err(e) => Err(Error::BadRequest(Some(format!(
+            "Could not parse e-mail address: {}",
+            e
+        )))),
     }
 }
 
@@ -125,7 +122,7 @@ impl FromStr for ContentRange {
         if unit != "bytes" {
             return Err(format!("Unknown unit {}", unit));
         }
-        let mut rangeparts = range.split("/");
+        let mut rangeparts = range.split('/');
         let range = rangeparts
             .next()
             .ok_or("Missing lower-upper part of range")?;
@@ -139,7 +136,7 @@ impl FromStr for ContentRange {
             None
         };
         if range != "*" {
-            let mut rangeparts = range.split("-");
+            let mut rangeparts = range.split('-');
             let start = rangeparts
                 .next()
                 .ok_or("Missing start of range")?
@@ -240,7 +237,7 @@ async fn upload_chunk(
     headers: UploadHeaders,
     data: Data<'_>,
 ) -> Result<Option<UploadResponder>, Error> {
-    let state = match store.get(uuid){
+    let state = match store.get(uuid) {
         Some(v) => v,
         None => return Ok(None),
     };
@@ -250,14 +247,22 @@ async fn upload_chunk(
         return Ok(None);
     }
 
-    let start = headers.content_range.start.ok_or(Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
-    let end = headers.content_range.end.ok_or(Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
+    let start = headers.content_range.start.ok_or_else(|| Error::BadRequest(Some(
+        "Could not read Content-Range start".to_owned(),
+    )))?;
+    let end = headers.content_range.end.ok_or_else(|| Error::BadRequest(Some(
+        "Could not read Content-Range start".to_owned(),
+    )))?;
     if end - start > 1024 * 1024 {
-        return Err(Error::BadRequest(Some("File chunk too large; the maximum is 1 MB".to_owned())));
+        return Err(Error::BadRequest(Some(
+            "File chunk too large; the maximum is 1 MB".to_owned(),
+        )));
     }
 
     if headers.cryptify_token != state.cryptify_token {
-        return Err(Error::BadRequest(Some("Cryptify Token header does not match".to_owned())));
+        return Err(Error::BadRequest(Some(
+            "Cryptify Token header does not match".to_owned(),
+        )));
     }
 
     let mut file = match OpenOptions::new()
@@ -270,20 +275,28 @@ async fn upload_chunk(
     };
 
     if start >= end || state.uploaded != start {
-        return Err(Error::BadRequest(Some("Incorrect Content-Range header".to_owned())));
+        return Err(Error::BadRequest(Some(
+            "Incorrect Content-Range header".to_owned(),
+        )));
     }
 
     file.seek(std::io::SeekFrom::Start(start))
         .await
         .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
 
-    let data = data.open((end - start).bytes()).into_bytes().await.map_err(|_| Error::BadRequest(Some("Could not read data from request".to_owned())))?;
+    let data = data
+        .open((end - start).bytes())
+        .into_bytes()
+        .await
+        .map_err(|_| Error::BadRequest(Some("Could not read data from request".to_owned())))?;
     if !data.is_complete() || data.len() as u64 != end - start {
         return Err(Error::BadRequest(Some("Data not complete".to_owned())));
     }
 
     let data = data.into_inner();
-    file.write_all(&data).await.map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+    file.write_all(&data)
+        .await
+        .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
 
     let shasum = compute_hash(&headers.cryptify_token.into_bytes(), &data);
     state.cryptify_token = shasum.clone();
@@ -291,7 +304,7 @@ async fn upload_chunk(
     state.uploaded += end - start;
     Ok(Some(UploadResponder {
         body: (),
-        cryptify_token: CryptifyToken(shasum.into()),
+        cryptify_token: CryptifyToken(shasum),
     }))
 }
 
@@ -300,7 +313,7 @@ struct FinalizeHeaders {
 }
 
 #[rocket::async_trait]
-impl <'r> FromRequest<'r> for FinalizeHeaders {
+impl<'r> FromRequest<'r> for FinalizeHeaders {
     type Error = String;
 
     async fn from_request(
@@ -320,17 +333,20 @@ impl <'r> FromRequest<'r> for FinalizeHeaders {
             Ok(v) => v,
             Err(e) => {
                 return rocket::request::Outcome::Failure((rocket::http::Status::BadRequest, e))
-            },
+            }
         };
-        rocket::request::Outcome::Success(FinalizeHeaders {
-            content_range,
-        })
+        rocket::request::Outcome::Success(FinalizeHeaders { content_range })
     }
 }
 
 #[post("/fileupload/finalize/<uuid>")]
-async fn upload_finalize(config: &State<CryptifyConfig>, store: &State<Store>, headers: FinalizeHeaders, uuid: &str) -> Result<Option<()>, Error> {
-    let state = match store.get(uuid){
+async fn upload_finalize(
+    config: &State<CryptifyConfig>,
+    store: &State<Store>,
+    headers: FinalizeHeaders,
+    uuid: &str,
+) -> Result<Option<()>, Error> {
+    let state = match store.get(uuid) {
         Some(v) => v,
         None => return Ok(None),
     };
@@ -340,7 +356,9 @@ async fn upload_finalize(config: &State<CryptifyConfig>, store: &State<Store>, h
         return Err(Error::UnprocessableEntity(None));
     }
 
-    send_email(config, &state, uuid).await.map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
+    send_email(config, &state, uuid)
+        .await
+        .map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
 
     Ok(Some(()))
 }
