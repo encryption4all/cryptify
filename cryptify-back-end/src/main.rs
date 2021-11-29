@@ -32,8 +32,6 @@ use store::{FileState, Store};
 struct InitBody {
     sender: String,
     recipient: String,
-    #[serde(rename = "filesSize")]
-    file_size: u64,
     #[serde(rename = "mailContent")]
     mail_content: String,
     #[serde(rename = "mailLang")]
@@ -45,18 +43,18 @@ struct InitResponse {
     uuid: String,
 }
 
-struct ETag(String);
+struct CryptifyToken(String);
 
-impl Into<Header<'static>> for ETag {
+impl Into<Header<'static>> for CryptifyToken {
     fn into(self) -> Header<'static> {
-        Header::new("ETag", self.0)
+        Header::new("cryptifytoken", self.0)
     }
 }
 
 #[derive(Responder)]
 struct InitResponder {
     inner: Json<InitResponse>,
-    etag: ETag,
+    cryptify_token: CryptifyToken,
 }
 
 #[post("/fileupload/init", data = "<request>")]
@@ -73,7 +71,7 @@ async fn upload_init(config: &State<CryptifyConfig>, store: &State<Store>, reque
         return Err(Error::InternalServerError(None));
     }
 
-    let file = match File::create(Path::new(config.data_dir()).join(&uuid))
+    match File::create(Path::new(config.data_dir()).join(&uuid))
         .await {
         Ok(v) => v,
         Err(e) => {
@@ -81,18 +79,13 @@ async fn upload_init(config: &State<CryptifyConfig>, store: &State<Store>, reque
             return Err(Error::InternalServerError(None));
         }
     };
-    if let Some(e) = file.set_len(request.file_size).await.err() {
-        log::error!("{}", e);
-        return Err(Error::InternalServerError(None));
-    }
 
-    let init_etag = bytes_to_hex(&rand::thread_rng().gen::<[u8; 32]>());
+    let init_cryptify_token = bytes_to_hex(&rand::thread_rng().gen::<[u8; 32]>());
 
     match request.recipient.parse() {
         Ok(recipient) => {
             store.create(uuid.clone(), FileState {
-                etag: init_etag.clone(),
-                file_size: request.file_size,
+                cryptify_token: init_cryptify_token.clone(),
                 uploaded: 0,
                 expires: metadata.expires,
                 sender: request.sender.clone(),
@@ -106,7 +99,7 @@ async fn upload_init(config: &State<CryptifyConfig>, store: &State<Store>, reque
                     uuid: uuid,
                 }),
 
-                etag: ETag(init_etag.into()),
+                cryptify_token: CryptifyToken(init_cryptify_token.into()),
             })
         }
         Err(e) => Err(Error::BadRequest(Some(format!("Could not parse e-mail address: {}", e))))
@@ -173,7 +166,7 @@ impl FromStr for ContentRange {
 }
 
 struct UploadHeaders {
-    etag: String,
+    cryptify_token: String,
     content_range: ContentRange,
 }
 
@@ -184,12 +177,12 @@ impl<'r> FromRequest<'r> for UploadHeaders {
     async fn from_request(
         request: &'r rocket::Request<'_>,
     ) -> rocket::request::Outcome<Self, Self::Error> {
-        let etag = match request.headers().get_one("ETag") {
-            Some(etag) => etag,
+        let cryptify_token = match request.headers().get_one("CryptifyToken") {
+            Some(cryptify_token) => cryptify_token,
             None => {
                 return rocket::request::Outcome::Failure((
                     rocket::http::Status::BadRequest,
-                    "Missing ETag".into(),
+                    "Missing Cryptify Token header".into(),
                 ))
             }
         }
@@ -212,7 +205,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
         };
 
         rocket::request::Outcome::Success(UploadHeaders {
-            etag,
+            cryptify_token,
             content_range,
         })
     }
@@ -221,7 +214,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
 #[derive(Responder)]
 struct UploadResponder {
     body: (),
-    etag: ETag,
+    cryptify_token: CryptifyToken,
 }
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
@@ -232,9 +225,9 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     s
 }
 
-fn compute_hash(etag: &[u8], data: &[u8]) -> String {
+fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
     let mut hash = sha2::Sha256::new();
-    hash.update(etag);
+    hash.update(cryptify_token);
     hash.update(data);
     format!("{:x}", hash.finalize())
 }
@@ -263,8 +256,8 @@ async fn upload_chunk(
         return Err(Error::BadRequest(Some("File chunk too large; the maximum is 1 MB".to_owned())));
     }
 
-    if headers.etag != state.etag {
-        return Err(Error::BadRequest(Some("Etag header does not match".to_owned())));
+    if headers.cryptify_token != state.cryptify_token {
+        return Err(Error::BadRequest(Some("Cryptify Token header does not match".to_owned())));
     }
 
     let mut file = match OpenOptions::new()
@@ -276,7 +269,7 @@ async fn upload_chunk(
         Err(_) => return Ok(None),
     };
 
-    if end > state.file_size || start >= end || state.uploaded != start {
+    if start >= end || state.uploaded != start {
         return Err(Error::BadRequest(Some("Incorrect Content-Range header".to_owned())));
     }
 
@@ -292,13 +285,13 @@ async fn upload_chunk(
     let data = data.into_inner();
     file.write_all(&data).await.map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
 
-    let shasum = compute_hash(&headers.etag.into_bytes(), &data);
-    state.etag = shasum.clone();
+    let shasum = compute_hash(&headers.cryptify_token.into_bytes(), &data);
+    state.cryptify_token = shasum.clone();
 
     state.uploaded += end - start;
     Ok(Some(UploadResponder {
         body: (),
-        etag: ETag(shasum.into()),
+        cryptify_token: CryptifyToken(shasum.into()),
     }))
 }
 
@@ -343,7 +336,7 @@ async fn upload_finalize(config: &State<CryptifyConfig>, store: &State<Store>, h
     };
     let state = state.lock().await;
 
-    if headers.content_range.size != Some(state.file_size) { || state.uploaded != state.file_size {
+    if headers.content_range.size != Some(state.uploaded) {
         return Err(Error::UnprocessableEntity(None));
     }
 

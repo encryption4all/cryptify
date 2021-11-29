@@ -14,9 +14,9 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Language {
-    #[serde(rename = "en")]
+    #[serde(rename = "EN")]
     En,
-    #[serde(rename = "nl")]
+    #[serde(rename = "NL")]
     Nl,
 }
 
@@ -24,7 +24,6 @@ struct MailStrings<'a> {
     subject_str: &'a str,
     sender_str: &'a str,
     expires_str: &'a str,
-    item_str: &'a str,
     download_str: &'a str,
     link_str: &'a str,
 }
@@ -33,7 +32,6 @@ const NL_STRINGS: MailStrings = MailStrings {
     subject_str: "heeft je een bestand gestuurd via Cryptify",
     sender_str: "heeft je bestanden gestuurd",
     expires_str: "Verloopt op",
-    item_str: "bestand",
     download_str: "Download jouw bestanden",
     link_str: "Download link",
 };
@@ -42,7 +40,6 @@ const EN_STRINGS: MailStrings = MailStrings {
     subject_str: "sent you files via Cryptify",
     sender_str: "sent you files",
     expires_str: "Expires on",
-    item_str: "item",
     download_str: "Download your files",
     link_str: "Download link",
 };
@@ -59,7 +56,6 @@ struct SubjectTemplate<'a> {
 struct EmailTemplate<'a> {
     sender_str: &'a str,
     expires_str: &'a str,
-    item_str: &'a str,
     download_str: &'a str,
     link_str: &'a str,
     sender: &'a str,
@@ -92,11 +88,10 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
     let email = EmailTemplate {
         sender_str: strings.sender_str,
         expires_str: strings.expires_str,
-        item_str: strings.item_str,
         download_str: strings.download_str,
         link_str: strings.link_str,
         sender: &state.sender,
-        file_size: &format_file_size(state.file_size),
+        file_size: &format_file_size(state.uploaded),
         expiry_date: &format_date(state.expires, &state.mail_lang),
         html_content: &state.mail_content,
         url,
@@ -114,7 +109,7 @@ pub async fn send_email(
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // combine URL with mail variables into template
-    let url = format!("{}/filedownload/{}", config.server_url(), uuid);
+    let url = format!("{}?download={}", config.server_url(), uuid);
     let (email, subject) = email_templates(state, &url);
     let email = Message::builder()
         .header(ContentType::TEXT_HTML)

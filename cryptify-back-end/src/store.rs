@@ -9,9 +9,8 @@ use std::{
 use rocket::tokio::{sync::Notify, time::Instant};
 
 pub struct FileState {
-    pub file_size: u64,
     pub uploaded: u64,
-    pub etag: String,
+    pub cryptify_token: String,
     pub expires: i64,
     pub sender: String,
     pub recipient: lettre::message::Mailbox,

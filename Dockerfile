@@ -19,9 +19,6 @@ COPY ./cryptify-front-end /app/cryptify-front-end
 
 RUN cd /app/cryptify-front-end; \
     npm install; \
-    npm run preinstall; \
-    npm run install-wasm; \
-    npm run bridge-release; \
     npm run build;
 
 COPY ./cryptify-back-end /app/cryptify-back-end

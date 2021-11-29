@@ -13,7 +13,7 @@ rm -rf ./dist/* && mkdir -p ./dist
 docker cp $CONTAINER_NAME:/app/cryptify-front-end/build/ ./dist/frontend
 
 mkdir -p ./dist/backend
-docker cp $CONTAINER_NAME:/app/cryptify-back-end/bin/e4a-rust-backend ./dist/backend/server
+docker cp $CONTAINER_NAME:/app/cryptify-back-end/bin/cryptify-backend ./dist/backend/server
 
 # server setup:
 # install debian 10 + nginx and node 12
@@ -21,4 +21,4 @@ docker cp $CONTAINER_NAME:/app/cryptify-back-end/bin/e4a-rust-backend ./dist/bac
 # requests certificates and install cryptify.nl.conf as nginx configuration
 # install backend unit service file in /lib/systemd/system/cryptify.service
 
-rsync -rltP --delete dist/ cryptify@node.cryptify.nl:/home/cryptify/htdocs
+# rsync -rltP --delete dist/ cryptify@node.cryptify.nl:/home/cryptify/htdocs

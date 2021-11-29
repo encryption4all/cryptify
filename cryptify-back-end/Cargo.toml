@@ -1,5 +1,5 @@
 [package]
-name = "e4a-rust-backend"
+name = "cryptify-backend"
 version = "0.1.0"
 authors = ["David Venhoek <david@tweedegolf.com>"]
 edition = "2018"
