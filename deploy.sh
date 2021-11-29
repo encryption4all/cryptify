@@ -11,8 +11,9 @@ CONTAINER_NAME=`docker ps -alq`;
 rm -rf ./dist/* && mkdir -p ./dist
 
 docker cp $CONTAINER_NAME:/app/cryptify-front-end/build/ ./dist/frontend
-docker cp $CONTAINER_NAME:/app/cryptify-back-end/dist/ ./dist/backend
-docker cp $CONTAINER_NAME:/app/cryptify-back-end/node_modules/ ./dist/backend
+
+mkdir -p ./dist/backend
+docker cp $CONTAINER_NAME:/app/cryptify-back-end/bin/e4a-rust-backend ./dist/backend/server
 
 # server setup:
 # install debian 10 + nginx and node 12

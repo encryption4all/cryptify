@@ -1,16 +1,18 @@
 version: '3'
 services:
   backend:
-    image: node:12
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
     user: "$USER_ID:$GROUP_ID"
     volumes:
-      - './dist/backend/:/app/'
+      - './dist/backend/server:/app/backend'
+      - './conf/config.toml:/app/config.toml'
     working_dir: /app
-    command: "bash -c 'mkdir -p /tmp/cryptify && node index.js'"
+    command: "bash -c 'mkdir -p /tmp/data && mkdir -p /tmp/metadata && /app/backend'"
     environment:
-      STORAGE_DIR: '/tmp/cryptify'
-      EMAIL_SMTP_URL: 'smtp://mailhog:1025'
-      EMAIL_FROM: 'noreply@cryptify.nl'
+      ROCKET_ENV: production
+      ROCKET_CONFIG: 'config.toml'
     networks: [default]
 
   nginx:

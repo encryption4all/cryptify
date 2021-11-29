@@ -27,8 +27,4 @@ RUN cd /app/cryptify-front-end; \
 COPY ./cryptify-back-end /app/cryptify-back-end
 
 RUN cd /app/cryptify-back-end; \
-    npm install; \
-    npm run build; \
-    rm -rf node_modules; \
-    npm install --production;
-    # cp -r /app/cryptify-back-end/src/email /app/cryptify-back-end/dist/email;
+    cargo install --path . --root .;

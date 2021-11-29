@@ -1,0 +1,9 @@
+[global]
+server_url = "https://cryptify.nl"
+data_dir = "./data"
+metadata_dir = "./metadata"
+email_from = "noreply@cryptify.nl"
+smtp_url = "127.0.0.1"
+smtp_port = 1025
+# smtp_username = ""
+# smtp_password = ""

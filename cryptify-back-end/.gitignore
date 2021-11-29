@@ -1,5 +1,3 @@
-node_modules/
-dist/
-data/
-.nyc_output/
-coverage/
+/target
+/data
+/metadata
