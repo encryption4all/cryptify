@@ -9,7 +9,7 @@ services:
     environment:
       ROCKET_ENV: development
       ROCKET_CONFIG: 'config.toml'
-    command: "cargo run"
+    command: "mkdir -p /tmp/data && cargo run"
 
   frontend:
     image: node:17
@@ -32,7 +32,7 @@ services:
       - backend
     volumes:
       - './dist/frontend/:/var/www/html/:ro'
-      - './conf/nginx.conf:/etc/nginx/nginx.conf:ro'
+      - './conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro'
     ports: [ '127.0.0.1:80:80' ]
 
   mailhog:
