@@ -462,42 +462,42 @@ export default class DecryptPanel extends React.Component<DecryptProps, DecryptS
   render() {
     if (this.state.decryptionState === DecryptionState.IrmaSession) {
       return (
-        <form>
+        <div>
           {this.renderfilesField()}
           {this.renderIrmaSession()}
-        </form>
+        </div>
       );
     }
     if (this.state.decryptionState === DecryptionState.AskDownload) {
       return (
-        <form>
+        <div>
           {this.renderfilesField()}
           {this.renderAskDownload()}
-        </form>
+        </div>
       );
     }
     else if (this.state.decryptionState === DecryptionState.Decrypting) {
       return (
-        <form>
+        <div>
           {this.renderfilesField()}
           {this.renderProgress()}
-        </form>
+        </div>
       );
     }
     else if (this.state.decryptionState === DecryptionState.Done) {
       return (
-        <form>
+        <div>
           {this.renderfilesField()}
           {this.renderDone()}
-        </form>
+        </div>
       );
     }
     else if (this.state.decryptionState === DecryptionState.Error) {
       return (
-        <form>
+        <div>
           {this.renderfilesField()}
           {this.renderError()}
-        </form>
+        </div>
       );
     }
   }
