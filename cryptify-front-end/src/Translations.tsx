@@ -54,6 +54,10 @@ type Translation = {
   encryptPanel_succes: string;
   encryptPanel_succesInfo: string;
   encryptPanel_another: string;
+  encryptPanel_irmaInstructionHeaderQr: string;
+  encryptPanel_irmaInstructionHeaderMobile: string;
+  encryptPanel_irmaInstructionQr: string;
+  encryptPanel_irmaInstructionMobile: string;
 
   // infoPanel
   infoPanel_help: string;
@@ -149,6 +153,10 @@ const english: Translation = {
   encryptPanel_succes: "Successfully encrypted and uploaded",
   encryptPanel_succesInfo: "Your encrypted files have been encrypted and uploaded. An email with a download link has been sent to: ",
   encryptPanel_another: "Send another",
+  encryptPanel_irmaInstructionHeaderQr: "Scan QR-code with IRMA",
+  encryptPanel_irmaInstructionHeaderMobile: "Prove your identity with IRMA",
+  encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app IRMA.",
+  encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the IRMA-app.",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -242,6 +250,10 @@ const dutch: Translation = {
   encryptPanel_succes: "Succesvol versleuteld en verzonden",
   encryptPanel_succesInfo: "Jouw bestanden zijn versleuteld en verzonden. Een e-mail met een download link is verstuurd naar: ",
   encryptPanel_another: "Nog iets versturen",
+  encryptPanel_irmaInstructionHeaderQr: "Scan QR-code met IRMA",
+  encryptPanel_irmaInstructionHeaderMobile: "Bewijs identiteit met IRMA",
+  encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app IRMA.",
+  encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app IRMA te gaan.",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",

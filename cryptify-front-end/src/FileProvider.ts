@@ -1,6 +1,7 @@
 import { FILEREAD_CHUNK_SIZE } from "./Constants";
 import Lang from "./Lang";
 import { ReadableStream, WritableStream } from 'web-streams-polyfill';
+import { Console } from "console";
 
 export const foo = 1;
 
@@ -54,8 +55,7 @@ async function initFile(
       mailLang: lang
     })
   });
-
-  
+  console.log(response)
   if (response.status !== 200) {
     const errorText = await response.text();
     throw new Error(`Error occured while initializing file. status: ${response.status}, msg: ${errorText}`);
@@ -120,6 +120,7 @@ export async function getFileLoadStream(abortSignal: AbortSignal, uuid: string):
     signal: abortSignal,
     method: "GET",
   });
+
 
   if (response.status !== 200) {
     const errorText = await response.text()

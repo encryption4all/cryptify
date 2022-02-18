@@ -47,6 +47,7 @@
     "@privacybydesign/irma-client": "^0.3.3",
     "@privacybydesign/irma-core": "^0.3.3",
     "@privacybydesign/irma-web": "^0.3.3",
+    "@privacybydesign/irma-popup": "^0.3.3",
     "@transcend-io/conflux": "^3.2.0",
     "@types/react": "^16.9.35",
     "@types/react-dom": "^16.9.8",

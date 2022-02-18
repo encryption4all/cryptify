@@ -10,6 +10,9 @@ use crate::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
+// For IRMA session Body parameters
+use irma::{AttributeRequest, DisclosureRequestBuilder, IrmaClient, SessionToken};
+
 use rand::Rng;
 use sha2::Digest;
 use std::fmt::Write;
@@ -20,7 +23,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, request::FromRequest,
+    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, get, request::FromRequest,
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
@@ -62,8 +65,12 @@ async fn upload_init(
     store: &State<Store>,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
+
+    //TODO: Authenticate using Irma Server
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+
+
 
     match File::create(Path::new(config.data_dir()).join(&uuid)).await {
         Ok(v) => v,
@@ -302,6 +309,7 @@ async fn upload_chunk(
     state.cryptify_token = shasum.clone();
 
     state.uploaded += end - start;
+
     Ok(Some(UploadResponder {
         body: (),
         cryptify_token: CryptifyToken(shasum),
@@ -363,6 +371,56 @@ async fn upload_finalize(
     Ok(Some(()))
 }
 
+#[derive(Serialize, Deserialize)]
+struct IrmaResponse {
+    irma_session: String,
+}
+
+#[derive(Responder)]
+struct IrmaResponder {
+    inner: Json<IrmaResponse>,
+    cryptify_token: CryptifyToken,
+}
+
+#[get("/verification/start")]
+async fn irma_session_start() -> String {
+
+    // Create an irma client
+    let client = IrmaClient::new("http://irmaserver:8088/").unwrap();
+
+    // Setup our request
+    let request = DisclosureRequestBuilder::new()
+        .add_discon(vec![vec![AttributeRequest::Simple(
+            "pbdf.sidn-pbdf.email.email".into(),
+        )]])
+        .build();
+
+    // Start the session
+    let session = client
+        .request(&request)
+        .await
+        .expect("Failed to start sesssion");
+
+    //Strip the session in a session pointer and (possibly) the session token
+    let irma_session = serde_json::to_string(&session.session_ptr).unwrap();
+    //let irma_token = serde_json::to_string(&session.token);
+
+    return serde_json::to_string(&session).unwrap();
+}
+
+#[get("/verification/<token>/result")]
+async fn irma_session_result(token: &str) ->  String {
+
+    let client = IrmaClient::new("http://irmaserver:8088/").unwrap();
+
+    let result = client
+        .result(&SessionToken(token.to_string()))
+        .await
+        .expect("Failed to get results");
+
+    return serde_json::to_string(&result).unwrap();
+}
+
 #[launch]
 fn rocket() -> _ {
     let rocket = rocket::build();
@@ -372,7 +430,7 @@ fn rocket() -> _ {
         .expect("Missing configuration");
 
     rocket
-        .mount("/", routes![upload_init, upload_chunk, upload_finalize])
+        .mount("/", routes![upload_init, upload_chunk, upload_finalize, irma_session_start, irma_session_result])
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())

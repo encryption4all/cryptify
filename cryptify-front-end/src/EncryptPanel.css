@@ -27,3 +27,72 @@
 .crypt-select-protection-input-box textarea:focus {
   outline: none;
 }
+
+.crypt-irma-qr {
+  padding-top: 2.5em;
+}
+
+.irma-web-form {
+  background-color: initial;
+  box-sizing: initial;
+  margin: initial;
+  padding: initial;
+  display: initial;
+  flex-direction: initial;
+  width: initial;
+  min-width: initial;
+  max-width: initial;
+  height: initial;
+  background-color: initial;
+  border: initial;
+  border-radius: initial;
+}
+
+.irma-web-content {
+  justify-content: left!important;
+  margin-left: 0!important;
+  margin-right: 0!important;
+  margin-top: 1.5em!important;
+  margin-bottom: 1.5em!important;
+  width: 19.1em;
+}
+
+.crypt-irma-qr .irma-web-header {
+  display: none;
+}
+
+.crypt-irma-qr .irma-web-qr-canvas {
+  width: 100%!important;
+  height: 100%!important;
+}
+
+.get-irma-here-anchor {
+  padding-top: 0.83em;
+  font-weight: bold;
+}
+
+.get-irma-here-anchor .irma-logo {
+  height: 3.75em;
+  display: inline-block;
+};
+
+.get-irma-here-anchor .irma-appstore-button {
+  height: 3.33em;
+  display: inline-block;
+  margin-right: 0.83em;
+}
+
+/* This does not get triggered. I don't know why */
+.get-irma-here-anchor .get-irma-text {
+  display: inline-block;
+  height: 3.75em;
+  vertical-align: middle;
+  margin-left: 0.41em;
+  margin-bottom: calc(1em/2);
+}
+
+.get-irma-buttons {
+  top: -0.83em;
+  position: relative;
+  cursor: pointer!important;
+}
