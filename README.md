@@ -5,6 +5,64 @@
 Cryptify offers file encryption/decryption based on IRMA attributes. It allows you to encrypt any file
 with an attribute and only people with that attribute can view the contents.
 
+## cryptify development 
+
+This section is for testing purposes and shows how you can set-up the development environment to test sender verification.
+
+You need two terminals. The first terminal is to start the docker daemon and the second terminal is to mount
+the cryptify containers within that docker daemon. To start cryptify on localhost (or 127.0.0.1) enter the following
+commands:
+
+Terminal 1:
+```
+sudo apt-get install docker.io
+sudo apt-get install docker-compose
+sudo dockerd
+```
+
+Terminal 2:
+```
+sudo apt-get install nodejs
+sudo apt-get install npm
+
+cd /path-to-cryptify/cryptify
+sudo mkdir irma 
+cd irma
+sudo wget https://github.com/privacybydesign/irmago/releases/download/v0.9.0/irma-master-linux-amd64
+sudo chmod +x irma-master-linux-amd64
+cd /path-to-cryptify/cryptify
+cd cryptify-front-end
+sudo npm install
+cd /path-to-cryptify/cryptify
+sudo docker-compose -f docker-compose.dev.yml up
+```
+
+To test sender verification, you'll need an Android device with the IRMA mobile application (https://play.google.com/store/apps/details?id=org.irmacard.cardemu) installed.
+Connect your device to your computer via USB and enable USB debugging (https://developer.android.com/studio/debug/dev-options). 
+Also, install the Android Debug Bridge (https://developer.android.com/studio/releases/platform-tools).
+
+Enable developer mode on the IRMA mobile application by navigating to 'About IRMA' from the hamburger menu and tapping the version number until 'Developer mode enabled'
+appears at the bottom of the screen. This to allow unsecured connections to an IRMA server. 
+
+Finally, to allow the IRMA mobile application to find the server running on localhost check the presence of your android device(s) by running adb devices.
+To be able to use Android Debug Bridge, unzip the platform-tools_r32.0.0-windows.zip, the files are in the platform-tools folder. Open windows powershell within
+this folder. To check the presence of android device(s):
+
+```
+./adb devices
+```
+
+This should show your device as attached. If not, make sure USB debugging is enabled, and try unplugging and plugging the device.
+To forward localhost traffic:
+
+```
+./adb reverse tcp:8088 tcp:8088
+```
+
+This should simply output 8088 to indicate success. If the IRMA mobile application gives error messages saying you need an internet
+connection, run this command again. It can be unpredictable so don't be surprised if you need to run it more often. Now, you are able to scan the
+sender verification QR with your android device.
+
 ## Installation (short version)
 
 Build the files using:
