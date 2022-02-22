@@ -58,6 +58,7 @@ type Translation = {
   encryptPanel_irmaInstructionHeaderMobile: string;
   encryptPanel_irmaInstructionQr: string;
   encryptPanel_irmaInstructionMobile: string;
+  encryptPanel_encryptSendAnonymous: string;
 
   // infoPanel
   infoPanel_help: string;
@@ -157,6 +158,7 @@ const english: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Prove your identity with IRMA",
   encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app IRMA.",
   encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the IRMA-app.",
+  encryptPanel_encryptSendAnonymous: "Or send anonymous",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -254,6 +256,7 @@ const dutch: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Bewijs identiteit met IRMA",
   encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app IRMA.",
   encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app IRMA te gaan.",
+  encryptPanel_encryptSendAnonymous: "Of verzend anoniem",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",

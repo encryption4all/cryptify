@@ -53,7 +53,7 @@ enum EncryptionState {
   Done,
   Error,
   Verify,
-  VerifyDone
+  Anonymous
 }
 
 type EncryptState = {
@@ -457,11 +457,9 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       irma.use(IrmaClient);
 
       irma.start()
-        .then(result => {const email = result["disclosed"][0][0]["rawvalue"]; console.log("Succesful disclosure!", email); this.onEncrypt(email)})
+        .then(result => {this.onEncrypt(email)})
         .catch(error => console.error("Couldn't do what you asked 😢", error));
     });
-    
-
   }
 
   onCancel(ev: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
@@ -630,6 +628,16 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
             </a>
           </div>
         </div>
+
+        <button
+          className={"crypt-btn-main crypt-btn"}
+          onClick={(e) => {
+            this.onEncrypt("noreply@cryptify.nl");
+          }}
+        >
+          { getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous }
+        </button>
+
       </div>
     );
   }
