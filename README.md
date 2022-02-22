@@ -7,7 +7,7 @@ with an attribute and only people with that attribute can view the contents.
 
 ## Docker development setup
 
-This section indicates how you can set-up the development environment to test sender verification. Two terminals are needed to setup the testing environment. 
+This section indicates how you can set-up the development environment to test sender verification, for this two Linux terminals are needed.
 The first terminal is to start the docker daemon and the second terminal is to start the cryptify containers that run on the daemon. 
 To access cryptify on localhost (or 127.0.0.1) enter the following commands:
 
@@ -44,7 +44,7 @@ Enable developer mode on the IRMA mobile application by navigating to 'About IRM
 appears at the bottom of the screen. This allows unsecure connections to an IRMA server so only use this for testing purposes. 
 
 Finally, to enable the IRMA mobile application to find the server running on localhost check the presence of your android device(s) by running adb devices.
-To be able to use Android Debug Bridge, unzip the platform-tools_r32.0.0-windows.zip, the files are in the platform-tools folder. Open windows powershell within
+To be able to use Android Debug Bridge, unzip the platform-tools_r32.0.0-windows.zip, the files are in the platform-tools folder. Open Windows Powershell within
 this folder. To check the presence of android device(s):
 
 ```
