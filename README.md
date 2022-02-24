@@ -24,8 +24,9 @@ Terminal 2:
 sudo apt-get install nodejs
 sudo apt-get install npm
 sudo git clone https://github.com/mpmfrans/cryptify.git
-
 cd cryptify
+git checkout add-email-verification
+
 sudo mkdir irma 
 cd irma
 sudo wget https://github.com/privacybydesign/irmago/releases/download/v0.9.0/irma-master-linux-amd64
