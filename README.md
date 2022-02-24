@@ -9,10 +9,11 @@ with an attribute and only people with that attribute can view the contents.
 
 This section indicates how you can set-up the development environment to test sender verification, for this two Linux terminals are needed.
 The first terminal is to start the docker daemon and the second terminal is to start the cryptify containers that run on the daemon. 
-To access cryptify on localhost (or 127.0.0.1) enter the following commands:
+To access cryptify on localhost (or 127.0.0.1) and the mail server on 127.0.0.1:1080 enter the following commands:
 
 Terminal 1:
 ```
+sudo apt update
 sudo apt-get install docker.io
 sudo apt-get install docker-compose
 sudo dockerd
@@ -60,7 +61,7 @@ To forward localhost traffic:
 
 This should simply output 8088 to indicate success. If the IRMA mobile application gives error messages saying you need an internet
 connection, run this command again. It can be unpredictable so don't be surprised if you need to run it more often. Now, you are able to scan the
-IRMA QR with your android device.
+QR-code with your android device and IRMA.
 
 ## Installation (short version)
 

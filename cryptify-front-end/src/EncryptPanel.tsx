@@ -6,8 +6,6 @@ import CryptFileInput from './CryptFileInput';
 import CryptFileList from './CryptFileList';
 
 //IRMA Packages/dependencies
-import streamSaver from 'streamsaver'; //not sure what to use it for
-import mkIrmaErr from './IrmaErrMod'; //not sure what to use it for
 import irmaLogo from './resources/irma-logo.svg';
 import appleAppStoreEN from './resources/apple-appstore-en.svg';
 import googlePlayStoreEN from './resources/google-playstore-en.svg';
@@ -43,7 +41,6 @@ const toTransform = createTransformStreamWrapper(PolyfillTransformStream)
 const IrmaCore = require('@privacybydesign/irma-core');
 const IrmaWeb = require('@privacybydesign/irma-web');
 const IrmaClient = require('@privacybydesign/irma-client');
-const IrmaPopup = require('@privacybydesign/irma-popup')
 
 const baseurl = "http://localhost";
 
@@ -170,7 +167,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
     });
   }
 
-  onChangeSender(ev: React.ChangeEvent<HTMLInputElement>) {
+  onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: this.state.recipient,
       sender: ev.target.value,
@@ -182,6 +179,24 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime
+    });
+  }
+
+  //Function when a user does not has access to the sender field.
+  onChangeSenderString(sen: string) {
+    this.setState({
+      recipient: this.state.recipient,
+      sender: sen,
+      message: this.state.message,
+      files: this.state.files,
+      percentages: this.state.percentages,
+      done: this.state.done,
+      encryptionState: this.state.encryptionState,
+      abort: this.state.abort,
+      selfAborted: this.state.selfAborted,
+      encryptStartTime: this.state.encryptStartTime
+    },() =>{
+      this.onEncrypt();
     });
   }
 
@@ -200,7 +215,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
     });
   }
 
-  onChangeMessage(ev: React.ChangeEvent<HTMLTextAreaElement>) {
+  onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       recipient: this.state.recipient,
       sender: this.state.sender,
@@ -212,6 +227,24 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime
+    });
+  }
+
+  //Function when a user does not has access to the sender field.
+  onChangeAnonymousString(sen: string, mes: string) {
+    this.setState({
+      recipient: this.state.recipient,
+      sender: sen,
+      message: mes,
+      files: this.state.files,
+      percentages: this.state.percentages,
+      done: this.state.done,
+      encryptionState: this.state.encryptionState,
+      abort: this.state.abort,
+      selfAborted: this.state.selfAborted,
+      encryptStartTime: this.state.encryptStartTime
+    }, () =>{
+      this.onEncrypt();
     });
   }
 
@@ -345,14 +378,15 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
     await finished;
   }
 
-  async onEncrypt(email) {
+  async onEncrypt() {
     // TODO: Simplify this error handling logic.
     // For some reason stream errors are not caught
     // Which means when the user aborts
     // exceptions spill into the console...
+
     this.setState({
       recipient: this.state.recipient,
-      sender: email,
+      sender: this.state.sender,
       message: this.state.message,
       files: this.state.files,
       percentages: this.state.percentages,
@@ -367,7 +401,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       await this.applyEncryption();
       this.setState({
         recipient: this.state.recipient,
-        sender: email,
+        sender: this.state.sender,
         message: this.state.message,
         files: this.state.files,
         percentages: this.state.percentages,
@@ -384,7 +418,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         console.error(e);
         this.setState({
           recipient: this.state.recipient,
-          sender: email,
+          sender: this.state.sender,
           message: this.state.message,
           files: this.state.files,
           percentages: this.state.percentages,
@@ -398,7 +432,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       else {
         this.setState({
           recipient: this.state.recipient,
-          sender: email,
+          sender: this.state.sender,
           message: this.state.message,
           files: this.state.files,
           percentages: this.state.percentages.map(_ => 0),
@@ -426,7 +460,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       selfAborted: false,
       encryptStartTime: 0
     },
-    function() { 
+    () =>{ 
+
       const irma = new IrmaCore({
         debugging: true,            // Enable to get helpful output in the browser console
         element: ".crypt-irma-qr",  // Which DOM element to render to
@@ -437,17 +472,17 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
           url: `${baseurl}/verification`,
         
           start: {
-            url: o => `${o.url}/start`,
+            url: (o: any) => `${o.url}/start`,
             method: 'GET'
           },
 
           mapping: {
-            sessionPtr: r => r.sessionPtr,
-            sessionToken:r => r.token
+            sessionPtr: (r: any) => r.sessionPtr,
+            sessionToken: (r: any) => r.token
           },
 
           result: {
-            url: (o, {sessionToken}) => `${o.url}/${sessionToken}/result`,
+            url: (o: any, {sessionToken}: any) => `${o.url}/${sessionToken}/result`,
             method: 'GET'
           }
         }
@@ -457,8 +492,13 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       irma.use(IrmaClient);
 
       irma.start()
-        .then(result => {this.onEncrypt(email)})
-        .catch(error => console.error("Couldn't do what you asked 😢", error));
+        .then((result: any) => {
+          if(result["status"] === "DONE" && result["proofStatus"] === "VALID")
+          {
+            this.onChangeSenderString(result["disclosed"][0][0]["rawvalue"])
+          }
+        })
+        .catch((error: string) => console.error("Couldn't do what you asked 😢", error));
     });
   }
 
@@ -543,20 +583,25 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
                 onChange={(e) => this.onChangeRecipient(e)}
           />
         </div>
-        {/* <div className="crypt-select-protection-input-box">
+        {/*
+        
+        //Removed sender field due to IRMA QR-code scanning to verify sender.
+        <div className="crypt-select-protection-input-box">
           <h4>{ getTranslation(this.props.lang).encryptPanel_emailSender }</h4>
           <input placeholder="" type="text" required={true}
                 value={this.state.sender}
-                onChange={(e) => this.onChangeSender(e)}
+                onChange={(e) => this.onChangeSenderEvent(e)}
           />
-        </div> */}
+        </div> 
+        
+        */}
         <div className="crypt-select-protection-input-box">
           <h4>{ getTranslation(this.props.lang).encryptPanel_message }</h4>
           <textarea
             required={false}
             rows={4}
             value={this.state.message}
-            onChange={(e) => this.onChangeMessage(e)}
+            onChange={(e) => this.onChangeMessageEvent(e)}
           />
         </div>
         <button
@@ -630,10 +675,11 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         </div>
 
         <button
-          className={"crypt-btn-main crypt-btn"}
-          onClick={(e) => {
-            this.onEncrypt("noreply@cryptify.nl");
-          }}
+          className={"crypt-btn-anonymous crypt-btn"}
+          onClick={(e) => { 
+            this.onChangeAnonymousString("Someone",getTranslation(this.props.lang).encryptPanel_messageAnonymous);
+        }}
+          type="button"
         >
           { getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous }
         </button>

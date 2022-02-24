@@ -48,6 +48,7 @@ type Translation = {
   encryptPanel_emailRecipient: string;
   encryptPanel_emailSender: string;
   encryptPanel_message: string;
+  encryptPanel_messageAnonymous: string;
   encryptPanel_encryptSend: string;
   encryptPanel_encrypting: string;
   encryptPanel_encryptingInfo: string;
@@ -148,17 +149,18 @@ const english: Translation = {
   encryptPanel_emailRecipient: "Email recipient",
   encryptPanel_emailSender: "Your email",
   encryptPanel_message: "Message",
+  encryptPanel_messageAnonymous: "Attention! This message is send anonymously so please be careful when downloading and opening the files.",
   encryptPanel_encryptSend: "Encrypt & send",
   encryptPanel_encrypting: "Encrypting & uploading...",
   encryptPanel_encryptingInfo: "Your files are being encrypted first and afterwards are send to: ",
   encryptPanel_succes: "Successfully encrypted and uploaded",
   encryptPanel_succesInfo: "Your encrypted files have been encrypted and uploaded. An email with a download link has been sent to: ",
   encryptPanel_another: "Send another",
-  encryptPanel_irmaInstructionHeaderQr: "Scan QR-code with IRMA",
+  encryptPanel_irmaInstructionHeaderQr: "Show who you are by scanning the QR-code with IRMA",
   encryptPanel_irmaInstructionHeaderMobile: "Prove your identity with IRMA",
   encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app IRMA.",
   encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the IRMA-app.",
-  encryptPanel_encryptSendAnonymous: "Or send anonymous",
+  encryptPanel_encryptSendAnonymous: "Or send anonymously",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -246,13 +248,14 @@ const dutch: Translation = {
   encryptPanel_emailRecipient: "E-mailadres ontvanger",
   encryptPanel_emailSender: "Jouw e-mailadres",
   encryptPanel_message: "Bericht",
+  encryptPanel_messageAnonymous: "Let op! Dit bericht is anoniem verzonden dus kijk goed uit bij het downloaden en openen van de bestanden.",
   encryptPanel_encryptSend: "Versleutel & verzend",
   encryptPanel_encrypting: "Versleutelen & verzenden...",
   encryptPanel_encryptingInfo: "Jouw bestanden worden versleuteld en daarna verzonden naar: ",
   encryptPanel_succes: "Succesvol versleuteld en verzonden",
   encryptPanel_succesInfo: "Jouw bestanden zijn versleuteld en verzonden. Een e-mail met een download link is verstuurd naar: ",
   encryptPanel_another: "Nog iets versturen",
-  encryptPanel_irmaInstructionHeaderQr: "Scan QR-code met IRMA",
+  encryptPanel_irmaInstructionHeaderQr: "Laat zien wie je bent door de QR-code te scannen met IRMA",
   encryptPanel_irmaInstructionHeaderMobile: "Bewijs identiteit met IRMA",
   encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app IRMA.",
   encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app IRMA te gaan.",

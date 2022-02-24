@@ -1,7 +1,6 @@
 import { FILEREAD_CHUNK_SIZE } from "./Constants";
 import Lang from "./Lang";
 import { ReadableStream, WritableStream } from 'web-streams-polyfill';
-import { Console } from "console";
 
 export const foo = 1;
 

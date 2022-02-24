@@ -305,6 +305,13 @@ table {
   margin-top: 1em;
 }
 
+
+.crypt-btn-anonymous {
+  width: 15em;
+  margin-bottom: 1em;
+  margin-top: 1em;
+}
+
 @media only screen and (max-width: 500px) {
   .add-files-icon {
     height: 1.6em;

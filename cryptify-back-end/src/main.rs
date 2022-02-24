@@ -401,23 +401,23 @@ async fn irma_session_start() -> String {
         .await
         .expect("Failed to start sesssion");
 
-    //Strip the session in a session pointer and (possibly) the session token
-    let irma_session = serde_json::to_string(&session.session_ptr).unwrap();
-    //let irma_token = serde_json::to_string(&session.token);
-
+    // Unwrap and return QR Contents
     return serde_json::to_string(&session).unwrap();
 }
 
 #[get("/verification/<token>/result")]
 async fn irma_session_result(token: &str) ->  String {
 
+    // Create an IRMA client
     let client = IrmaClient::new("http://irmaserver:8088/").unwrap();
 
+    // Retrieve results using session Token
     let result = client
         .result(&SessionToken(token.to_string()))
         .await
         .expect("Failed to get results");
 
+    // Return result
     return serde_json::to_string(&result).unwrap();
 }
 
