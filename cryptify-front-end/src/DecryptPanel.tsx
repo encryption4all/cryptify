@@ -185,8 +185,6 @@ export default class DecryptPanel extends React.Component<DecryptProps, DecryptS
       language: (this.props.lang as string).toLowerCase()
     });
 
-    //console.log(irma);
-
     const irmaPromise = new Promise<any>(async (resolve, reject) => {
       irma.use(mkIrmaErr(reject));
       irma.use(IrmaWeb);

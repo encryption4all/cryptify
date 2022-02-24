@@ -54,7 +54,7 @@ async function initFile(
       mailLang: lang
     })
   });
-  console.log(response)
+//
   if (response.status !== 200) {
     const errorText = await response.text();
     throw new Error(`Error occured while initializing file. status: ${response.status}, msg: ${errorText}`);
