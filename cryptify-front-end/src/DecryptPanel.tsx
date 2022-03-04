@@ -193,7 +193,6 @@ export default class DecryptPanel extends React.Component<
     const reader = encrypted.getReader();
     const readable_byte = new ReadableStream(
       {
-        type: "bytes",
         async pull(controller) {
           const { value, done } = await reader.read();
           if (done || value === undefined) controller.close();
@@ -208,7 +207,7 @@ export default class DecryptPanel extends React.Component<
 
     const hidden = unsealer.get_hidden_policies();
     const email = Object.keys(hidden)[0];
-    const timestamp = hidden[email].t;
+    const timestamp = hidden[email].ts;
 
     const policy = {
       con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }],

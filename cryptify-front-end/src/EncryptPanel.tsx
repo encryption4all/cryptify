@@ -245,9 +245,10 @@ export default class EncryptPanel extends React.Component<
     const params = JSON.parse(await resp.text());
     const pk = params.public_key;
     const mod = await import("@e4a/irmaseal-wasm-bindings");
+    const ts = Math.round(Date.now() / 1000);
     const policies = {
       [this.state.recipient]: {
-        t: Math.round(Date.now() / 1000),
+        ts,
         c: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
       },
     };
@@ -294,7 +295,6 @@ export default class EncryptPanel extends React.Component<
       const reader = readable.getReader();
       const readable_byte = new ReadableStream(
         {
-          type: "bytes",
           async pull(controller) {
             const { value, done } = await reader.read();
             if (done) controller.close();

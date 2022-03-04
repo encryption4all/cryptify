@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@e4a/irmaseal-client": "0.0.6",
+    "@e4a/irmaseal-wasm-bindings": "^0.2.0-beta.1",
     "@mattiasbuelens/web-streams-adapter": "^0.1.0-alpha.5",
     "@privacybydesign/irma-client": "^0.3.3",
     "@privacybydesign/irma-core": "^0.3.3",
