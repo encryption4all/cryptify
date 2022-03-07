@@ -383,10 +383,10 @@ struct IrmaResponder {
 }
 
 #[get("/verification/start")]
-async fn irma_session_start() -> String {
+async fn irma_session_start(config: &State<CryptifyConfig>) -> String {
 
     // Create an irma client
-    let client = IrmaClient::new("http://irmaserver:8088/").unwrap();
+    let client = IrmaClient::new(config.irma_server()).unwrap();
 
     // Setup our request
     let request = DisclosureRequestBuilder::new()
@@ -406,10 +406,10 @@ async fn irma_session_start() -> String {
 }
 
 #[get("/verification/<token>/result")]
-async fn irma_session_result(token: &str) ->  String {
+async fn irma_session_result(config: &State<CryptifyConfig>, token: &str) ->  String {
 
     // Create an IRMA client
-    let client = IrmaClient::new("http://irmaserver:8088/").unwrap();
+    let client = IrmaClient::new(config.irma_server()).unwrap();
 
     // Retrieve results using session Token
     let result = client
