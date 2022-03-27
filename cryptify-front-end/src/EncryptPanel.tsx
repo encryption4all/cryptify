@@ -63,7 +63,8 @@ type EncryptState = {
   encryptionState: EncryptionState,
   abort: AbortController,
   selfAborted: boolean,
-  encryptStartTime: number
+  encryptStartTime: number,
+  irma_token: string
 };
 
 type EncryptProps = {
@@ -81,7 +82,8 @@ const defaultEncryptState: EncryptState = {
   encryptionState: EncryptionState.FileSelection,
   abort: new AbortController(),
   selfAborted: false,
-  encryptStartTime: 0
+  encryptStartTime: 0,
+  irma_token: ""
 };
 
 export default class EncryptPanel extends React.Component<EncryptProps, EncryptState> {
@@ -133,7 +135,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -148,7 +151,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -163,7 +167,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -178,7 +183,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -194,9 +200,10 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     },() =>{
-      this.onEncrypt();
+      this.onEncrypt()
     });
   }
 
@@ -211,7 +218,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -226,7 +234,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -242,7 +251,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: ""
     }, () =>{
       this.onEncrypt();
     });
@@ -276,7 +286,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
               encryptionState: this.state.encryptionState,
               abort: this.state.abort,
               selfAborted: this.state.selfAborted,
-              encryptStartTime: this.state.encryptStartTime
+              encryptStartTime: this.state.encryptStartTime,
+              irma_token: this.state.irma_token,
             });
           }, 1000 * SMOOTH_TIME);
         }
@@ -300,7 +311,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: this.state.encryptionState,
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
 
     if (done) {
@@ -364,6 +376,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         this.state.recipient,
         this.state.message,
         this.props.lang,
+        this.state.irma_token,
         (n, last) => this.reportProgress(resolve, n, last)
       )) as WritableStream;
       
@@ -394,7 +407,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: EncryptionState.Encrypting,
       abort: this.state.abort,
       selfAborted: false,
-      encryptStartTime: Date.now()
+      encryptStartTime: Date.now(),
+      irma_token: this.state.irma_token
     });
 
     try {
@@ -409,7 +423,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
         encryptionState: EncryptionState.Done,
         abort: this.state.abort,
         selfAborted: false,
-        encryptStartTime: 0
+        encryptStartTime: 0,
+        irma_token: this.state.irma_token
       });
     }
     catch (e) {
@@ -426,7 +441,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
           encryptionState: EncryptionState.Error,
           abort: this.state.abort,
           selfAborted: false,
-          encryptStartTime: 0
+          encryptStartTime: 0,
+          irma_token: this.state.irma_token
         });
       }
       else {
@@ -440,14 +456,16 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
           encryptionState: EncryptionState.FileSelection,
           abort: this.state.abort,
           selfAborted: false,
-          encryptStartTime: 0
+          encryptStartTime: 0,
+          irma_token: this.state.irma_token
+
         });
       }
     }
   }
 
   async onVerify() {
-    //send cryptify back-end notification to set-up IRMA session
+    //Change React State for verifying the sender.
     this.setState({
       recipient: this.state.recipient,
       sender: this.state.sender,
@@ -458,7 +476,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: EncryptionState.Verify,
       abort: this.state.abort,
       selfAborted: false,
-      encryptStartTime: 0
+      encryptStartTime: 0,
+      irma_token: this.state.irma_token
     },
     () =>{ 
 
@@ -486,6 +505,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
             method: 'GET'
           }
         }
+
       });
 
       irma.use(IrmaWeb);
@@ -493,9 +513,26 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
 
       irma.start()
         .then((result: any) => {
+          //Check if the IRMA server is DONE and the proof is VALID.
           if(result["status"] === "DONE" && result["proofStatus"] === "VALID")
           {
-            this.onChangeSenderString(result["disclosed"][0][0]["rawvalue"])
+          
+            this.setState({
+              recipient: this.state.recipient,
+              sender: this.state.sender,
+              message: this.state.message,
+              files: this.state.files,
+              percentages: this.state.percentages,
+              done: this.state.done,
+              encryptionState: EncryptionState.Verify,
+              abort: this.state.abort,
+              selfAborted: false,
+              encryptStartTime: 0,
+              irma_token: result["token"]
+            },
+            () =>{ 
+              this.onChangeSenderString(result["disclosed"][0][0]["rawvalue"])
+            });
           }
         })
         .catch((error: string) => console.error("Couldn't do what you asked 😢", error));
@@ -514,7 +551,8 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
       encryptionState: EncryptionState.FileSelection,
       abort: new AbortController(),
       selfAborted: false,
-      encryptStartTime: 0
+      encryptStartTime: 0,
+      irma_token: this.state.irma_token
     });
 
   }

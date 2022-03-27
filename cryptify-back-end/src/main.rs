@@ -38,6 +38,7 @@ struct InitBody {
     mail_content: String,
     #[serde(rename = "mailLang")]
     mail_lang: email::Language,
+    irma_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -66,11 +67,30 @@ async fn upload_init(
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
 
-    //TODO: Authenticate using Irma Server
+    if !request.irma_token.is_empty()
+    {   
+        // Create an IRMA client
+        let client = IrmaClient::new(config.irma_server()).unwrap();
+
+        // Retrieve results using session Token
+        let result = client
+            .result(&SessionToken(request.irma_token.to_string()))
+            .await
+            .expect("Failed to get results");
+
+        // Session results
+        let json_result = serde_json::json!(&result);
+
+        if json_result["status"] != "DONE" && json_result["proofStatus"] != "VALID"
+        {
+            return Err(Error::BadRequest(Some(
+                "Invalid IRMA session!".to_owned(),
+            )));
+        }
+    }
+    
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-
-
 
     match File::create(Path::new(config.data_dir()).join(&uuid)).await {
         Ok(v) => v,
@@ -99,7 +119,6 @@ async fn upload_init(
 
             Ok(InitResponder {
                 inner: Json(InitResponse { uuid }),
-
                 cryptify_token: CryptifyToken(init_cryptify_token),
             })
         }
