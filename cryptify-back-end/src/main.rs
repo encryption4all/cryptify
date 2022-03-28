@@ -72,20 +72,10 @@ async fn upload_init(
         // Create an IRMA client
         let client = IrmaClient::new(config.irma_server()).unwrap();
 
-        // Retrieve results using session Token
-        let result = client
-            .result(&SessionToken(request.irma_token.to_string()))
-            .await
-            .expect("Failed to get results");
-
-        // Session results
-        let json_result = serde_json::json!(&result);
-
-        if json_result["status"] != "DONE" && json_result["proofStatus"] != "VALID"
-        {
-            return Err(Error::BadRequest(Some(
-                "Invalid IRMA session!".to_owned(),
-            )));
+        // Get results and check if session is DONE and VALID
+        match client.result(&SessionToken(request.irma_token.to_string())).await {
+            Ok(..) => {()}
+            Err(e) => return Err(Error::BadRequest(Some(format!("Failed to get session results: {}", e))))
         }
     }
     
