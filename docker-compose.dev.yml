@@ -9,7 +9,7 @@ services:
     environment:
       ROCKET_ENV: development
       ROCKET_CONFIG: 'config.toml'
-    command: "mkdir -p /tmp/data && cargo run"
+    command: "bash -c 'mkdir -p /tmp/data && cargo run'"
 
   frontend:
     image: node:17

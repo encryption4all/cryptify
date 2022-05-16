@@ -27,6 +27,8 @@ use rocket::{
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
+static BLOCK_SIZE: u64 = 1024 * 1024; // 1 MB
+
 #[derive(Serialize, Deserialize)]
 struct InitBody {
     sender: String,
@@ -253,7 +255,14 @@ async fn upload_chunk(
     let end = headers.content_range.end.ok_or_else(|| Error::BadRequest(Some(
         "Could not read Content-Range start".to_owned(),
     )))?;
-    if end - start > 1024 * 1024 {
+
+    if start >= end || state.uploaded != start {
+        return Err(Error::BadRequest(Some(
+            "Incorrect Content-Range header".to_owned(),
+        )));
+    }
+
+    if end - start > BLOCK_SIZE {
         return Err(Error::BadRequest(Some(
             "File chunk too large; the maximum is 1 MB".to_owned(),
         )));
@@ -273,12 +282,6 @@ async fn upload_chunk(
         Ok(v) => v,
         Err(_) => return Ok(None),
     };
-
-    if start >= end || state.uploaded != start {
-        return Err(Error::BadRequest(Some(
-            "Incorrect Content-Range header".to_owned(),
-        )));
-    }
 
     file.seek(std::io::SeekFrom::Start(start))
         .await
