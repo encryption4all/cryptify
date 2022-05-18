@@ -24,10 +24,9 @@ import {
   createWritableStreamWrapper,
   createTransformStreamWrapper,
 } from "@mattiasbuelens/web-streams-adapter";
-import { SMOOTH_TIME, UPLOAD_CHUNK_SIZE } from "./Constants";
+import { SMOOTH_TIME, PKG_URL } from "./Constants";
 
 import { Unsealer } from "./../node_modules/@e4a/irmaseal-wasm-bindings";
-import { Chunker } from "@e4a/irmaseal-client/src/stream";
 
 const toReadable = createReadableStreamWrapper(PolyfillReadableStream);
 const toWritable = createWritableStreamWrapper(PolyfillWritableStream);
@@ -190,20 +189,8 @@ export default class DecryptPanel extends React.Component<
       decryptStartTime: this.state.decryptStartTime,
     });
 
-    const reader = encrypted.getReader();
-    const readable_byte = new ReadableStream(
-      {
-        async pull(controller) {
-          const { value, done } = await reader.read();
-          if (done || value === undefined) controller.close();
-          else controller.enqueue(value);
-        },
-      },
-      { highWaterMark: UPLOAD_CHUNK_SIZE }
-    );
-
     const mod = await import("@e4a/irmaseal-wasm-bindings");
-    const unsealer = await new mod.Unsealer(readable_byte);
+    const unsealer = await mod.Unsealer.new(encrypted);
 
     const hidden = unsealer.get_hidden_policies();
     const email = Object.keys(hidden)[0];
@@ -213,28 +200,46 @@ export default class DecryptPanel extends React.Component<
       con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }],
     };
 
-    const session = {
-      url: "http://localhost:8087",
+
+       const session = {
+      url: PKG_URL,
       start: {
-        url: (o: any) => `${o.url}/v2/request`,
+        url: (o) => `${o.url}/v2/request/start`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(policy),
       },
+      mapping: {
+        // temporary fix
+        sessionPtr: (r: any) => {
+          const ptr = r.sessionPtr;
+          ptr.u = `https://ihub.ru.nl/irma/1/${ptr.u}`;
+          return ptr;
+        },
+      },
       result: {
-        url: (o: any, { sessionToken: token }: { sessionToken: string }) =>
-          `${o.url}/v2/request/${token}/${timestamp.toString()}`,
-        parseResponse: (r: any) => {
-          return new Promise((resolve, reject) => {
-            if (!r.ok) reject("not ok");
-            r.json().then((json: any) => {
-              if (json.status !== "DONE_VALID") reject("not done and valid");
-              resolve(json.key);
-            });
-          });
+        url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
+        parseResponse: (r) => {
+          return r
+            .text()
+            .then((jwt) =>
+              fetch(`${PKG_URL}/v2/request/key/${timestamp.toString()}`, {
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                },
+              })
+            )
+            .then((r) => r.json())
+            .then((json) => {
+              if (json.status !== "DONE" || json.proofStatus !== "VALID")
+                throw new Error("not done and valid");
+              return json.key;
+            })
+            .catch((e) => console.log("error: ", e));
         },
       },
     };
+
 
     const irma = new IrmaCore({
       element: ".crypt-irma-qr",
@@ -386,10 +391,10 @@ export default class DecryptPanel extends React.Component<
 
   renderIrmaSession() {
     const isMobile = this.isMobile();
-    let iosBtn = null;
-    let iosHref = null;
-    let androidBtn = null;
-    let androidHref = null;
+    let iosBtn = "";
+    let iosHref = "";
+    let androidBtn = "";
+    let androidHref = "";
     switch (this.props.lang) {
       case Lang.EN:
         iosBtn = appleAppStoreEN;

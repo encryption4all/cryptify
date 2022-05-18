@@ -1,7 +1,6 @@
 import React from 'react';
 import './App.css';
 import headerLogo from './resources/cryptify-dark.svg';
-import { Client } from '@e4a/irmaseal-client';
 
 import InfoPanel from './InfoPanel';
 import EncryptPanel from './EncryptPanel';
@@ -64,8 +63,8 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   render() {
-    let panelClass = null;
-    let panelHeader = null;
+    let panelClass = "";
+    let panelHeader = "";
     // @ts-ignore
     if (this.props.downloadUuid) {
       panelClass = "decrypt-panel";

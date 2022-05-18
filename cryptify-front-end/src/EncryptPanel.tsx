@@ -9,7 +9,6 @@ import checkmark from "./resources/checkmark.svg";
 import { createFileReadable, getFileStoreStream } from "./FileProvider";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
-import { SMOOTH_TIME, FILEREAD_CHUNK_SIZE } from "./Constants";
 
 import {
   ReadableStream as PolyfillReadableStream,
@@ -22,8 +21,8 @@ import {
   createWritableStreamWrapper,
   createTransformStreamWrapper,
 } from "@mattiasbuelens/web-streams-adapter";
-import { MAX_UPLOAD_SIZE, UPLOAD_CHUNK_SIZE } from "./Constants";
-import { Chunker } from "@e4a/irmaseal-client/src/stream";
+import { MAX_UPLOAD_SIZE, UPLOAD_CHUNK_SIZE, PKG_URL, SMOOTH_TIME } from "./Constants";
+import  Chunker  from "./utils";
 
 const toReadable = createReadableStreamWrapper(PolyfillReadableStream);
 const toWritable = createWritableStreamWrapper(PolyfillWritableStream);
@@ -241,21 +240,25 @@ export default class EncryptPanel extends React.Component<
       return;
     }
 
-    const resp = await fetch(`http://localhost:8087/v2/parameters`);
+    const resp = await fetch(`${PKG_URL}/v2/parameters`);
+
     const params = JSON.parse(await resp.text());
-    const pk = params.public_key;
+    const pk = params.publicKey;
+
+    // TODO: load this earlier
     const mod = await import("@e4a/irmaseal-wasm-bindings");
     const ts = Math.round(Date.now() / 1000);
+
     const policies = {
       [this.state.recipient]: {
         ts,
-        c: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
+        con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
       },
     };
 
     // @ts-ignore
     const uploadChunker = toTransform(
-      new TransformStream(new Chunker({ chunkSize: UPLOAD_CHUNK_SIZE }))
+      new Chunker(undefined, UPLOAD_CHUNK_SIZE)
     ) as TransformStream;
 
     // Create streams that takes all input files and zips them into
@@ -292,22 +295,10 @@ export default class EncryptPanel extends React.Component<
         )
       ) as WritableStream;
 
-      const reader = readable.getReader();
-      const readable_byte = new ReadableStream(
-        {
-          async pull(controller) {
-            const { value, done } = await reader.read();
-            if (done) controller.close();
-            else controller.enqueue(value);
-          },
-        },
-        { highWaterMark: FILEREAD_CHUNK_SIZE }
-      );
-
       mod.seal(
         pk,
         policies,
-        readable_byte,
+        readable,
         withTransform(fileStream, uploadChunker, this.state.abort.signal)
       );
     });
@@ -426,7 +417,7 @@ export default class EncryptPanel extends React.Component<
         </div>
       );
     } else {
-      let addFile = null;
+      let addFile;
       if (this.state.encryptionState === EncryptionState.FileSelection) {
         addFile = (f: FileList) => this.onFile(f);
       }
