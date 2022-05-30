@@ -4,7 +4,6 @@ import CryptFileList from "./CryptFileList";
 import createProgressReporter from "./ProgressReporter";
 import streamSaver from "streamsaver";
 import mkIrmaErr from "./IrmaErrMod";
-import { getFileLoadStream } from "./FileProvider";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
 import irmaLogo from "./resources/irma-logo.svg";
@@ -14,38 +13,17 @@ import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
 import googlePlayStoreNL from "./resources/google-playstore-nl.svg";
 import checkmark from "./resources/checkmark.svg";
 
-import {
-  ReadableStream as PolyfillReadableStream,
-  WritableStream as PolyfillWritableStream,
-  TransformStream as PolyfillTransformStream,
-} from "web-streams-polyfill";
-import {
-  createReadableStreamWrapper,
-  createWritableStreamWrapper,
-  createTransformStreamWrapper,
-} from "@mattiasbuelens/web-streams-adapter";
 import { SMOOTH_TIME, PKG_URL } from "./Constants";
-
-import { Unsealer } from "./../node_modules/@e4a/irmaseal-wasm-bindings";
-
-const toReadable = createReadableStreamWrapper(PolyfillReadableStream);
-const toWritable = createWritableStreamWrapper(PolyfillWritableStream);
-const toTransform = createTransformStreamWrapper(PolyfillTransformStream);
+import { getFileLoadStream } from "./FileProvider";
+import { withTransform } from "./utils";
 
 const IrmaCore = require("@privacybydesign/irma-core");
 const IrmaWeb = require("@privacybydesign/irma-web");
 const IrmaClient = require("@privacybydesign/irma-client");
 
-streamSaver.mitm = "mitm.html?version=2.0.0"; // TODO: change to https://cryptify.nl/mitm.html?=version=2.0.0
-
-function withTransform(
-  writable: WritableStream,
-  transform: TransformStream,
-  signal: AbortSignal
-) {
-  transform.readable.pipeTo(writable, { signal }).catch(() => {});
-  return transform.writable;
-}
+// TODO: change to https://cryptify.nl/mitm.html?=version=2.0.0
+// or configure with public url config?
+streamSaver.mitm = "mitm.html?version=2.0.0";
 
 enum DecryptionState {
   IrmaSession = 1,
@@ -56,7 +34,7 @@ enum DecryptionState {
 }
 
 type StreamDecryptInfo = {
-  unsealer: Unsealer;
+  unsealer: any;
   usk: string;
   id: string;
 };
@@ -70,6 +48,7 @@ type DecryptState = {
   abort: AbortController;
   selfAborted: boolean;
   decryptStartTime: number;
+  modPromise: Promise<any>;
 };
 
 type DecryptProps = {
@@ -86,6 +65,7 @@ const defaultDecryptState: DecryptState = {
   abort: new AbortController(),
   selfAborted: false,
   decryptStartTime: 0,
+  modPromise: import("@e4a/irmaseal-wasm-bindings/"),
 };
 
 export default class DecryptPanel extends React.Component<
@@ -189,7 +169,7 @@ export default class DecryptPanel extends React.Component<
       decryptStartTime: this.state.decryptStartTime,
     });
 
-    const mod = await import("@e4a/irmaseal-wasm-bindings");
+    const mod = await this.state.modPromise;
     const unsealer = await mod.Unsealer.new(encrypted);
 
     const hidden = unsealer.get_hidden_policies();
@@ -200,8 +180,7 @@ export default class DecryptPanel extends React.Component<
       con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }],
     };
 
-
-       const session = {
+    const session = {
       url: PKG_URL,
       start: {
         url: (o) => `${o.url}/v2/request/start`,
@@ -239,7 +218,6 @@ export default class DecryptPanel extends React.Component<
         },
       },
     };
-
 
     const irma = new IrmaCore({
       element: ".crypt-irma-qr",
@@ -309,49 +287,47 @@ export default class DecryptPanel extends React.Component<
     const rawFileStream = streamSaver.createWriteStream(
       this.state.fakeFile.name
     );
-    const fileStream = toWritable(rawFileStream) as WritableStream<Uint8Array>;
+    const fileStream = rawFileStream as WritableStream<Uint8Array>;
 
     const {
       unsealer,
       usk,
       id,
-    }: { unsealer: Unsealer; usk: string; id: string } = this.state.decryptInfo;
+    }: { unsealer: any; usk: string; id: string } = this.state.decryptInfo;
 
     let resolve: any = null;
     const finished = new Promise<void>(async (res, _) => {
       resolve = res;
     });
 
-    const progress = toTransform(
-      createProgressReporter((processed, done) => {
-        const fakeFile = this.state.fakeFile as File;
-        this.setState({
-          decryptionState: DecryptionState.Decrypting,
-          decryptInfo: this.state.decryptInfo,
-          percentage: (100 * processed) / fakeFile.size,
-          done: this.state.done,
-          abort: this.state.abort,
-          selfAborted: this.state.selfAborted,
-          decryptStartTime: this.state.decryptStartTime,
-        });
+    const progress = createProgressReporter((processed, done) => {
+      const fakeFile = this.state.fakeFile as File;
+      this.setState({
+        decryptionState: DecryptionState.Decrypting,
+        decryptInfo: this.state.decryptInfo,
+        percentage: (100 * processed) / fakeFile.size,
+        done: this.state.done,
+        abort: this.state.abort,
+        selfAborted: this.state.selfAborted,
+        decryptStartTime: this.state.decryptStartTime,
+      });
 
-        if (done) {
-          window.setTimeout(() => {
-            this.setState({
-              decryptionState: DecryptionState.Decrypting,
-              fakeFile: this.state.fakeFile,
-              decryptInfo: this.state.decryptInfo,
-              percentage: 100,
-              done: true,
-              abort: this.state.abort,
-              selfAborted: this.state.selfAborted,
-              decryptStartTime: this.state.decryptStartTime,
-            });
-            resolve();
-          }, 1000 * SMOOTH_TIME);
-        }
-      })
-    ) as TransformStream<Uint8Array, Uint8Array>;
+      if (done) {
+        window.setTimeout(() => {
+          this.setState({
+            decryptionState: DecryptionState.Decrypting,
+            fakeFile: this.state.fakeFile,
+            decryptInfo: this.state.decryptInfo,
+            percentage: 100,
+            done: true,
+            abort: this.state.abort,
+            selfAborted: this.state.selfAborted,
+            decryptStartTime: this.state.decryptStartTime,
+          });
+          resolve();
+        }, 1000 * SMOOTH_TIME);
+      }
+    }) as TransformStream<Uint8Array, Uint8Array>;
 
     await unsealer.unseal(
       id,

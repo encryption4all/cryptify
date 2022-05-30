@@ -3,39 +3,19 @@ import "web-streams-polyfill";
 import React from "react";
 import CryptFileInput from "./CryptFileInput";
 import CryptFileList from "./CryptFileList";
-
 import { Writer } from "@transcend-io/conflux";
 import checkmark from "./resources/checkmark.svg";
 import { createFileReadable, getFileStoreStream } from "./FileProvider";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
-
 import {
-  ReadableStream as PolyfillReadableStream,
-  WritableStream as PolyfillWritableStream,
-  TransformStream as PolyfillTransformStream,
-} from "web-streams-polyfill";
-
-import {
-  createReadableStreamWrapper,
-  createWritableStreamWrapper,
-  createTransformStreamWrapper,
-} from "@mattiasbuelens/web-streams-adapter";
-import { MAX_UPLOAD_SIZE, UPLOAD_CHUNK_SIZE, PKG_URL, SMOOTH_TIME } from "./Constants";
-import  Chunker  from "./utils";
-
-const toReadable = createReadableStreamWrapper(PolyfillReadableStream);
-const toWritable = createWritableStreamWrapper(PolyfillWritableStream);
-const toTransform = createTransformStreamWrapper(PolyfillTransformStream);
-
-function withTransform(
-  writable: WritableStream,
-  transform: TransformStream,
-  signal: AbortSignal
-) {
-  transform.readable.pipeTo(writable, { signal }).catch(() => {});
-  return transform.writable;
-}
+  MAX_UPLOAD_SIZE,
+  UPLOAD_CHUNK_SIZE,
+  PKG_URL,
+  SMOOTH_TIME,
+} from "./Constants";
+import Chunker from "./utils";
+import { withTransform } from "./utils";
 
 enum EncryptionState {
   FileSelection = 1,
@@ -55,6 +35,7 @@ type EncryptState = {
   abort: AbortController;
   selfAborted: boolean;
   encryptStartTime: number;
+  modPromise: Promise<any>;
 };
 
 type EncryptProps = {
@@ -72,6 +53,7 @@ const defaultEncryptState: EncryptState = {
   abort: new AbortController(),
   selfAborted: false,
   encryptStartTime: 0,
+  modPromise: import("@e4a/irmaseal-wasm-bindings/") ,
 };
 
 export default class EncryptPanel extends React.Component<
@@ -245,8 +227,7 @@ export default class EncryptPanel extends React.Component<
     const params = JSON.parse(await resp.text());
     const pk = params.publicKey;
 
-    // TODO: load this earlier
-    const mod = await import("@e4a/irmaseal-wasm-bindings");
+    const mod = await this.state.modPromise;
     const ts = Math.round(Date.now() / 1000);
 
     const policies = {
@@ -257,20 +238,21 @@ export default class EncryptPanel extends React.Component<
     };
 
     // @ts-ignore
-    const uploadChunker = toTransform(
-      new Chunker(undefined, UPLOAD_CHUNK_SIZE)
+    const uploadChunker = new Chunker(
+      undefined,
+      UPLOAD_CHUNK_SIZE
     ) as TransformStream;
 
     // Create streams that takes all input files and zips them into
     // an output stream.
     const zipTf = new Writer();
-    const readable = toReadable(zipTf.readable) as ReadableStream;
-    const writeable = toWritable(zipTf.writable);
+    const readable = zipTf.readable as ReadableStream;
+    const writeable = zipTf.writable;
 
     const writer = writeable.getWriter();
 
     this.state.files.forEach((f, i) => {
-      const s = toReadable(createFileReadable(f));
+      const s = createFileReadable(f);
 
       writer.write({
         name: f.name,
@@ -284,15 +266,13 @@ export default class EncryptPanel extends React.Component<
     // This is not 100% accurate due to zip and irmaseal
     // header but it's close enough for the UI.
     const finished = new Promise<void>(async (resolve, reject) => {
-      const fileStream = toWritable(
-        getFileStoreStream(
-          this.state.abort,
-          this.state.sender,
-          this.state.recipient,
-          this.state.message,
-          this.props.lang,
-          (n, last) => this.reportProgress(resolve, n, last)
-        )
+      const fileStream = getFileStoreStream(
+        this.state.abort,
+        this.state.sender,
+        this.state.recipient,
+        this.state.message,
+        this.props.lang,
+        (n, last) => this.reportProgress(resolve, n, last)
       ) as WritableStream;
 
       mod.seal(
@@ -417,15 +397,15 @@ export default class EncryptPanel extends React.Component<
         </div>
       );
     } else {
-      let addFile;
-      if (this.state.encryptionState === EncryptionState.FileSelection) {
-        addFile = (f: FileList) => this.onFile(f);
-      }
       return (
         <div>
           <CryptFileList
             lang={this.props.lang}
-            onAddFiles={addFile}
+            onAddFiles={
+              this.state.encryptionState === EncryptionState.FileSelection
+                ? (f: FileList) => this.onFile(f)
+                : null
+            }
             onRemoveFile={
               this.state.encryptionState === EncryptionState.FileSelection
                 ? (i) => this.onRemoveFile(i)

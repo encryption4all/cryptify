@@ -2,14 +2,13 @@ import { FILEREAD_CHUNK_SIZE } from "./Constants";
 import Lang from "./Lang";
 import { ReadableStream, WritableStream } from "web-streams-polyfill";
 
-export const foo = 1;
+// TODO: maybe make this more configurable
+const BACKEND_URL = "http://localhost:3000";
 
 interface FileState {
   token: string;
   uuid: string;
 }
-
-const baseurl = "http://localhost:3000"; // TODO: set to empty
 
 export function createFileReadable(file: File): ReadableStream {
   let offset = 0;
@@ -43,7 +42,7 @@ async function initFile(
   mailContent: string | null,
   lang: Lang
 ): Promise<FileState> {
-  const response = await fetch(`${baseurl}/fileupload/init`, {
+  const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
     method: "POST",
     headers: {
@@ -78,7 +77,7 @@ async function storeChunk(
   chunk: Uint8Array,
   offset: number
 ): Promise<FileState> {
-  const response = await fetch(`${baseurl}/fileupload/${state.uuid}`, {
+  const response = await fetch(`${BACKEND_URL}/fileupload/${state.uuid}`, {
     signal: abortSignal,
     method: "PUT",
     headers: {
@@ -109,14 +108,17 @@ async function finalize(
   state: FileState,
   size: number
 ): Promise<void> {
-  const response = await fetch(`${baseurl}/fileupload/finalize/${state.uuid}`, {
-    signal: abortSignal,
-    method: "POST",
-    headers: {
-      cryptifytoken: state.token,
-      "content-range": `bytes */${size}`,
-    },
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/fileupload/finalize/${state.uuid}`,
+    {
+      signal: abortSignal,
+      method: "POST",
+      headers: {
+        cryptifytoken: state.token,
+        "content-range": `bytes */${size}`,
+      },
+    }
+  );
 
   if (response.status !== 200) {
     const errorText = await response.text();
@@ -130,7 +132,7 @@ export async function getFileLoadStream(
   abortSignal: AbortSignal,
   uuid: string
 ): Promise<[number, ReadableStream<Uint8Array>]> {
-  const response = await fetch(`${baseurl}/filedownload/${uuid}`, {
+  const response = await fetch(`${BACKEND_URL}/filedownload/${uuid}`, {
     signal: abortSignal,
     method: "GET",
   });
@@ -143,11 +145,11 @@ export async function getFileLoadStream(
   }
 
   const filesize = parseInt(response.headers.get("content-length") as string);
-  const blob = await response.body;
-  if (blob === null) {
+  const stream = response.body;
+  if (stream === null) {
     throw new Error("No response.body object.");
   }
-  return [filesize, blob as ReadableStream<Uint8Array>];
+  return [filesize, stream as ReadableStream<Uint8Array>];
 }
 
 export function getFileStoreStream(

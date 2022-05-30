@@ -51,3 +51,12 @@ export default class Chunker extends TransformStream<Uint8Array, Uint8Array> {
     });
   }
 }
+
+export function withTransform(
+  writable: WritableStream,
+  transform: TransformStream,
+  signal: AbortSignal
+) {
+  transform.readable.pipeTo(writable, { signal }).catch(() => {});
+  return transform.writable;
+}
