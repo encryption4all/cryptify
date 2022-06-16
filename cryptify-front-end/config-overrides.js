@@ -1,11 +1,6 @@
 const path = require("path");
 
 module.exports = function override(config, env) {
-  config.experiments = {
-    asyncWebAssembly: true,
-    syncWebAssembly: true,
-  };
-
   config.resolve.fallback = {
     http: false,
     https: false,
@@ -13,7 +8,15 @@ module.exports = function override(config, env) {
     util: false,
   };
 
-  console.log(config);
+  config.experiments = {
+    asyncWebAssembly: true,
+    syncWebAssembly: true,
+  };
+
+  config.module.rules.push({
+    test: /\.(wasm)$/,
+    type: "webassembly/async",
+  });
 
   return config;
 };
