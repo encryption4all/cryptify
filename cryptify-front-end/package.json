@@ -56,11 +56,11 @@
     "web-streams-polyfill": "^3.0.3"
   },
   "scripts": {
-    "start": "PORT=8080 react-app-rewired start",
-    "build": "react-app-rewired build",
+    "start": "PORT=8080 craco start",
+    "build": "craco build",
     "dist-electron": "electron-builder",
-    "test": "react-app-rewired test",
-    "eject": "react-app-rewired eject"
+    "test": "craco test",
+    "eject": "craco eject"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -90,7 +90,7 @@
     "electron-builder": "^22.6.0",
     "electron-reload": "^1.5.0",
     "nodemon": "^2.0.3",
-    "react-app-rewired": "^2.2.1",
+    "@craco/craco": "6.4.3",
     "typescript": "^3.9.6"
   }
 }
