@@ -10,27 +10,67 @@ use crate::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
-// For IRMA session Body parameters
-use irma::{AttributeRequest, DisclosureRequestBuilder, IrmaClient, SessionToken};
+use irma::{
+    AttributeRequest, AttributeStatus, DisclosureRequestBuilder, IrmaClient, ProofStatus,
+    SessionResult, SessionStatus, SessionToken, SessionType,
+};
 
 use rand::Rng;
 use sha2::Digest;
 use std::fmt::Write;
 
+use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::FileServer;
 use rocket::tokio::{
     fs::{File, OpenOptions},
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, get, request::FromRequest,
-    response::Responder, routes, serde::json::Json, Data, State,
+    data::ToByteUnit, fairing::AdHoc, get, http::Header, http::Method, launch, post, put,
+    request::FromRequest, response::Responder, routes, serde::json::Json, Data, Request, Response,
+    State,
 };
+
+use rocket_cors::{AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-static BLOCK_SIZE: u64 = 1024 * 1024; // 1 MB
+const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MB
+
+#[derive(Serialize, Deserialize)]
+struct IrmaResponse {
+    irma_session: String,
+}
+
+#[derive(Responder)]
+struct IrmaResponder {
+    inner: Json<IrmaResponse>,
+    cryptify_token: CryptifyToken,
+}
+
+#[get("/verification/start")]
+async fn irma_session_start(config: &State<CryptifyConfig>) -> Result<String, Error> {
+    let client = IrmaClient::new(config.irma_server()).map_err(|_e| {
+        Error::InternalServerError(Some("could not create irma client".to_string()))
+    })?;
+
+    let request = DisclosureRequestBuilder::new()
+        .add_discon(vec![vec![AttributeRequest::Simple(
+            "pbdf.sidn-pbdf.email.email".into(),
+        )]])
+        .build();
+
+    let session = client.request(&request).await.map_err(|_e| {
+        Error::InternalServerError(Some(
+            "failed getting session package from IRMA server".to_string(),
+        ))
+    })?;
+
+    serde_json::to_string(&session).map_err(|_e| {
+        Error::InternalServerError(Some("could not serialize session package".to_string()))
+    })
+}
 
 #[derive(Serialize, Deserialize)]
 struct InitBody {
@@ -44,8 +84,11 @@ struct InitBody {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename = "camelCase")]
 struct InitResponse {
     uuid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender: Option<String>,
 }
 
 struct CryptifyToken(String);
@@ -68,19 +111,36 @@ async fn upload_init(
     store: &State<Store>,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
+    let sender = if !request.irma_token.is_empty() {
+        // If there is a token, verify the session results.
+        let client =
+            IrmaClient::new(config.irma_server()).map_err(|_e| Error::InternalServerError(None))?;
 
-    if !request.irma_token.is_empty()
-    {   
-        // Create an IRMA client
-        let client = IrmaClient::new(config.irma_server()).unwrap();
+        let res = client
+            .result(&SessionToken(request.irma_token.to_string()))
+            .await
+            .map_err(|_e| Error::InternalServerError(None))?;
 
-        // Get results and check if session is DONE and VALID
-        match client.result(&SessionToken(request.irma_token.to_string())).await {
-            Ok(..) => {()}
-            Err(e) => return Err(Error::BadRequest(Some(format!("Failed to get session results: {}", e))))
+        match res {
+            SessionResult {
+                sessiontype: SessionType::Disclosing,
+                status: SessionStatus::Done,
+                proof_status: Some(ProofStatus::Valid),
+                disclosed,
+                ..
+            } if disclosed.len() == 1
+                && disclosed[0].len() == 1
+                && disclosed[0][0].status == AttributeStatus::Present =>
+            {
+                disclosed[0][0].raw_value.clone()
+            }
+            _ => None,
         }
-    }
-    
+    } else {
+        // Otherwise just take what was in the request.
+        Some(request.sender.clone())
+    };
+
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
 
@@ -101,8 +161,8 @@ async fn upload_init(
                 FileState {
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
-                    expires: current_time + 120960,  //
-                    sender: request.sender.clone(),
+                    expires: current_time + 120960,
+                    sender: sender.clone().unwrap_or_else(|| "anonymous".to_string()),
                     recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
@@ -110,7 +170,7 @@ async fn upload_init(
             );
 
             Ok(InitResponder {
-                inner: Json(InitResponse { uuid }),
+                inner: Json(InitResponse { uuid, sender }),
                 cryptify_token: CryptifyToken(init_cryptify_token),
             })
         }
@@ -265,12 +325,14 @@ async fn upload_chunk(
         return Ok(None);
     }
 
-    let start = headers.content_range.start.ok_or_else(|| Error::BadRequest(Some(
-        "Could not read Content-Range start".to_owned(),
-    )))?;
-    let end = headers.content_range.end.ok_or_else(|| Error::BadRequest(Some(
-        "Could not read Content-Range start".to_owned(),
-    )))?;
+    let start = headers
+        .content_range
+        .start
+        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
+    let end = headers
+        .content_range
+        .end
+        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
 
     if start >= end || state.uploaded != start {
         return Err(Error::BadRequest(Some(
@@ -278,7 +340,7 @@ async fn upload_chunk(
         )));
     }
 
-    if end - start > BLOCK_SIZE {
+    if end - start > CHUNK_SIZE {
         return Err(Error::BadRequest(Some(
             "File chunk too large; the maximum is 1 MB".to_owned(),
         )));
@@ -383,54 +445,25 @@ async fn upload_finalize(
     Ok(Some(()))
 }
 
-#[derive(Serialize, Deserialize)]
-struct IrmaResponse {
-    irma_session: String,
-}
+struct Cors;
 
-#[derive(Responder)]
-struct IrmaResponder {
-    inner: Json<IrmaResponse>,
-    cryptify_token: CryptifyToken,
-}
+#[rocket::async_trait]
+impl Fairing for Cors {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
 
-#[get("/verification/start")]
-async fn irma_session_start(config: &State<CryptifyConfig>) -> String {
-
-    // Create an irma client
-    let client = IrmaClient::new(config.irma_server()).unwrap();
-
-    // Setup our request
-    let request = DisclosureRequestBuilder::new()
-        .add_discon(vec![vec![AttributeRequest::Simple(
-            "pbdf.sidn-pbdf.email.email".into(),
-        )]])
-        .build();
-
-    // Start the session
-    let session = client
-        .request(&request)
-        .await
-        .expect("Failed to start sesssion");
-
-    // Unwrap and return QR Contents
-    return serde_json::to_string(&session).unwrap();
-}
-
-#[get("/verification/<token>/result")]
-async fn irma_session_result(config: &State<CryptifyConfig>, token: &str) ->  String {
-
-    // Create an IRMA client
-    let client = IrmaClient::new(config.irma_server()).unwrap();
-
-    // Retrieve results using session Token
-    let result = client
-        .result(&SessionToken(token.to_string()))
-        .await
-        .expect("Failed to get results");
-
-    // Return result
-    return serde_json::to_string(&result).unwrap();
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, OPTIONS",
+        ));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+    }
 }
 
 #[launch]
@@ -441,8 +474,31 @@ fn rocket() -> _ {
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all())
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Put]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
+        .allow_credentials(true)
+        .max_age(Some(86400))
+        .to_cors()
+        .expect("unable to configure CORS");
+
     rocket
-        .mount("/", routes![upload_init, upload_chunk, upload_finalize, irma_session_start, irma_session_result])
+        .attach(cors)
+        .mount(
+            "/",
+            routes![
+                upload_init,
+                upload_chunk,
+                upload_finalize,
+                irma_session_start,
+            ],
+        )
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
