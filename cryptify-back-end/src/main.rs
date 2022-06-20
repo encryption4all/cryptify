@@ -38,17 +38,6 @@ use store::{FileState, Store};
 
 const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MB
 
-#[derive(Serialize, Deserialize)]
-struct IrmaResponse {
-    irma_session: String,
-}
-
-#[derive(Responder)]
-struct IrmaResponder {
-    inner: Json<IrmaResponse>,
-    cryptify_token: CryptifyToken,
-}
-
 #[get("/verification/start")]
 async fn irma_session_start(config: &State<CryptifyConfig>) -> Result<String, Error> {
     let client = IrmaClient::new(config.irma_server()).map_err(|_e| {
