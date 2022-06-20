@@ -9,7 +9,7 @@ with an attribute and only people with that attribute can view the contents.
 
 Build the files using:
 ```
-./build.sh
+./deploy.sh
 ```
 
 All needed source is now available in `./dist/{backend,frontend}`.

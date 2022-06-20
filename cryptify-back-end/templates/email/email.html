@@ -40,19 +40,21 @@
               {{sender}}
             </p>
             <p style="font-size:21px;margin-top:5px;">
-              sent you files
+              {{sender_str}}
             </p>
             <p style="font-size:12px;color:#808080;">
-                {{fileSize}} - Expires on {{expiryDate}}
+                {{file_size}} - {{expires_str}} {{expiry_date}}
             </p>
+            {% if html_content != "" %}
             <div style="background:#F4F3F4;text-align:left;padding:20px;margin:40px 0;font-size:12px;">
-                {{htmlContent}}
+                {{html_content}}
             </div>
+            {% endif %}
             <a href="{{url}}" style="display:inline-block;font-weight:600;;margin:20px 0;max-width:300px;width:100%;background:#00A2D5;border:none;border-radius:31px;color:#fff;;padding:.7em 0;text-decoration:none;font-size:12px;">
-              Download your files
+              {{download_str}}
             </a>
             <div style="text-align:left;padding-top: 40px;border-top:2px solid #F4F3F4">
-                <p>Download link</p>
+                <p>{{link_str}}</p>
                 <a style="color:#00A2D5;font-size:12px;font-weight:700;line-height:14px;" href="{{url}}">
                   {{url}}
                 </a>
