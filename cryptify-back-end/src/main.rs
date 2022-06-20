@@ -19,7 +19,6 @@ use rand::Rng;
 use sha2::Digest;
 use std::fmt::Write;
 
-use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::FileServer;
 use rocket::tokio::{
     fs::{File, OpenOptions},
@@ -27,8 +26,7 @@ use rocket::tokio::{
 };
 use rocket::{
     data::ToByteUnit, fairing::AdHoc, get, http::Header, http::Method, launch, post, put,
-    request::FromRequest, response::Responder, routes, serde::json::Json, Data, Request, Response,
-    State,
+    request::FromRequest, response::Responder, routes, serde::json::Json, Data, State,
 };
 
 use rocket_cors::{AllowedOrigins, CorsOptions};
@@ -432,27 +430,6 @@ async fn upload_finalize(
         .map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
 
     Ok(Some(()))
-}
-
-struct Cors;
-
-#[rocket::async_trait]
-impl Fairing for Cors {
-    fn info(&self) -> Info {
-        Info {
-            name: "Add CORS headers to responses",
-            kind: Kind::Response,
-        }
-    }
-
-    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
-        response.set_header(Header::new(
-            "Access-Control-Allow-Methods",
-            "POST, GET, OPTIONS",
-        ));
-        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
-    }
 }
 
 #[launch]
