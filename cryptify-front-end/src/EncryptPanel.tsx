@@ -1,13 +1,24 @@
 import "./EncryptPanel.css";
-import "web-streams-polyfill";
-import React from "react";
-import CryptFileInput from "./CryptFileInput";
-import CryptFileList from "./CryptFileList";
-import { Writer } from "@transcend-io/conflux";
-import checkmark from "./resources/checkmark.svg";
-import { createFileReadable, getFileStoreStream } from "./FileProvider";
-import Lang from "./Lang";
-import getTranslation from "./Translations";
+import 'web-streams-polyfill';
+import React from 'react';
+import { Client } from '@e4a/irmaseal-client'
+import CryptFileInput from './CryptFileInput';
+import CryptFileList from './CryptFileList';
+
+//IRMA Packages/dependencies
+import irmaLogo from './resources/irma-logo.svg';
+import appleAppStoreEN from './resources/apple-appstore-en.svg';
+import googlePlayStoreEN from './resources/google-playstore-en.svg';
+import appleAppStoreNL from './resources/apple-appstore-nl.svg';
+import googlePlayStoreNL from './resources/google-playstore-nl.svg';
+
+import { Writer } from '@transcend-io/conflux';
+import checkmark from './resources/checkmark.svg';
+import {createFileReadable, getFileStoreStream} from './FileProvider';
+import Lang from './Lang';
+import getTranslation from './Translations';
+import { SMOOTH_TIME } from './Constants';
+
 import {
   MAX_UPLOAD_SIZE,
   UPLOAD_CHUNK_SIZE,
@@ -17,11 +28,20 @@ import {
 import Chunker from "./utils";
 import { withTransform } from "./utils";
 
+//IRMA Packages/dependencies
+const IrmaCore = require('@privacybydesign/irma-core');
+const IrmaWeb = require('@privacybydesign/irma-web');
+const IrmaClient = require('@privacybydesign/irma-client');
+
+const baseurl = "http://localhost";
+
 enum EncryptionState {
   FileSelection = 1,
   Encrypting,
   Done,
   Error,
+  Verify,
+  Anonymous
 }
 
 type EncryptState = {
@@ -36,6 +56,7 @@ type EncryptState = {
   selfAborted: boolean;
   encryptStartTime: number;
   modPromise: Promise<any>;
+  irma_token: string
 };
 
 type EncryptProps = {
@@ -53,7 +74,7 @@ const defaultEncryptState: EncryptState = {
   abort: new AbortController(),
   selfAborted: false,
   encryptStartTime: 0,
-  modPromise: import("@e4a/irmaseal-wasm-bindings/") ,
+  irma_token: ""
 };
 
 export default class EncryptPanel extends React.Component<
@@ -64,6 +85,36 @@ export default class EncryptPanel extends React.Component<
     super(props);
     this.state = defaultEncryptState;
   }
+
+  isMobile(): boolean {
+    if (typeof window === 'undefined' ) {
+      return false;
+    }
+  
+    // IE11 doesn't have window.navigator, test differently
+    // https://stackoverflow.com/questions/21825157/internet-explorer-11-detection
+    // @ts-ignore
+    if (!!window.MSInputMethodContext && !!document.documentMode) {
+      return false;
+    }
+  
+    if (/Android/i.test(window.navigator.userAgent)) {
+      return true;
+    }
+  
+    // https://stackoverflow.com/questions/9038625/detect-if-device-is-ios
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+      return true;
+    }
+  
+    // https://stackoverflow.com/questions/57776001/how-to-detect-ipad-pro-as-ipad-using-javascript
+    if (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 2) {
+      return true;
+    }
+  
+    // Neither Android nor iOS, assuming desktop
+    return false;
+  };
 
   onFile(files: FileList) {
     const fileArr = Array.from(files);
@@ -79,6 +130,7 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -94,6 +146,7 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -109,10 +162,11 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
-  onChangeSender(ev: React.ChangeEvent<HTMLInputElement>) {
+  onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: this.state.recipient,
       sender: ev.target.value.toLowerCase(),
@@ -124,6 +178,26 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
+    });
+  }
+
+  //Function when a user does not has access to the sender field.
+  onChangeSenderString(sen: string) {
+    this.setState({
+      recipient: this.state.recipient,
+      sender: sen,
+      message: this.state.message,
+      files: this.state.files,
+      percentages: this.state.percentages,
+      done: this.state.done,
+      encryptionState: this.state.encryptionState,
+      abort: this.state.abort,
+      selfAborted: this.state.selfAborted,
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
+    },() =>{
+      this.onEncrypt()
     });
   }
 
@@ -139,10 +213,11 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
   }
 
-  onChangeMessage(ev: React.ChangeEvent<HTMLTextAreaElement>) {
+  onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       recipient: this.state.recipient,
       sender: this.state.sender,
@@ -154,6 +229,26 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
+    });
+  }
+
+  //Function when a user does not has access to the sender field.
+  onChangeAnonymousString(sen: string, mes: string) {
+    this.setState({
+      recipient: this.state.recipient,
+      sender: sen,
+      message: mes,
+      files: this.state.files,
+      percentages: this.state.percentages,
+      done: this.state.done,
+      encryptionState: this.state.encryptionState,
+      abort: this.state.abort,
+      selfAborted: this.state.selfAborted,
+      encryptStartTime: this.state.encryptStartTime,
+      irma_token: ""
+    }, () =>{
+      this.onEncrypt();
     });
   }
 
@@ -187,6 +282,7 @@ export default class EncryptPanel extends React.Component<
               abort: this.state.abort,
               selfAborted: this.state.selfAborted,
               encryptStartTime: this.state.encryptStartTime,
+              irma_token: this.state.irma_token,
             });
           }, 1000 * SMOOTH_TIME);
         }
@@ -210,6 +306,7 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: this.state.selfAborted,
       encryptStartTime: this.state.encryptStartTime,
+      irma_token: this.state.irma_token
     });
 
     if (done) {
@@ -272,6 +369,7 @@ export default class EncryptPanel extends React.Component<
         this.state.recipient,
         this.state.message,
         this.props.lang,
+        this.state.irma_token,
         (n, last) => this.reportProgress(resolve, n, last)
       ) as WritableStream;
 
@@ -291,6 +389,7 @@ export default class EncryptPanel extends React.Component<
     // For some reason stream errors are not caught
     // Which means when the user aborts
     // exceptions spill into the console...
+
     this.setState({
       recipient: this.state.recipient,
       sender: this.state.sender,
@@ -302,6 +401,7 @@ export default class EncryptPanel extends React.Component<
       abort: this.state.abort,
       selfAborted: false,
       encryptStartTime: Date.now(),
+      irma_token: this.state.irma_token
     });
 
     try {
@@ -317,6 +417,7 @@ export default class EncryptPanel extends React.Component<
         abort: this.state.abort,
         selfAborted: false,
         encryptStartTime: 0,
+        irma_token: this.state.irma_token
       });
     } catch (e) {
       if (this.state.selfAborted === false) {
@@ -333,6 +434,7 @@ export default class EncryptPanel extends React.Component<
           abort: this.state.abort,
           selfAborted: false,
           encryptStartTime: 0,
+          irma_token: this.state.irma_token
         });
       } else {
         this.setState({
@@ -346,9 +448,85 @@ export default class EncryptPanel extends React.Component<
           abort: this.state.abort,
           selfAborted: false,
           encryptStartTime: 0,
+          irma_token: this.state.irma_token
         });
       }
     }
+  }
+
+  async onVerify() {
+    //Change React State for verifying the sender.
+    this.setState({
+      recipient: this.state.recipient,
+      sender: this.state.sender,
+      message: this.state.message,
+      files: this.state.files,
+      percentages: this.state.percentages,
+      done: this.state.done,
+      encryptionState: EncryptionState.Verify,
+      abort: this.state.abort,
+      selfAborted: false,
+      encryptStartTime: 0,
+      irma_token: this.state.irma_token
+    },
+    () =>{ 
+
+      const irma = new IrmaCore({
+        debugging: true,            // Enable to get helpful output in the browser console
+        element: ".crypt-irma-qr",  // Which DOM element to render to
+        
+        // Back-end options
+        session: {
+          // Point this to your controller:
+          url: `${baseurl}/verification`,
+        
+          start: {
+            url: (o: any) => `${o.url}/start`,
+            method: 'GET'
+          },
+
+          mapping: {
+            sessionPtr: (r: any) => r.sessionPtr,
+            sessionToken: (r: any) => r.token
+          },
+
+          result: {
+            url: (o: any, {sessionToken}: any) => `${o.url}/${sessionToken}/result`,
+            method: 'GET'
+          }
+        }
+
+      });
+
+      irma.use(IrmaWeb);
+      irma.use(IrmaClient);
+
+      irma.start()
+        .then((result: any) => {
+          //Check if the IRMA server is DONE and the proof is VALID.
+          if(result["status"] === "DONE" && result["proofStatus"] === "VALID")
+          {
+          
+            this.setState({
+              recipient: this.state.recipient,
+              sender: this.state.sender,
+              message: this.state.message,
+              files: this.state.files,
+              percentages: this.state.percentages,
+              done: this.state.done,
+              encryptionState: EncryptionState.Verify,
+              abort: this.state.abort,
+              selfAborted: false,
+              encryptStartTime: 0,
+              irma_token: result["token"]
+            },
+            () =>{ 
+              this.onChangeSenderString(result["disclosed"][0][0]["rawvalue"])
+            });
+          }
+        })
+        .catch((error: string) => console.error("Couldn't do what you asked 😢", error));
+    });
   }
 
   onCancel(ev: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
@@ -364,6 +542,7 @@ export default class EncryptPanel extends React.Component<
       abort: new AbortController(),
       selfAborted: false,
       encryptStartTime: 0,
+      irma_token: this.state.irma_token
     });
   }
 
@@ -376,12 +555,10 @@ export default class EncryptPanel extends React.Component<
       .map((f) => f.size)
       .reduce((a, b) => a + b, 0);
 
-    return (
-      totalSize < MAX_UPLOAD_SIZE &&
-      this.state.recipient.length > 0 &&
-      this.state.sender.length > 0 &&
-      this.state.files.length > 0
-    );
+    return totalSize < MAX_UPLOAD_SIZE
+        && this.state.recipient.length > 0
+        //&& this.state.sender.length > 0
+        && this.state.files.length > 0;
   }
 
   renderfilesField() {
@@ -434,7 +611,11 @@ export default class EncryptPanel extends React.Component<
             onChange={(e) => this.onChangeRecipient(e)}
           />
         </div>
+        {/*
+        
+        //Removed sender field due to IRMA QR-code scanning to verify sender.
         <div className="crypt-select-protection-input-box">
+<<<<<<< HEAD
           <h4>{getTranslation(this.props.lang).encryptPanel_emailSender}</h4>
           <input
             placeholder=""
@@ -442,15 +623,28 @@ export default class EncryptPanel extends React.Component<
             required={true}
             value={this.state.sender}
             onChange={(e) => this.onChangeSender(e)}
+||||||| a904de8
+          <h4>{ getTranslation(this.props.lang).encryptPanel_emailSender }</h4>
+          <input placeholder="" type="text" required={true}
+                value={this.state.sender}
+                onChange={(e) => this.onChangeSender(e)}
+=======
+          <h4>{ getTranslation(this.props.lang).encryptPanel_emailSender }</h4>
+          <input placeholder="" type="text" required={true}
+                value={this.state.sender}
+                onChange={(e) => this.onChangeSenderEvent(e)}
+>>>>>>> main
           />
-        </div>
+        </div> 
+        
+        */}
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>
           <textarea
             required={false}
             rows={4}
             value={this.state.message}
-            onChange={(e) => this.onChangeMessage(e)}
+            onChange={(e) => this.onChangeMessageEvent(e)}
           />
         </div>
         <button
@@ -460,12 +654,82 @@ export default class EncryptPanel extends React.Component<
           }
           onClick={(e) => {
             if (this.canEncrypt()) {
-              this.onEncrypt();
+              this.onVerify();
             }
           }}
         >
           {getTranslation(this.props.lang).encryptPanel_encryptSend}
         </button>
+      </div>
+    );
+  }
+
+  renderVerification() {
+    const isMobile = this.isMobile();
+    let iosBtn = null; 
+    let iosHref = null; 
+    let androidBtn = null; 
+    let androidHref = null;
+    switch (this.props.lang) {
+    case Lang.EN:
+      iosBtn = appleAppStoreEN;
+      iosHref = "https://apps.apple.com/app/irma-authenticatie/id1294092994";
+      androidBtn = googlePlayStoreEN;
+      androidHref = "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=en";
+      break;
+    case Lang.NL:
+      iosBtn = appleAppStoreNL;
+      iosHref = "https://apps.apple.com/nl/app/irma-authenticatie/id1294092994";
+      androidBtn = googlePlayStoreNL;
+      androidHref = "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=nl";
+      break;
+    }
+
+    return (
+      <div className="crypt-progress-container">
+        <h3>
+          { isMobile
+            ? getTranslation(this.props.lang).encryptPanel_irmaInstructionHeaderMobile
+            : getTranslation(this.props.lang).encryptPanel_irmaInstructionHeaderQr
+          }
+        </h3>
+        <p>
+          { isMobile
+            ? getTranslation(this.props.lang).encryptPanel_irmaInstructionMobile
+            : getTranslation(this.props.lang).encryptPanel_irmaInstructionQr
+          }
+        </p>
+
+        <div className="crypt-irma-qr"></div>
+
+        <div className="get-irma-here-anchor">
+          <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
+          <div className="get-irma-text"
+            style={{display: "inline-block", verticalAlign: "middle", height: "45pt", marginLeft: "5pt", marginBottom: "calc(1em/2)"}}>
+            { getTranslation(this.props.lang).decryptPanel_noIrma }
+          </div>
+          <div className="get-irma-buttons">
+            <a href={iosHref}
+              style={{display: "inline-block", height: "38pt", marginRight: "15pt"}}>
+              <img style={{height: "100%"}} className="irma-appstore-button" src={iosBtn} alt="apple-appstore" />
+            </a>
+            <a href={androidHref}
+              style={{display: "inline-block", height: "38pt"}}>
+              <img  style={{height: "100%"}} className="irma-appstore-button" src={androidBtn} alt="google-playstore" />
+            </a>
+          </div>
+        </div>
+
+        <button
+          className={"crypt-btn-anonymous crypt-btn"}
+          onClick={(e) => { 
+            this.onChangeAnonymousString("Someone",getTranslation(this.props.lang).encryptPanel_messageAnonymous);
+        }}
+          type="button"
+        >
+          { getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous }
+        </button>
+
       </div>
     );
   }
@@ -553,7 +817,15 @@ export default class EncryptPanel extends React.Component<
   }
 
   render() {
-    if (this.state.encryptionState === EncryptionState.FileSelection) {
+    if (this.state.encryptionState === EncryptionState.Verify)
+    {
+      return (
+        <form>
+          {this.renderVerification()}
+        </form>
+      );
+    }
+    else if (this.state.encryptionState === EncryptionState.FileSelection) {
       return (
         <form
           onSubmit={(e) => {

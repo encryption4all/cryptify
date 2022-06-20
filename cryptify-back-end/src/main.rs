@@ -10,6 +10,9 @@ use crate::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
+// For IRMA session Body parameters
+use irma::{AttributeRequest, DisclosureRequestBuilder, IrmaClient, SessionToken};
+
 use rand::Rng;
 use sha2::Digest;
 use std::fmt::Write;
@@ -20,7 +23,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, request::FromRequest,
+    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, get, request::FromRequest,
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
@@ -37,6 +40,7 @@ struct InitBody {
     mail_content: String,
     #[serde(rename = "mailLang")]
     mail_lang: email::Language,
+    irma_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,6 +68,19 @@ async fn upload_init(
     store: &State<Store>,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
+
+    if !request.irma_token.is_empty()
+    {   
+        // Create an IRMA client
+        let client = IrmaClient::new(config.irma_server()).unwrap();
+
+        // Get results and check if session is DONE and VALID
+        match client.result(&SessionToken(request.irma_token.to_string())).await {
+            Ok(..) => {()}
+            Err(e) => return Err(Error::BadRequest(Some(format!("Failed to get session results: {}", e))))
+        }
+    }
+    
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
 
@@ -94,7 +111,6 @@ async fn upload_init(
 
             Ok(InitResponder {
                 inner: Json(InitResponse { uuid }),
-
                 cryptify_token: CryptifyToken(init_cryptify_token),
             })
         }
@@ -305,6 +321,7 @@ async fn upload_chunk(
     state.cryptify_token = shasum.clone();
 
     state.uploaded += end - start;
+
     Ok(Some(UploadResponder {
         body: (),
         cryptify_token: CryptifyToken(shasum),
@@ -366,6 +383,56 @@ async fn upload_finalize(
     Ok(Some(()))
 }
 
+#[derive(Serialize, Deserialize)]
+struct IrmaResponse {
+    irma_session: String,
+}
+
+#[derive(Responder)]
+struct IrmaResponder {
+    inner: Json<IrmaResponse>,
+    cryptify_token: CryptifyToken,
+}
+
+#[get("/verification/start")]
+async fn irma_session_start(config: &State<CryptifyConfig>) -> String {
+
+    // Create an irma client
+    let client = IrmaClient::new(config.irma_server()).unwrap();
+
+    // Setup our request
+    let request = DisclosureRequestBuilder::new()
+        .add_discon(vec![vec![AttributeRequest::Simple(
+            "pbdf.sidn-pbdf.email.email".into(),
+        )]])
+        .build();
+
+    // Start the session
+    let session = client
+        .request(&request)
+        .await
+        .expect("Failed to start sesssion");
+
+    // Unwrap and return QR Contents
+    return serde_json::to_string(&session).unwrap();
+}
+
+#[get("/verification/<token>/result")]
+async fn irma_session_result(config: &State<CryptifyConfig>, token: &str) ->  String {
+
+    // Create an IRMA client
+    let client = IrmaClient::new(config.irma_server()).unwrap();
+
+    // Retrieve results using session Token
+    let result = client
+        .result(&SessionToken(token.to_string()))
+        .await
+        .expect("Failed to get results");
+
+    // Return result
+    return serde_json::to_string(&result).unwrap();
+}
+
 #[launch]
 fn rocket() -> _ {
     let rocket = rocket::build();
@@ -375,7 +442,7 @@ fn rocket() -> _ {
         .expect("Missing configuration");
 
     rocket
-        .mount("/", routes![upload_init, upload_chunk, upload_finalize])
+        .mount("/", routes![upload_init, upload_chunk, upload_finalize, irma_session_start, irma_session_result])
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())

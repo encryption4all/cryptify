@@ -40,7 +40,8 @@ async function initFile(
   sender: string,
   recipient: string,
   mailContent: string | null,
-  lang: Lang
+  lang: Lang,
+  irma_token: string,
 ): Promise<FileState> {
   const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
@@ -53,7 +54,8 @@ async function initFile(
       recipient: recipient,
       mailContent: mailContent,
       mailLang: lang,
-    }),
+      irma_token: irma_token,
+    })
   });
 
   if (response.status !== 200) {
@@ -137,6 +139,7 @@ export async function getFileLoadStream(
     method: "GET",
   });
 
+
   if (response.status !== 200) {
     const errorText = await response.text();
     throw new Error(
@@ -158,6 +161,7 @@ export function getFileStoreStream(
   recipient: string,
   mailContent: string | null,
   lang: Lang,
+  irma_token: string,
   progressReported: (uploaded: number, last: boolean) => void
 ): WritableStream<Uint8Array> {
   let state: FileState = {
@@ -170,13 +174,7 @@ export function getFileStoreStream(
 
   const start = async (c: WritableStreamDefaultController) => {
     try {
-      state = await initFile(
-        abortController.signal,
-        sender,
-        recipient,
-        mailContent,
-        lang
-      );
+      state = await initFile(abortController.signal, sender, recipient, mailContent, lang, irma_token);
       progressReported(processed, false);
       if (abortController.signal.aborted) {
         throw new Error("Abort signaled during initFile.");
