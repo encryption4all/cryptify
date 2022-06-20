@@ -1,7 +1,6 @@
 import "./EncryptPanel.css";
 import 'web-streams-polyfill';
 import React from 'react';
-import { Client } from '@e4a/irmaseal-client'
 import CryptFileInput from './CryptFileInput';
 import CryptFileList from './CryptFileList';
 
@@ -17,7 +16,6 @@ import checkmark from './resources/checkmark.svg';
 import {createFileReadable, getFileStoreStream} from './FileProvider';
 import Lang from './Lang';
 import getTranslation from './Translations';
-import { SMOOTH_TIME } from './Constants';
 
 import {
   MAX_UPLOAD_SIZE,
@@ -74,6 +72,7 @@ const defaultEncryptState: EncryptState = {
   abort: new AbortController(),
   selfAborted: false,
   encryptStartTime: 0,
+  modPromise: import("@e4a/irmaseal-wasm-bindings"),
   irma_token: ""
 };
 
@@ -666,10 +665,10 @@ export default class EncryptPanel extends React.Component<
 
   renderVerification() {
     const isMobile = this.isMobile();
-    let iosBtn = null; 
-    let iosHref = null; 
-    let androidBtn = null; 
-    let androidHref = null;
+    let iosBtn = ""; 
+    let iosHref = ""; 
+    let androidBtn = ""; 
+    let androidHref = "";
     switch (this.props.lang) {
     case Lang.EN:
       iosBtn = appleAppStoreEN;

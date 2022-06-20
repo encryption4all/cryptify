@@ -3,7 +3,7 @@ import Lang from "./Lang";
 import { ReadableStream, WritableStream } from "web-streams-polyfill";
 
 // TODO: maybe make this more configurable
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "http://localhost:8000";
 
 interface FileState {
   token: string;
@@ -41,7 +41,7 @@ async function initFile(
   recipient: string,
   mailContent: string | null,
   lang: Lang,
-  irma_token: string,
+  irma_token: string
 ): Promise<FileState> {
   const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
@@ -55,7 +55,7 @@ async function initFile(
       mailContent: mailContent,
       mailLang: lang,
       irma_token: irma_token,
-    })
+    }),
   });
 
   if (response.status !== 200) {
@@ -139,7 +139,6 @@ export async function getFileLoadStream(
     method: "GET",
   });
 
-
   if (response.status !== 200) {
     const errorText = await response.text();
     throw new Error(
@@ -174,7 +173,14 @@ export function getFileStoreStream(
 
   const start = async (c: WritableStreamDefaultController) => {
     try {
-      state = await initFile(abortController.signal, sender, recipient, mailContent, lang, irma_token);
+      state = await initFile(
+        abortController.signal,
+        sender,
+        recipient,
+        mailContent,
+        lang,
+        irma_token
+      );
       progressReported(processed, false);
       if (abortController.signal.aborted) {
         throw new Error("Abort signaled during initFile.");
