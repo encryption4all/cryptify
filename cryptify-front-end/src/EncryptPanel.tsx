@@ -158,7 +158,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
 
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      recipient: ev.target.value,
+      recipient: ev.target.value.toLowerCase(),
       sender: this.state.sender,
       message: this.state.message,
       files: this.state.files,
@@ -175,7 +175,7 @@ export default class EncryptPanel extends React.Component<EncryptProps, EncryptS
   onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: this.state.recipient,
-      sender: ev.target.value,
+      sender: ev.target.value.toLowerCase(),
       message: this.state.message,
       files: this.state.files,
       percentages: this.state.percentages,

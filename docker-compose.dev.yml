@@ -11,6 +11,7 @@ services:
       ROCKET_CONFIG: 'config.toml'
     command: "bash -c 'mkdir -p /tmp/data && cargo run'" 
 
+
   frontend:
     image: node:17
     # build:

@@ -1,37 +1,39 @@
 import { FILEREAD_CHUNK_SIZE } from "./Constants";
 import Lang from "./Lang";
-import { ReadableStream, WritableStream } from 'web-streams-polyfill';
+import { ReadableStream, WritableStream } from "web-streams-polyfill";
 
 export const foo = 1;
 
 interface FileState {
-  token: string,
-  uuid: string,
+  token: string;
+  uuid: string;
 }
 
-const baseurl = "http://localhost";
+const baseurl = ""; // "http://localhost:3000";
 
 export function createFileReadable(file: File): ReadableStream {
   let offset = 0;
   const queuingStrategy = new CountQueuingStrategy({ highWaterMark: 1 });
 
-  return new ReadableStream({
-    async pull(cntrl) {
-      if (cntrl.desiredSize !== null && cntrl.desiredSize <= 0) {
-        return;
-      }
-      const read = await file
-        .slice(offset, offset + FILEREAD_CHUNK_SIZE)
-        .arrayBuffer();
+  return new ReadableStream(
+    {
+      async pull(cntrl) {
+        if (cntrl.desiredSize !== null && cntrl.desiredSize <= 0) {
+          return;
+        }
+        const read = await file
+          .slice(offset, offset + FILEREAD_CHUNK_SIZE)
+          .arrayBuffer();
 
-      if (read.byteLength === 0) {
-        return cntrl.close();
-      }
-      offset += FILEREAD_CHUNK_SIZE;
-      cntrl.enqueue(new Uint8Array(read));
+        if (read.byteLength === 0) {
+          return cntrl.close();
+        }
+        offset += FILEREAD_CHUNK_SIZE;
+        cntrl.enqueue(new Uint8Array(read));
+      },
     },
-  },
-  queuingStrategy);
+    queuingStrategy
+  );
 }
 
 async function initFile(
@@ -46,27 +48,29 @@ async function initFile(
     signal: abortSignal,
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      sender: sender, 
+      sender: sender,
       recipient: recipient,
       mailContent: mailContent,
       mailLang: lang,
       irma_token: irma_token,
     })
   });
-//
+
   if (response.status !== 200) {
     const errorText = await response.text();
-    throw new Error(`Error occured while initializing file. status: ${response.status}, msg: ${errorText}`);
+    throw new Error(
+      `Error occured while initializing file. status: ${response.status}, msg: ${errorText}`
+    );
   }
 
   const resJson = await response.json();
   const token = response.headers.get("cryptifytoken") as string;
   return {
     token: token,
-    uuid: resJson["uuid"]
+    uuid: resJson["uuid"],
   };
 }
 
@@ -74,49 +78,60 @@ async function storeChunk(
   abortSignal: AbortSignal,
   state: FileState,
   chunk: Uint8Array,
-  offset: number,
+  offset: number
 ): Promise<FileState> {
   const response = await fetch(`${baseurl}/fileupload/${state.uuid}`, {
     signal: abortSignal,
     method: "PUT",
     headers: {
-      "cryptifytoken": state.token,
+      cryptifytoken: state.token,
       "Content-Type": "application/octet-stream",
-      "content-range": `bytes ${offset}-${offset + chunk.length}/*`
+      "content-range": `bytes ${offset}-${offset + chunk.length}/*`,
     },
-    body: new Blob([chunk])
+    body: new Blob([chunk]),
   });
 
   if (response.status !== 200) {
     const errorText = await response.text();
-    throw new Error(`Error occured while uploading chunk. status: ${response.status}, msg: ${errorText}`);
+    throw new Error(
+      `Error occured while uploading chunk. status: ${response.status}, msg: ${errorText}`
+    );
   }
 
   const token = response.headers.get("cryptifytoken") as string;
 
   return {
     token: token,
-    uuid: state.uuid
+    uuid: state.uuid,
   };
 }
 
-async function finalize(abortSignal: AbortSignal, state: FileState, size: number): Promise<void> {
+async function finalize(
+  abortSignal: AbortSignal,
+  state: FileState,
+  size: number
+): Promise<void> {
   const response = await fetch(`${baseurl}/fileupload/finalize/${state.uuid}`, {
     signal: abortSignal,
     method: "POST",
     headers: {
-      "cryptifytoken": state.token,
-      "content-range": `bytes */${size}`
-    }
+      cryptifytoken: state.token,
+      "content-range": `bytes */${size}`,
+    },
   });
 
   if (response.status !== 200) {
-    const errorText = await response.text()
-    throw new Error(`Error occured while finalizing file upload. status: ${response.status}, body: ${errorText}`);
+    const errorText = await response.text();
+    throw new Error(
+      `Error occured while finalizing file upload. status: ${response.status}, body: ${errorText}`
+    );
   }
 }
 
-export async function getFileLoadStream(abortSignal: AbortSignal, uuid: string): Promise<[number, ReadableStream<Uint8Array>]> {
+export async function getFileLoadStream(
+  abortSignal: AbortSignal,
+  uuid: string
+): Promise<[number, ReadableStream<Uint8Array>]> {
   const response = await fetch(`${baseurl}/filedownload/${uuid}`, {
     signal: abortSignal,
     method: "GET",
@@ -124,8 +139,10 @@ export async function getFileLoadStream(abortSignal: AbortSignal, uuid: string):
 
 
   if (response.status !== 200) {
-    const errorText = await response.text()
-    throw new Error(`Error occured while fetching file. status: ${response.status}, body: ${errorText}`);
+    const errorText = await response.text();
+    throw new Error(
+      `Error occured while fetching file. status: ${response.status}, body: ${errorText}`
+    );
   }
 
   const filesize = parseInt(response.headers.get("content-length") as string);
@@ -147,8 +164,8 @@ export function getFileStoreStream(
 ): WritableStream<Uint8Array> {
   let state: FileState = {
     token: "",
-    uuid: ""
-  }
+    uuid: "",
+  };
 
   let processed = 0;
   const queuingStrategy = new CountQueuingStrategy({ highWaterMark: 1 });
@@ -160,13 +177,15 @@ export function getFileStoreStream(
       if (abortController.signal.aborted) {
         throw new Error("Abort signaled during initFile.");
       }
-    }
-    catch (e) {
+    } catch (e) {
       c.error(e);
     }
   };
-  
-  const write = async (chunk: Uint8Array, c: WritableStreamDefaultController) => {
+
+  const write = async (
+    chunk: Uint8Array,
+    c: WritableStreamDefaultController
+  ) => {
     try {
       state = await storeChunk(abortController.signal, state, chunk, processed);
       processed += chunk.length;
@@ -174,11 +193,10 @@ export function getFileStoreStream(
       if (abortController.signal.aborted) {
         throw new Error("Abort signaled during storeChunk.");
       }
-    }
-    catch (e) {
+    } catch (e) {
       c.error(e);
     }
-  }
+  };
 
   const close = async () => {
     const timeoutId = setTimeout(() => abortController.abort(), 60000);
@@ -188,16 +206,19 @@ export function getFileStoreStream(
     if (abortController.signal.aborted) {
       throw new Error("Abort signaled during finalize.");
     }
-  }
+  };
 
   const abort = async () => {
     abortController.abort();
-  }
+  };
 
-  return new WritableStream({
-    start,
-    write,
-    close,
-    abort
-  }, queuingStrategy);
+  return new WritableStream(
+    {
+      start,
+      write,
+      close,
+      abort,
+    },
+    queuingStrategy
+  );
 }
