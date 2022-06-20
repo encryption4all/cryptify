@@ -9,7 +9,7 @@ interface FileState {
   uuid: string;
 }
 
-const baseurl = ""; // "http://localhost:3000";
+const baseurl = "http://localhost:3000"; // TODO: set to empty
 
 export function createFileReadable(file: File): ReadableStream {
   let offset = 0;

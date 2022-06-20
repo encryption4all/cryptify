@@ -14,7 +14,6 @@ type AppState = {
 }
 
 type AppProps = {
-  sealClient: Client,
   downloadUuid: string | null
 }
 
@@ -57,11 +56,10 @@ class App extends React.Component<AppProps, AppState> {
       return <DecryptPanel
         lang={this.state.lang}
         downloadUuid={this.props.downloadUuid}
-        sealClient={this.props.sealClient}
       />
     }
     else {
-      return <EncryptPanel lang={this.state.lang} sealClient={this.props.sealClient} />
+      return <EncryptPanel lang={this.state.lang} />
     }
   }
 
