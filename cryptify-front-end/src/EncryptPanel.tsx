@@ -22,6 +22,7 @@ import {
   UPLOAD_CHUNK_SIZE,
   PKG_URL,
   SMOOTH_TIME,
+  BACKEND_URL,
 } from "./Constants";
 import Chunker from "./utils";
 import { withTransform } from "./utils";
@@ -30,8 +31,6 @@ import { withTransform } from "./utils";
 const IrmaCore = require('@privacybydesign/irma-core');
 const IrmaWeb = require('@privacybydesign/irma-web');
 const IrmaClient = require('@privacybydesign/irma-client');
-
-const baseurl = "http://localhost";
 
 enum EncryptionState {
   FileSelection = 1,
@@ -54,6 +53,7 @@ type EncryptState = {
   selfAborted: boolean;
   encryptStartTime: number;
   modPromise: Promise<any>;
+  pkPromise: Promise<any>;
   irma_token: string
 };
 
@@ -73,6 +73,7 @@ const defaultEncryptState: EncryptState = {
   selfAborted: false,
   encryptStartTime: 0,
   modPromise: import("@e4a/irmaseal-wasm-bindings"),
+  pkPromise: fetch(`${PKG_URL}/v2/parameters`), 
   irma_token: ""
 };
 
@@ -118,135 +119,60 @@ export default class EncryptPanel extends React.Component<
   onFile(files: FileList) {
     const fileArr = Array.from(files);
 
-    this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files.concat(fileArr),
-      percentages: this.state.percentages.concat(fileArr.map((_) => 0)),
-      done: this.state.done.concat(fileArr.map((_) => false)),
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
-    });
+    this.setState(state => ({
+      files: state.files.concat(fileArr),
+      percentages: state.percentages.concat(fileArr.map((_) => 0)),
+      done: state.done.concat(fileArr.map((_) => false)),
+    }));
   }
 
   onRemoveFile(index: number) {
-    this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files.filter((_, i) => i !== index),
-      percentages: this.state.percentages.filter((_, i) => i !== index),
-      done: this.state.done.filter((_, i) => i !== index),
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
-    });
+    this.setState(state => ({
+      files: state.files.filter((_, i) => i !== index),
+      percentages: state.percentages.filter((_, i) => i !== index),
+      done: state.done.filter((_, i) => i !== index),
+    }));
   }
 
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: ev.target.value.toLowerCase(),
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
     });
   }
 
+  // TODO: can go?
   onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      recipient: this.state.recipient,
       sender: ev.target.value.toLowerCase(),
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
     });
   }
 
-  //Function when a user does not has access to the sender field.
-  onChangeSenderString(sen: string) {
+  // Function when a user does not has access to the sender field.
+  onChangeSenderString(sender: string) {
     this.setState({
-      recipient: this.state.recipient,
-      sender: sen,
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
-    },() =>{
+      sender: sender,
+    }, () => {
       this.onEncrypt()
     });
   }
 
+  // TODO: unused
   onChangeMobileNumber(ev: React.ChangeEvent<HTMLInputElement>) {
-    this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
-    });
+    this.setState({});
   }
 
   onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
       message: ev.target.value,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
     });
   }
 
-  //Function when a user does not has access to the sender field.
-  onChangeAnonymousString(sen: string, mes: string) {
+  // Function when a user does not have access to the sender field.
+  onChangeAnonymousString(sender: string, msg: string) {
     this.setState({
-      recipient: this.state.recipient,
-      sender: sen,
-      message: mes,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: ""
-    }, () =>{
+      sender: sender,
+      message: msg,
+    }, () => {
       this.onEncrypt();
     });
   }
@@ -271,17 +197,7 @@ export default class EncryptPanel extends React.Component<
             const dones = this.state.done.map((d) => d);
             dones[i] = true;
             this.setState({
-              recipient: this.state.recipient,
-              sender: this.state.sender,
-              message: this.state.message,
-              files: this.state.files,
-              percentages: this.state.percentages,
               done: dones,
-              encryptionState: this.state.encryptionState,
-              abort: this.state.abort,
-              selfAborted: this.state.selfAborted,
-              encryptStartTime: this.state.encryptStartTime,
-              irma_token: this.state.irma_token,
             });
           }, 1000 * SMOOTH_TIME);
         }
@@ -295,17 +211,7 @@ export default class EncryptPanel extends React.Component<
     });
 
     this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
       percentages: percentages,
-      done: this.state.done,
-      encryptionState: this.state.encryptionState,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      encryptStartTime: this.state.encryptStartTime,
-      irma_token: this.state.irma_token
     });
 
     if (done) {
@@ -314,15 +220,11 @@ export default class EncryptPanel extends React.Component<
   }
 
   async applyEncryption() {
-    if (!this.canEncrypt()) {
-      return;
-    }
+    if (!this.canEncrypt()) return;
 
-    const resp = await fetch(`${PKG_URL}/v2/parameters`);
-
+    const resp = await this.state.pkPromise;
     const params = JSON.parse(await resp.text());
     const pk = params.publicKey;
-
     const mod = await this.state.modPromise;
     const ts = Math.round(Date.now() / 1000);
 
@@ -333,14 +235,11 @@ export default class EncryptPanel extends React.Component<
       },
     };
 
-    // @ts-ignore
     const uploadChunker = new Chunker(
-      undefined,
       UPLOAD_CHUNK_SIZE
     ) as TransformStream;
 
-    // Create streams that takes all input files and zips them into
-    // an output stream.
+    // Create streams that takes all input files and zips them into an output stream.
     const zipTf = new Writer();
     const readable = zipTf.readable as ReadableStream;
     const writeable = zipTf.writable;
@@ -362,7 +261,7 @@ export default class EncryptPanel extends React.Component<
     // This is not 100% accurate due to zip and irmaseal
     // header but it's close enough for the UI.
     const finished = new Promise<void>(async (resolve, reject) => {
-      const fileStream = getFileStoreStream(
+      const [fileStream, sender] = getFileStoreStream(
         this.state.abort,
         this.state.sender,
         this.state.recipient,
@@ -370,7 +269,9 @@ export default class EncryptPanel extends React.Component<
         this.props.lang,
         this.state.irma_token,
         (n, last) => this.reportProgress(resolve, n, last)
-      ) as WritableStream;
+      ) as [WritableStream, string];
+
+      this.setState({sender});
 
       mod.seal(
         pk,
@@ -390,158 +291,76 @@ export default class EncryptPanel extends React.Component<
     // exceptions spill into the console...
 
     this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
       encryptionState: EncryptionState.Encrypting,
-      abort: this.state.abort,
-      selfAborted: false,
       encryptStartTime: Date.now(),
-      irma_token: this.state.irma_token
     });
 
     try {
       await this.applyEncryption();
       this.setState({
-        recipient: this.state.recipient,
-        sender: this.state.sender,
-        message: this.state.message,
-        files: this.state.files,
-        percentages: this.state.percentages,
-        done: this.state.done,
         encryptionState: EncryptionState.Done,
-        abort: this.state.abort,
         selfAborted: false,
-        encryptStartTime: 0,
-        irma_token: this.state.irma_token
       });
     } catch (e) {
+      console.error("Error occured during encryption: ", e);
       if (this.state.selfAborted === false) {
-        console.error("Error occured during encryption");
-        console.error(e);
         this.setState({
-          recipient: this.state.recipient,
-          sender: this.state.sender,
-          message: this.state.message,
-          files: this.state.files,
-          percentages: this.state.percentages,
-          done: this.state.done,
           encryptionState: EncryptionState.Error,
-          abort: this.state.abort,
-          selfAborted: false,
-          encryptStartTime: 0,
-          irma_token: this.state.irma_token
         });
       } else {
         this.setState({
-          recipient: this.state.recipient,
-          sender: this.state.sender,
-          message: this.state.message,
-          files: this.state.files,
           percentages: this.state.percentages.map((_) => 0),
           done: this.state.percentages.map((_) => false),
           encryptionState: EncryptionState.FileSelection,
-          abort: this.state.abort,
           selfAborted: false,
           encryptStartTime: 0,
-          irma_token: this.state.irma_token
         });
       }
     }
   }
 
   async onVerify() {
-    //Change React State for verifying the sender.
     this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
-      percentages: this.state.percentages,
-      done: this.state.done,
       encryptionState: EncryptionState.Verify,
-      abort: this.state.abort,
-      selfAborted: false,
-      encryptStartTime: 0,
-      irma_token: this.state.irma_token
-    },
-    () =>{ 
+    }, async () => {
 
-      const irma = new IrmaCore({
-        debugging: true,            // Enable to get helpful output in the browser console
-        element: ".crypt-irma-qr",  // Which DOM element to render to
-        
-        // Back-end options
-        session: {
-          // Point this to your controller:
-          url: `${baseurl}/verification`,
-        
-          start: {
-            url: (o: any) => `${o.url}/start`,
-            method: 'GET'
-          },
+		let token = "";
+    const irma = new IrmaCore({
+      debugging: true,            // Enable to get helpful output in the browser console
+      element: ".crypt-irma-qr",  // Which DOM element to render to
+      
+      session: {
+        url: `${BACKEND_URL}/verification`,
+        start: {
+          url: (o: any) => `${o.url}/start`,
+          method: 'GET'
+        },
+				mapping: {
+    			sessionToken: r => {token = r.token; return r.token},
+				},
+				result: false
+      }
+    });
 
-          mapping: {
-            sessionPtr: (r: any) => r.sessionPtr,
-            sessionToken: (r: any) => r.token
-          },
+    irma.use(IrmaWeb);
+    irma.use(IrmaClient);
 
-          result: {
-            url: (o: any, {sessionToken}: any) => `${o.url}/${sessionToken}/result`,
-            method: 'GET'
-          }
-        }
+    await irma.start().catch((e) => console.error("failed IRMA session: ", e));
 
-      });
-
-      irma.use(IrmaWeb);
-      irma.use(IrmaClient);
-
-      irma.start()
-        .then((result: any) => {
-          //Check if the IRMA server is DONE and the proof is VALID.
-          if(result["status"] === "DONE" && result["proofStatus"] === "VALID")
-          {
-          
-            this.setState({
-              recipient: this.state.recipient,
-              sender: this.state.sender,
-              message: this.state.message,
-              files: this.state.files,
-              percentages: this.state.percentages,
-              done: this.state.done,
-              encryptionState: EncryptionState.Verify,
-              abort: this.state.abort,
-              selfAborted: false,
-              encryptStartTime: 0,
-              irma_token: result["token"]
-            },
-            () =>{ 
-              this.onChangeSenderString(result["disclosed"][0][0]["rawvalue"])
-            });
-          }
-        })
-        .catch((error: string) => console.error("Couldn't do what you asked 😢", error));
+    this.setState({irma_token: token});
+		this.onEncrypt();
     });
   }
 
   onCancel(ev: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
     this.state.abort.abort();
     this.setState({
-      recipient: this.state.recipient,
-      sender: this.state.sender,
-      message: this.state.message,
-      files: this.state.files,
       percentages: this.state.percentages.map((_) => 0),
       done: this.state.percentages.map((_) => false),
       encryptionState: EncryptionState.FileSelection,
       abort: new AbortController(),
       selfAborted: false,
       encryptStartTime: 0,
-      irma_token: this.state.irma_token
     });
   }
 

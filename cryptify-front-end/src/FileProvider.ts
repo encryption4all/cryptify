@@ -1,9 +1,6 @@
-import { FILEREAD_CHUNK_SIZE } from "./Constants";
+import { FILEREAD_CHUNK_SIZE, BACKEND_URL } from "./Constants";
 import Lang from "./Lang";
 import { ReadableStream, WritableStream } from "web-streams-polyfill";
-
-// TODO: maybe make this more configurable
-const BACKEND_URL = "http://localhost:8000";
 
 interface FileState {
   token: string;
@@ -42,7 +39,7 @@ async function initFile(
   mailContent: string | null,
   lang: Lang,
   irma_token: string
-): Promise<FileState> {
+): Promise<[FileState, string]> {
   const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
     method: "POST",
@@ -66,11 +63,15 @@ async function initFile(
   }
 
   const resJson = await response.json();
+  const verified = resJson.sender || null;
   const token = response.headers.get("cryptifytoken") as string;
-  return {
-    token: token,
-    uuid: resJson["uuid"],
-  };
+  return [
+    {
+      token,
+      uuid: resJson["uuid"],
+    },
+    verified,
+  ];
 }
 
 async function storeChunk(
@@ -162,7 +163,7 @@ export function getFileStoreStream(
   lang: Lang,
   irma_token: string,
   progressReported: (uploaded: number, last: boolean) => void
-): WritableStream<Uint8Array> {
+): [WritableStream<Uint8Array>, string] {
   let state: FileState = {
     token: "",
     uuid: "",
@@ -173,7 +174,7 @@ export function getFileStoreStream(
 
   const start = async (c: WritableStreamDefaultController) => {
     try {
-      state = await initFile(
+      [state, sender] = await initFile(
         abortController.signal,
         sender,
         recipient,
@@ -220,13 +221,16 @@ export function getFileStoreStream(
     abortController.abort();
   };
 
-  return new WritableStream(
-    {
-      start,
-      write,
-      close,
-      abort,
-    },
-    queuingStrategy
-  );
+  return [
+    new WritableStream(
+      {
+        start,
+        write,
+        close,
+        abort,
+      },
+      queuingStrategy
+    ),
+    sender,
+  ];
 }

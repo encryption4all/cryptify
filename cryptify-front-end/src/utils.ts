@@ -5,7 +5,7 @@
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 
 export default class Chunker extends TransformStream<Uint8Array, Uint8Array> {
-  constructor(offset: number = 0, chunkSize: number = DEFAULT_CHUNK_SIZE) {
+  constructor(chunkSize: number = DEFAULT_CHUNK_SIZE, offset?: number) {
     let buf = new ArrayBuffer(chunkSize);
     let bufOffset = 0;
     let firstChunk = true;
@@ -17,7 +17,7 @@ export default class Chunker extends TransformStream<Uint8Array, Uint8Array> {
       ) {
         let chunkOffset = 0;
         if (firstChunk) {
-          chunkOffset = offset;
+          chunkOffset = offset || 0;
           firstChunk = false;
         }
         while (chunkOffset !== chunk.byteLength) {
