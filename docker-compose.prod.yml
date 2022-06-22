@@ -10,9 +10,9 @@ services:
             - "./conf/config.toml/:/app/config.toml:ro"
         working_dir: /app
         environment:
-            ROCKET_ENV: development
+            ROCKET_ENV: production
             ROCKET_CONFIG: "config.toml"
-        command: "bash -c 'mkdir -p /tmp/data && cargo run'"
+        command: "bash -c 'mkdir -p /tmp/data && cargo run --release'"
 
     frontend:
         image: node:17
@@ -22,13 +22,13 @@ services:
         working_dir: /app
         environment:
             NODE_OPTIONS: "--openssl-legacy-provider"
-        command: "npm start"
+        command: "npm run build"
 
     nginx:
         image: nginx:1.18
         depends_on:
-            - frontend
             - backend
+            - frontend
         volumes:
             - "./cryptify-front-end/build:/var/www/html/:ro"
             - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
