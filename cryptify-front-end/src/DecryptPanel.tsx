@@ -3,7 +3,6 @@ import React from "react";
 import CryptFileList from "./CryptFileList";
 import createProgressReporter from "./ProgressReporter";
 import streamSaver from "streamsaver";
-import mkIrmaErr from "./IrmaErrMod";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
 import irmaLogo from "./resources/irma-logo.svg";
@@ -119,11 +118,6 @@ export default class DecryptPanel extends React.Component<
   async onDecrypt() {
     this.setState({
       decryptionState: DecryptionState.IrmaSession,
-      fakeFile: this.state.fakeFile,
-      decryptInfo: this.state.decryptInfo,
-      percentage: this.state.percentage,
-      done: this.state.done,
-      abort: this.state.abort,
       selfAborted: false,
       decryptStartTime: Date.now(),
     });
@@ -135,13 +129,6 @@ export default class DecryptPanel extends React.Component<
       console.error(e);
       this.setState({
         decryptionState: DecryptionState.Error,
-        fakeFile: this.state.fakeFile,
-        decryptInfo: this.state.decryptInfo,
-        percentage: this.state.percentage,
-        done: this.state.done,
-        abort: this.state.abort,
-        selfAborted: this.state.selfAborted,
-        decryptStartTime: this.state.decryptStartTime,
       });
     }
   }
@@ -161,12 +148,6 @@ export default class DecryptPanel extends React.Component<
     this.setState({
       decryptionState: DecryptionState.IrmaSession,
       fakeFile: fakeFile,
-      decryptInfo: this.state.decryptInfo,
-      percentage: this.state.percentage,
-      done: this.state.done,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      decryptStartTime: this.state.decryptStartTime,
     });
 
     const mod = await this.state.modPromise;
@@ -225,30 +206,17 @@ export default class DecryptPanel extends React.Component<
       language: (this.props.lang as string).toLowerCase(),
     });
 
-    const irmaPromise = new Promise<any>(async (resolve, reject) => {
-      irma.use(mkIrmaErr(reject));
-      irma.use(IrmaWeb);
-      irma.use(IrmaClient);
-      const usk = await irma.start();
-      resolve(usk);
-    });
-
-    // Setup decryption
-    const usk = await irmaPromise;
+    irma.use(IrmaWeb);
+    irma.use(IrmaClient);
+    const usk = await irma.start();
 
     this.setState({
       decryptionState: DecryptionState.AskDownload,
-      fakeFile: this.state.fakeFile,
       decryptInfo: {
         unsealer,
         usk,
         id: email,
       },
-      percentage: this.state.percentage,
-      done: this.state.done,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      decryptStartTime: this.state.decryptStartTime,
     });
   }
 
@@ -264,7 +232,6 @@ export default class DecryptPanel extends React.Component<
         done: false,
         abort: new AbortController(),
         selfAborted: true,
-        decryptStartTime: this.state.decryptStartTime,
       });
       this.onDecrypt();
     }, 1000);
@@ -276,16 +243,13 @@ export default class DecryptPanel extends React.Component<
         decryptionState: DecryptionState.Error,
         decryptInfo: null,
         percentage: 0,
-        done: this.state.done,
-        abort: this.state.abort,
-        selfAborted: this.state.selfAborted,
-        decryptStartTime: this.state.decryptStartTime,
       });
       return;
     }
 
     const rawFileStream = streamSaver.createWriteStream(
-      this.state.fakeFile.name
+      this.state.fakeFile.name,
+      { size: this.state.fakeFile.size }
     );
     const fileStream = rawFileStream as WritableStream<Uint8Array>;
 
@@ -295,56 +259,39 @@ export default class DecryptPanel extends React.Component<
       id,
     }: { unsealer: any; usk: string; id: string } = this.state.decryptInfo;
 
-    let resolve: any = null;
-    const finished = new Promise<void>(async (res, _) => {
-      resolve = res;
-    });
+    const finished = new Promise<void>(async (resolve, _) => {
+      const progress = createProgressReporter((processed, done) => {
+        const fakeFile = this.state.fakeFile as File;
+        this.setState({
+          decryptionState: DecryptionState.Decrypting,
+          percentage: (100 * processed) / fakeFile.size,
+        });
 
-    const progress = createProgressReporter((processed, done) => {
-      const fakeFile = this.state.fakeFile as File;
-      this.setState({
-        decryptionState: DecryptionState.Decrypting,
-        decryptInfo: this.state.decryptInfo,
-        percentage: (100 * processed) / fakeFile.size,
-        done: this.state.done,
-        abort: this.state.abort,
-        selfAborted: this.state.selfAborted,
-        decryptStartTime: this.state.decryptStartTime,
-      });
+        if (done) {
+          window.setTimeout(() => {
+            this.setState({
+              decryptionState: DecryptionState.Decrypting,
+              percentage: 100,
+              done: true,
+            });
+            resolve();
+          }, 1000 * SMOOTH_TIME);
+        }
+      }) as TransformStream<Uint8Array, Uint8Array>;
 
-      if (done) {
-        window.setTimeout(() => {
-          this.setState({
-            decryptionState: DecryptionState.Decrypting,
-            fakeFile: this.state.fakeFile,
-            decryptInfo: this.state.decryptInfo,
-            percentage: 100,
-            done: true,
-            abort: this.state.abort,
-            selfAborted: this.state.selfAborted,
-            decryptStartTime: this.state.decryptStartTime,
-          });
-          resolve();
-        }, 1000 * SMOOTH_TIME);
-      }
-    }) as TransformStream<Uint8Array, Uint8Array>;
+      await unsealer.unseal(
+        id,
+        usk,
+        withTransform(fileStream, progress, this.state.abort.signal)
+      );
+     });
 
-    await unsealer.unseal(
-      id,
-      usk,
-      withTransform(fileStream, progress, this.state.abort.signal)
-    );
-    await finished;
+   await finished;
 
     this.setState({
       decryptionState: DecryptionState.Done,
-      fakeFile: this.state.fakeFile,
-      decryptInfo: this.state.decryptInfo,
       percentage: 100,
       done: true,
-      abort: this.state.abort,
-      selfAborted: this.state.selfAborted,
-      decryptStartTime: this.state.decryptStartTime,
     });
   }
 
