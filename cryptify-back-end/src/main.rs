@@ -25,11 +25,12 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, get, http::Header, http::Method, launch, post, put,
-    request::FromRequest, response::Responder, routes, serde::json::Json, Data, State,
+    data::ToByteUnit, fairing::AdHoc, get, http::Header, launch, post, put, request::FromRequest,
+    response::Responder, routes, serde::json::Json, Data, State,
 };
 
-use rocket_cors::{AllowedOrigins, CorsOptions};
+//use rocket::http::Method;
+//use rocket_cors::{AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
@@ -440,22 +441,21 @@ fn rocket() -> _ {
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
-    let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::all())
-        .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Put]
-                .into_iter()
-                .map(From::from)
-                .collect(),
-        )
-        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
-        .allow_credentials(true)
-        .max_age(Some(86400))
-        .to_cors()
-        .expect("unable to configure CORS");
+    //let cors = CorsOptions::default()
+    //    .allowed_origins(AllowedOrigins::all())
+    //    .allowed_methods(
+    //        vec![Method::Get, Method::Post, Method::Put]
+    //            .into_iter()
+    //            .map(From::from)
+    //            .collect(),
+    //    )
+    //    .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
+    //    .max_age(Some(86400))
+    //    .to_cors()
+    //    .expect("unable to configure CORS");
 
     rocket
-        .attach(cors)
+        //    .attach(cors)
         .mount(
             "/",
             routes![
