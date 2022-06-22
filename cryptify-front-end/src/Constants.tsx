@@ -9,4 +9,4 @@ export const UPLOAD_CHUNK_SIZE: number = 1024 * 1024;
 export const SMOOTH_TIME: number = 2;
 
 export const PKG_URL = "https://stable.irmaseal-pkg.ihub.ru.nl";
-export const BACKEND_URL = "http://localhost:8000";
+export const BACKEND_URL = "";
