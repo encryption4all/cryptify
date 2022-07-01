@@ -34,7 +34,9 @@ services:
         command: "server --sse -p 8088"
    
     backend:
-        image: debian:buster
+        build:
+            context: .
+            dockerfile: backend.Dockerfile
         depends_on:
             - build-backend
             - mailhog
