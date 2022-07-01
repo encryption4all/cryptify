@@ -1,7 +1,7 @@
 version: "3.4"
 services:
     build-backend:
-        image: rust:1.56
+        image: rust:1.61
         volumes:
             - "./cryptify-back-end/:/app"
         working_dir: /app

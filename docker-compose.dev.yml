@@ -1,7 +1,8 @@
 version: "3.4"
 services:
     backend:
-        image: rust:1.56
+        build:
+            dockerfile: rust.dev.Dockerfile
         depends_on:
             - irma
             - mailhog
@@ -12,7 +13,7 @@ services:
         environment:
             ROCKET_ENV: development
             ROCKET_CONFIG: "config.toml"
-        command: "bash -c 'mkdir -p /tmp/data && cargo run'"
+        command: "bash -c 'mkdir -p /tmp/data && cargo watch -x run'"
 
     frontend:
         image: node:17
