@@ -1,57 +1,53 @@
-version: '3.4'
+version: "3.4"
 services:
-  backend:
-    image: rust:1.56
-    user: "$USER_ID:$GROUP_ID"
-    volumes:
-      - './cryptify-back-end/:/app'
-    working_dir: /app
-    environment:
-      ROCKET_ENV: development
-      ROCKET_CONFIG: 'config.toml'
-    command: "bash -c 'mkdir -p /tmp/data && cargo run'" 
+    backend:
+        build:
+            dockerfile: rust.dev.Dockerfile
+        depends_on:
+            - irma
+            - mailhog
+        volumes:
+            - "./cryptify-back-end/:/app"
+            - "./conf/config.dev.toml/:/app/config.toml:ro"
+        working_dir: /app
+        environment:
+            ROCKET_ENV: development
+            ROCKET_CONFIG: "config.toml"
+        command: "bash -c 'mkdir -p /tmp/data && cargo watch -x run'"
 
+    frontend:
+        image: node:17
+        stdin_open: true
+        volumes:
+            - "./cryptify-front-end/:/app"
+        working_dir: /app
+        environment:
+            NODE_OPTIONS: "--openssl-legacy-provider"
+        command: "npm start"
 
-  frontend:
-    image: node:17
-    # build:
-    #   context: .
-    #   dockerfile: frontend.dev.Dockerfile
-    user: "$USER_ID:$GROUP_ID"
-    stdin_open: true
-    volumes:
-      - './cryptify-front-end/node_modules:/app/node_modules'
-      - './cryptify-front-end/:/app'
-    working_dir: /app
-    environment:
-      NODE_OPTIONS: '--openssl-legacy-provider'
-    command: "npm start"
+    nginx:
+        image: nginx:1.18
+        depends_on:
+            - frontend
+            - backend
+        volumes:
+            - "./cryptify-front-end/build:/var/www/html/:ro"
+            - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
+        ports:
+            - "80:80"
+            - "8088:8088"
 
-  nginx:
-    image: nginx:1.18
-    depends_on:
-      - backend
-    volumes:
-      - './dist/frontend/:/var/www/html/:ro'
-      - './conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro'
-    ports: [ '127.0.0.1:80:80' ]
+    mailhog:
+        image: mailhog/mailhog:v1.0.0
+        environment:
+            MH_API_BIND_ADDR: 0.0.0.0:1080
+            MH_UI_BIND_ADDR: 0.0.0.0:1080
+            MH_SMTP_BIND_ADDR: 0.0.0.0:1025
+            TZ: Europe/Amsterdam
+        ports: ["127.0.0.1:1080:1080"]
 
-  mailhog:
-    image: mailhog/mailhog:v1.0.0
-    environment:
-      MH_API_BIND_ADDR: 0.0.0.0:1080
-      MH_UI_BIND_ADDR: 0.0.0.0:1080
-      MH_SMTP_BIND_ADDR: 0.0.0.0:1025
-      TZ: Europe/Amsterdam
-    ports: [ "127.0.0.1:1080:1080" ]
-
-  irmaserver:
-    # image: debian:stable
-    build:
-      context: .
-      dockerfile: irmaserver.dev.Dockerfile
-    volumes:
-      - "./irma:/app"
-    ports: ["127.0.0.1:8088:8088"]
-    command: "./irma-master-linux-amd64 server --url http://127.0.0.1:8088 --sse"
-    working_dir: /app
+    irma:
+        image: privacybydesign/irma:edge
+        build:
+            context: https://github.com/privacybydesign/irmago.git
+        command: "server --sse -p 8088"

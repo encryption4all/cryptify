@@ -9,7 +9,7 @@ type CryptFileInputProps = {
   lang: Lang,
   onFile: (f : FileList) => void,
   multiple: boolean,
-  required: boolean
+  required: boolean,
 };
 
 class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
@@ -24,7 +24,7 @@ class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
     return (
       <div className="crypt-file-box">
         <FileDrop
-          onDrop={(files, _) => this.onFiles(files)}
+          onDrop={(files, _) => console.log("ayy")} /*/this.onFiles(files)}*/
         >
           <input
             multiple={this.props.multiple}

@@ -7,4 +7,4 @@ smtp_url = "mailhog"
 smtp_port = 1025
 # smtp_username = ""
 # smtp_password = ""
-irma_server = "http://irmaserver:8088/"
+irma_server = "http://irma:8088"

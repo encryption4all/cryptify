@@ -1,7 +1,6 @@
 import React from 'react';
 import './App.css';
 import headerLogo from './resources/cryptify-dark.svg';
-import { Client } from '@e4a/irmaseal-client';
 
 import InfoPanel from './InfoPanel';
 import EncryptPanel from './EncryptPanel';
@@ -14,7 +13,6 @@ type AppState = {
 }
 
 type AppProps = {
-  sealClient: Client,
   downloadUuid: string | null
 }
 
@@ -57,17 +55,16 @@ class App extends React.Component<AppProps, AppState> {
       return <DecryptPanel
         lang={this.state.lang}
         downloadUuid={this.props.downloadUuid}
-        sealClient={this.props.sealClient}
       />
     }
     else {
-      return <EncryptPanel lang={this.state.lang} sealClient={this.props.sealClient} />
+      return <EncryptPanel lang={this.state.lang} />
     }
   }
 
   render() {
-    let panelClass = null;
-    let panelHeader = null;
+    let panelClass = "";
+    let panelHeader = "";
     // @ts-ignore
     if (this.props.downloadUuid) {
       panelClass = "decrypt-panel";

@@ -1,15 +1,11 @@
-import { FILEREAD_CHUNK_SIZE } from "./Constants";
+import { FILEREAD_CHUNK_SIZE, BACKEND_URL } from "./Constants";
 import Lang from "./Lang";
 import { ReadableStream, WritableStream } from "web-streams-polyfill";
-
-export const foo = 1;
 
 interface FileState {
   token: string;
   uuid: string;
 }
-
-const baseurl = ""; // "http://localhost:3000";
 
 export function createFileReadable(file: File): ReadableStream {
   let offset = 0;
@@ -42,9 +38,9 @@ async function initFile(
   recipient: string,
   mailContent: string | null,
   lang: Lang,
-  irma_token: string,
-): Promise<FileState> {
-  const response = await fetch(`${baseurl}/fileupload/init`, {
+  irma_token: string
+): Promise<[FileState, string]> {
+  const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
     method: "POST",
     headers: {
@@ -56,7 +52,7 @@ async function initFile(
       mailContent: mailContent,
       mailLang: lang,
       irma_token: irma_token,
-    })
+    }),
   });
 
   if (response.status !== 200) {
@@ -67,11 +63,15 @@ async function initFile(
   }
 
   const resJson = await response.json();
+  const verified = resJson.sender || null;
   const token = response.headers.get("cryptifytoken") as string;
-  return {
-    token: token,
-    uuid: resJson["uuid"],
-  };
+  return [
+    {
+      token,
+      uuid: resJson["uuid"],
+    },
+    verified,
+  ];
 }
 
 async function storeChunk(
@@ -80,7 +80,7 @@ async function storeChunk(
   chunk: Uint8Array,
   offset: number
 ): Promise<FileState> {
-  const response = await fetch(`${baseurl}/fileupload/${state.uuid}`, {
+  const response = await fetch(`${BACKEND_URL}/fileupload/${state.uuid}`, {
     signal: abortSignal,
     method: "PUT",
     headers: {
@@ -111,14 +111,17 @@ async function finalize(
   state: FileState,
   size: number
 ): Promise<void> {
-  const response = await fetch(`${baseurl}/fileupload/finalize/${state.uuid}`, {
-    signal: abortSignal,
-    method: "POST",
-    headers: {
-      cryptifytoken: state.token,
-      "content-range": `bytes */${size}`,
-    },
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/fileupload/finalize/${state.uuid}`,
+    {
+      signal: abortSignal,
+      method: "POST",
+      headers: {
+        cryptifytoken: state.token,
+        "content-range": `bytes */${size}`,
+      },
+    }
+  );
 
   if (response.status !== 200) {
     const errorText = await response.text();
@@ -132,11 +135,10 @@ export async function getFileLoadStream(
   abortSignal: AbortSignal,
   uuid: string
 ): Promise<[number, ReadableStream<Uint8Array>]> {
-  const response = await fetch(`${baseurl}/filedownload/${uuid}`, {
+  const response = await fetch(`${BACKEND_URL}/filedownload/${uuid}`, {
     signal: abortSignal,
     method: "GET",
   });
-
 
   if (response.status !== 200) {
     const errorText = await response.text();
@@ -146,11 +148,11 @@ export async function getFileLoadStream(
   }
 
   const filesize = parseInt(response.headers.get("content-length") as string);
-  const blob = await response.body;
-  if (blob === null) {
+  const stream = response.body;
+  if (stream === null) {
     throw new Error("No response.body object.");
   }
-  return [filesize, blob as ReadableStream<Uint8Array>];
+  return [filesize, stream as ReadableStream<Uint8Array>];
 }
 
 export function getFileStoreStream(
@@ -161,7 +163,7 @@ export function getFileStoreStream(
   lang: Lang,
   irma_token: string,
   progressReported: (uploaded: number, last: boolean) => void
-): WritableStream<Uint8Array> {
+): [WritableStream<Uint8Array>, string] {
   let state: FileState = {
     token: "",
     uuid: "",
@@ -172,7 +174,14 @@ export function getFileStoreStream(
 
   const start = async (c: WritableStreamDefaultController) => {
     try {
-      state = await initFile(abortController.signal, sender, recipient, mailContent, lang, irma_token);
+      [state, sender] = await initFile(
+        abortController.signal,
+        sender,
+        recipient,
+        mailContent,
+        lang,
+        irma_token
+      );
       progressReported(processed, false);
       if (abortController.signal.aborted) {
         throw new Error("Abort signaled during initFile.");
@@ -212,13 +221,16 @@ export function getFileStoreStream(
     abortController.abort();
   };
 
-  return new WritableStream(
-    {
-      start,
-      write,
-      close,
-      abort,
-    },
-    queuingStrategy
-  );
+  return [
+    new WritableStream(
+      {
+        start,
+        write,
+        close,
+        abort,
+      },
+      queuingStrategy
+    ),
+    sender,
+  ];
 }

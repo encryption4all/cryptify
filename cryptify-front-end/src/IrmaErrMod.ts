@@ -3,25 +3,30 @@ export default mkIrmaErr;
 
 function mkIrmaErr(reject: (reason?: any) => void) {
   IrmaErr.reject = reject;
-  return IrmaErr
+  return IrmaErr;
 }
 
 class IrmaErr {
-  static reject: ((reason?: any) => void);
+  static reject: (reason?: any) => void;
 
   stateChange(args: any) {
-    if (args.newState === "Cancelled" || args.newState === "Error" || args.newState === "TimedOut") {
-      IrmaErr.reject(new Error(`Error occured during irma session: ${args.toString()}`));
+    if (
+      args.newState === "Cancelled" ||
+      args.newState === "Error" ||
+      args.newState === "TimedOut"
+    ) {
+      console.log(args);
+      IrmaErr.reject(
+        new Error(`Error occured during irma session: ${args.toString()}`)
+      );
     }
   }
 
-  start() {
-    
-  }
+  start() {}
 
   close() {
     return new Promise<void>((resolve, _) => {
       resolve();
-    })
+    });
   }
 }

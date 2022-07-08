@@ -181,7 +181,7 @@ class InfoPanel extends React.Component<InfoPanelProps, InfoPanelState> {
 
   render() {
     let bg: string | null = null;
-    let content = null;
+    let content;
     switch (this.state.page.name) {
     case "aboutPage":
       content = this.renderAbout();

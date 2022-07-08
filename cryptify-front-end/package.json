@@ -42,31 +42,26 @@
     }
   },
   "dependencies": {
-    "@e4a/irmaseal-client": "0.0.6",
-    "@mattiasbuelens/web-streams-adapter": "^0.1.0-alpha.5",
+    "@e4a/irmaseal-wasm-bindings": "^0.2.0",
     "@privacybydesign/irma-client": "^0.3.3",
     "@privacybydesign/irma-core": "^0.3.3",
     "@privacybydesign/irma-web": "^0.3.3",
     "@privacybydesign/irma-popup": "^0.3.3",
     "@transcend-io/conflux": "^3.2.0",
-    "@types/react": "^16.9.35",
-    "@types/react-dom": "^16.9.8",
-    "@types/streamsaver": "^2.0.0",
-    "react": "^16.13.1",
+    "react": "^18.1.0",
     "react-circular-progressbar": "^2.0.3",
-    "react-dom": "^16.13.1",
-    "react-file-drop": "^3.1.2",
-    "react-scripts": "3.4.1",
+    "react-dom": "^18.1.0",
+    "react-file-drop": "^3.1.5",
+    "react-scripts": "^5.0.1",
     "streamsaver": "^2.0.5",
-    "typescript": "^3.9.6",
     "web-streams-polyfill": "^3.0.3"
   },
   "scripts": {
-    "start": "PORT=8080 react-app-rewired start",
-    "build": "react-app-rewired build",
+    "start": "PORT=8080 craco start",
+    "build": "craco build",
     "dist-electron": "electron-builder",
-    "test": "react-app-rewired test",
-    "eject": "react-app-rewired eject"
+    "test": "craco test",
+    "eject": "craco eject"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -89,12 +84,14 @@
     "@testing-library/user-event": "^7.1.2",
     "@types/jest": "^24.0.0",
     "@types/node": "^12.12.39",
+    "@types/react": "^18.0.9",
+    "@types/react-dom": "^18.0.4",
+    "@types/streamsaver": "^2.0.0",
     "electron": "^8.2.5",
     "electron-builder": "^22.6.0",
     "electron-reload": "^1.5.0",
     "nodemon": "^2.0.3",
-    "typescript": "^3.9.6",
-    "react-app-rewired": "^2.1.8",
-    "wasm-loader": "^1.3.0"
+    "@craco/craco": "6.4.3",
+    "typescript": "^3.9.6"
   }
 }
