@@ -1,75 +1,156 @@
 /* karla-regular - latin */
 @font-face {
-  font-family: 'Karla';
+  font-family: "Karla";
   font-style: normal;
   font-weight: 400;
-  src: url('./resources/fonts/karla-regular.woff') format('woff')
+  src: url("./resources/fonts/karla-regular.woff") format("woff");
 }
 /* karla-italic - latin */
 @font-face {
-  font-family: 'Karla';
+  font-family: "Karla";
   font-style: italic;
   font-weight: 400;
-  src: url('./resources/fonts/karla-italic.woff') format('woff')
+  src: url("./resources/fonts/karla-italic.woff") format("woff");
 }
 /* karla-700 - latin */
 @font-face {
-  font-family: 'Karla';
+  font-family: "Karla";
   font-style: normal;
   font-weight: 700;
-  src: url('./resources/fonts/karla-bold.woff') format('woff')
+  src: url("./resources/fonts/karla-bold.woff") format("woff");
 }
 /* karla-700italic - latin */
 @font-face {
-  font-family: 'Karla';
+  font-family: "Karla";
   font-style: italic;
   font-weight: 700;
-  src: url('./resources/fonts/karla-bold-italic.woff') format('woff')
+  src: url("./resources/fonts/karla-bold-italic.woff") format("woff");
 }
 
-html, body, div, span, applet, object, iframe,
-h1, h2, h3, h4, h5, h6, p, blockquote, pre,
-a, abbr, acronym, address, big, cite, code,
-del, dfn, em, img, ins, kbd, q, s, samp,
-small, strike, strong, sub, sup, tt, var,
-b, u, i, center,
-dl, dt, dd, ol, ul, li,
-fieldset, form, label, legend,
-table, caption, tbody, tfoot, thead, tr, th, td,
-article, aside, canvas, details, embed, 
-figure, figcaption, footer, header, hgroup, 
-menu, nav, output, ruby, section, summary,
-time, mark, audio, video {
-	margin: 0;
-	padding: 0;
-	border: 0;
-	font-size: 100%;
-	font: inherit;
-	vertical-align: baseline;
+html,
+body,
+div,
+span,
+applet,
+object,
+iframe,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote,
+pre,
+a,
+abbr,
+acronym,
+address,
+big,
+cite,
+code,
+del,
+dfn,
+em,
+img,
+ins,
+kbd,
+q,
+s,
+samp,
+small,
+strike,
+strong,
+sub,
+sup,
+tt,
+var,
+b,
+u,
+i,
+center,
+dl,
+dt,
+dd,
+ol,
+ul,
+li,
+fieldset,
+form,
+label,
+legend,
+table,
+caption,
+tbody,
+tfoot,
+thead,
+tr,
+th,
+td,
+article,
+aside,
+canvas,
+details,
+embed,
+figure,
+figcaption,
+footer,
+header,
+hgroup,
+menu,
+nav,
+output,
+ruby,
+section,
+summary,
+time,
+mark,
+audio,
+video {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 100%;
+  font: inherit;
+  vertical-align: baseline;
 }
 
 /* HTML5 display-role reset for older browsers */
-article, aside, details, figcaption, figure, 
-footer, header, hgroup, menu, nav, section {
-	display: block;
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+hgroup,
+menu,
+nav,
+section {
+  display: block;
 }
 body {
-	line-height: 1;
+  line-height: 1;
 }
-ol, ul {
-	list-style: none;
+ol,
+ul {
+  list-style: none;
 }
-blockquote, q {
-	quotes: none;
+blockquote,
+q {
+  quotes: none;
 }
-blockquote:before, blockquote:after,
-q:before, q:after {
-	content: '';
-	content: none;
+blockquote:before,
+blockquote:after,
+q:before,
+q:after {
+  content: "";
+  content: none;
 }
 table {
-	border-collapse: collapse;
-	border-spacing: 0;
+  border-collapse: collapse;
+  border-spacing: 0;
 }
 
 :root {
@@ -80,7 +161,11 @@ table {
   --cryptify-header-text-color: #ffffff;
 }
 
-:root, body, #root, .App, .info-panel {
+:root,
+body,
+#root,
+.App,
+.info-panel {
   min-height: 100vh;
 }
 
@@ -91,7 +176,7 @@ table {
 }
 
 .cookie-text {
-  color: #C93C58;
+  color: #c93c58;
   font-size: 1.5em;
   line-height: 1.3em;
 }
@@ -105,10 +190,9 @@ table {
   position: relative;
 }
 
-
 @media only screen and (max-width: 1170px) {
   .content-panel {
-    float: none!important;
+    float: none !important;
     width: calc(100% - 5.3em);
   }
 }
@@ -120,11 +204,10 @@ table {
   }
 }
 
-
 .content-panel .App-header {
   padding-top: 2.6em;
-  display:block;
-  margin:auto;
+  display: block;
+  margin: auto;
   width: 10.6em;
 }
 
@@ -135,10 +218,9 @@ table {
   }
 }
 
-
 .content-panel .crypt-panel-header {
   padding-top: 2.6em;
-  display:table;
+  display: table;
   margin-bottom: 0.25em;
   width: 100%;
 }
@@ -153,13 +235,13 @@ table {
   display: inline;
   text-align: center;
   width: 100%;
-  display:table-cell;
+  display: table-cell;
   font-size: 1.6em;
 }
 
 @media only screen and (max-width: 500px) {
   .content-panel .crypt-panel-header .crypt-panel-header-text {
-    font-size: 16pt!important;
+    font-size: 16pt !important;
   }
 }
 
@@ -205,22 +287,21 @@ table {
   padding-bottom: 0;
 }
 
-.crypt-select-protection-input-box input[type=text] {
+.crypt-select-protection-input-box input[type="text"] {
   font-size: 1.1em;
   border: 0;
   box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
   width: 100%;
 }
 
-
-.crypt-select-protection-input-box input[type=text]:focus {
+.crypt-select-protection-input-box input[type="text"]:focus {
   outline: none;
 }
 
 .crypt-btn {
   border: none;
   border-radius: 2.6em;
-  background: #00A2D5;
+  background: #000000;
   cursor: pointer;
   color: white;
   font-weight: bold;
@@ -232,28 +313,28 @@ table {
 }
 
 .irma-web-button {
-  border: 3px solid #00A2D5!important;
-  border-radius: 31pt!important;
-  background: white!important;
-  cursor: pointer!important;
-  color: #00A2D5;
-  font-weight: bold!important;
-  font-size: 1.15em!important;
-  line-height: 1.6em!important;
-  padding-top: 0.4em!important;
-  padding-bottom: 0.4em!important;
+  border: 3px solid #00a2d5 !important;
+  border-radius: 31pt !important;
+  background: white !important;
+  cursor: pointer !important;
+  color: #00a2d5;
+  font-weight: bold !important;
+  font-size: 1.15em !important;
+  line-height: 1.6em !important;
+  padding-top: 0.4em !important;
+  padding-bottom: 0.4em !important;
   padding-left: 1.3em;
   padding-right: 1.3em;
-  text-align: center!important;
+  text-align: center !important;
 }
 
 @media only screen and (max-width: 500px) {
   .irma-web-button {
-    font-weight: bold!important;
-    font-size: 1em!important;
-    line-height: 1.3em!important;
-    padding-top: 0.4em!important;
-    padding-bottom: 0.4em!important;
+    font-weight: bold !important;
+    font-size: 1em !important;
+    line-height: 1.3em !important;
+    padding-top: 0.4em !important;
+    padding-bottom: 0.4em !important;
     padding-left: 1.2em;
     padding-right: 1.2em;
   }
@@ -264,11 +345,11 @@ table {
 }
 
 .crypt-btn-secondary {
-  border: 0.25em solid #00A2D5;
+  border: 0.25em solid #00a2d5;
   border-radius: 2.6em;
   background: white;
-  cursor: pointer!important;
-  color: #00A2D5;
+  cursor: pointer !important;
+  color: #00a2d5;
   cursor: pointer;
   color: white;
   font-weight: bold;
@@ -285,13 +366,13 @@ table {
   margin-right: auto;
   width: 15em;
   margin-bottom: 1em;
-  color: #00A2D5;
+  color: #00a2d5;
 }
 
 .crypt-btn:disabled,
 .crypt-btn[disabled],
 .crypt-btn-disabled {
-  background: #E8E8E8;
+  background: #e8e8e8;
   color: #424242;
   cursor: not-allowed;
 }
@@ -304,7 +385,6 @@ table {
   margin-bottom: 1em;
   margin-top: 1em;
 }
-
 
 .crypt-btn-anonymous {
   width: 15em;
@@ -322,9 +402,8 @@ table {
     width: 14em;
   }
 
-  
   .crypt-btn-cancel {
-    width: 14!important;
+    width: 14 !important;
   }
 }
 
@@ -334,12 +413,12 @@ table {
   }
 
   .crypt-btn-cancel {
-    width: 13em!important;
+    width: 13em !important;
   }
 }
 
 a {
-  color: #4EA6EA;
+  color: #4ea6ea;
 }
 
 .crypt-progress-container {

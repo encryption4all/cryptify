@@ -1,20 +1,20 @@
-import React from 'react';
-import './App.css';
-import headerLogo from './resources/cryptify-dark.svg';
+import React from "react";
+import "./App.css";
+import headerLogo from "./resources/cryptify-dark.svg";
 
-import InfoPanel from './InfoPanel';
-import EncryptPanel from './EncryptPanel';
-import DecryptPanel from './DecryptPanel';
-import Lang from './Lang';
-import getTranslation from './Translations';
+import InfoPanel from "./InfoPanel";
+import EncryptPanel from "./EncryptPanel";
+import DecryptPanel from "./DecryptPanel";
+import Lang from "./Lang";
+import getTranslation from "./Translations";
 
 type AppState = {
-  lang: Lang
-}
+  lang: Lang;
+};
 
 type AppProps = {
-  downloadUuid: string | null
-}
+  downloadUuid: string | null;
+};
 
 const langKey = "cryptify-language";
 
@@ -22,15 +22,16 @@ class App extends React.Component<AppProps, AppState> {
   constructor(props: AppProps) {
     super(props);
     this.state = {
-      lang: this.getLangSetting()
+      lang: this.getLangSetting(),
     };
   }
 
   getLangSetting(): Lang {
     let currentLang = localStorage.getItem(langKey);
-    if ( currentLang === null
-      || (currentLang !== (Lang.EN as string)
-      && currentLang !== (Lang.NL as string))
+    if (
+      currentLang === null ||
+      (currentLang !== (Lang.EN as string) &&
+        currentLang !== (Lang.NL as string))
     ) {
       const userLang = navigator.language;
       currentLang = Lang.EN as string;
@@ -46,19 +47,20 @@ class App extends React.Component<AppProps, AppState> {
     localStorage.setItem(langKey, lang as string);
 
     this.setState({
-      lang: lang
+      lang: lang,
     });
   }
 
   contentPanel() {
     if (this.props.downloadUuid) {
-      return <DecryptPanel
-        lang={this.state.lang}
-        downloadUuid={this.props.downloadUuid}
-      />
-    }
-    else {
-      return <EncryptPanel lang={this.state.lang} />
+      return (
+        <DecryptPanel
+          lang={this.state.lang}
+          downloadUuid={this.props.downloadUuid}
+        />
+      );
+    } else {
+      return <EncryptPanel lang={this.state.lang} />;
     }
   }
 
@@ -69,8 +71,7 @@ class App extends React.Component<AppProps, AppState> {
     if (this.props.downloadUuid) {
       panelClass = "decrypt-panel";
       panelHeader = getTranslation(this.state.lang).decryptPanel_header;
-    }
-    else {
+    } else {
       panelClass = "encrypt-panel";
       panelHeader = getTranslation(this.state.lang).encryptPanel_header;
     }
@@ -78,17 +79,22 @@ class App extends React.Component<AppProps, AppState> {
     return (
       <div className="App">
         <div className={`content-panel ${panelClass}`}>
+          {/*
           <header className="App-header">
             <img className="App-header-logo" src={ headerLogo } alt="cryptify-logo" ></img>
           </header>
+          */}
           <div className="crypt-panel-header">
-            <div className="crypt-panel-header-text">
-              { panelHeader }
-            </div>
+            <div className="crypt-panel-header-text">{panelHeader}</div>
           </div>
           {this.contentPanel()}
         </div>
-        <InfoPanel lang={this.state.lang} onSetLang={(l: Lang) => this.setLang(l)}/>
+        {/*
+        <InfoPanel
+          lang={this.state.lang}
+          onSetLang={(l: Lang) => this.setLang(l)}
+        />
+        */}
       </div>
     );
   }

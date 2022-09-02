@@ -124,7 +124,7 @@ const english: Translation = {
   cryptFileInput_dropFiles: "Drag & drop files",
   cryptFileInput_clickFiles: "Or click the button below",
   cryptFileInput_sendUpto: "2GB maximum",
-  cryptFileInput_addFileBtn: "Add files",
+  cryptFileInput_addFileBtn: "Upload files",
 
   // cryptFileList
   cryptFileList_addMoreFiles: "Add more files",
