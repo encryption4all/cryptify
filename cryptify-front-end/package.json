@@ -45,8 +45,8 @@
     "@e4a/irmaseal-wasm-bindings": "^0.2.0",
     "@privacybydesign/irma-client": "^0.3.3",
     "@privacybydesign/irma-core": "^0.3.3",
-    "@privacybydesign/irma-web": "^0.3.3",
     "@privacybydesign/irma-popup": "^0.3.3",
+    "@privacybydesign/irma-web": "^0.3.3",
     "@transcend-io/conflux": "^3.2.0",
     "react": "^18.1.0",
     "react-circular-progressbar": "^2.0.3",
@@ -79,6 +79,7 @@
     ]
   },
   "devDependencies": {
+    "@craco/craco": "6.4.3",
     "@testing-library/jest-dom": "^4.2.4",
     "@testing-library/react": "^9.3.2",
     "@testing-library/user-event": "^7.1.2",
@@ -91,7 +92,6 @@
     "electron-builder": "^22.6.0",
     "electron-reload": "^1.5.0",
     "nodemon": "^2.0.3",
-    "@craco/craco": "6.4.3",
     "typescript": "^3.9.6"
   }
 }

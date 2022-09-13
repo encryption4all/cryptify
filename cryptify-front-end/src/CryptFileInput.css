@@ -1,9 +1,10 @@
 .crypt-file-box > .file-drop > .file-drop-target {
   /* require px border radius here due to the custom outline*/
-  background-image: url("./resources/box-outline.svg");
-  border-radius: 0px;
+  border: 1px dashed black;
+  border-radius: 8px;
   color: black;
   position: relative;
+  height: 150px;
 }
 
 .file-drop > .file-drop-target.file-drop-dragging-over-target {
@@ -14,13 +15,15 @@
   height: 100%;
 }
 
-.crypt-file-box .file-drop, .crypt-file-box .file-drop-target {
+.crypt-file-box .file-drop,
+.crypt-file-box .file-drop-target {
   margin-top: 32pt;
   height: 100%;
 }
 
 @media only screen and (max-width: 500px) {
-  .crypt-file-box .file-drop, .crypt-file-box .file-drop-target {
+  .crypt-file-box .file-drop,
+  .crypt-file-box .file-drop-target {
     margin-top: 16pt;
   }
 }
@@ -34,6 +37,9 @@
   top: 0;
   left: 0;
   padding-bottom: 2em;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .swallow-ptr_evs {
@@ -103,17 +109,12 @@
 }
 
 .crypt-file-btn {
+  width: 140px;
+  height: 30px;
   margin: auto;
-  margin-top: 2.8em;
-  margin-left: 4.4em;
-  margin-right: 4.4em;
 }
 
 @media only screen and (max-width: 1170px) {
-  .crypt-file-btn {
-    margin-left: 30%;
-    margin-right: 30%;
-  }
 }
 
 @media only screen and (max-width: 500px) {
@@ -132,17 +133,11 @@
     margin-top: 0.55em;
     font-size: 0.91em;
   }
-
-  .crypt-file-btn {
-    margin-top: 0.94em;
-    margin-left: 1.87em;
-    margin-right: 1.87em;
-  }
 }
 
 .crypt-file-btn:disabled,
 .crypt-file-btn[disabled] {
-  background: #B5B6B7;
+  background: #b5b6b7;
 }
 
 #crypt-file-input {
@@ -150,6 +145,6 @@
   width: 100%;
   border: none;
   overflow: hidden;
-  opacity:0;
+  opacity: 0;
   z-index: -9999;
 }

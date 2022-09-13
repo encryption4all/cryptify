@@ -66,26 +66,26 @@ class App extends React.Component<AppProps, AppState> {
 
   render() {
     let panelClass = "";
-    let panelHeader = "";
     // @ts-ignore
     if (this.props.downloadUuid) {
       panelClass = "decrypt-panel";
-      panelHeader = getTranslation(this.state.lang).decryptPanel_header;
     } else {
       panelClass = "encrypt-panel";
-      panelHeader = getTranslation(this.state.lang).encryptPanel_header;
     }
 
     return (
       <div className="App">
         <div className={`content-panel ${panelClass}`}>
-          {/*
-          <header className="App-header">
-            <img className="App-header-logo" src={ headerLogo } alt="cryptify-logo" ></img>
-          </header>
-          */}
           <div className="crypt-panel-header">
-            <div className="crypt-panel-header-text">{panelHeader}</div>
+            <div className="crypt-file-box-large-text">
+              {getTranslation(this.state.lang).cryptFileInput_dropFiles}
+            </div>
+            <div className="crypt-file-box-small-text">
+              {getTranslation(this.state.lang).cryptFileInput_clickFiles}
+            </div>
+            <div className="crypt-file-box-tiny-text">
+              {getTranslation(this.state.lang).cryptFileInput_sendUpto}
+            </div>
           </div>
           {this.contentPanel()}
         </div>

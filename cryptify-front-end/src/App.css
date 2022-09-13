@@ -1,30 +1,17 @@
-/* karla-regular - latin */
+/* overpass-regular - latin */
 @font-face {
-  font-family: "Karla";
+  font-family: "Overpass";
   font-style: normal;
   font-weight: 400;
-  src: url("./resources/fonts/karla-regular.woff") format("woff");
+  src: url("./resources/fonts/Overpass-Regular.ttf") format("truetype");
 }
-/* karla-italic - latin */
+
+/* overpass-700 - latin */
 @font-face {
-  font-family: "Karla";
-  font-style: italic;
-  font-weight: 400;
-  src: url("./resources/fonts/karla-italic.woff") format("woff");
-}
-/* karla-700 - latin */
-@font-face {
-  font-family: "Karla";
+  font-family: "Overpass";
   font-style: normal;
   font-weight: 700;
-  src: url("./resources/fonts/karla-bold.woff") format("woff");
-}
-/* karla-700italic - latin */
-@font-face {
-  font-family: "Karla";
-  font-style: italic;
-  font-weight: 700;
-  src: url("./resources/fonts/karla-bold-italic.woff") format("woff");
+  src: url("./resources/fonts/Overpass-Bold.ttf") format("truetype");
 }
 
 html,
@@ -103,6 +90,7 @@ nav,
 output,
 ruby,
 section,
+textarea,
 summary,
 time,
 mark,
@@ -171,7 +159,7 @@ body,
 
 .App {
   font-size: 10pt;
-  font-family: "karla";
+  font-family: "Overpass";
   width: 100%;
 }
 
