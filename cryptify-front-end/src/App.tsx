@@ -76,17 +76,6 @@ class App extends React.Component<AppProps, AppState> {
     return (
       <div className="App">
         <div className={`content-panel ${panelClass}`}>
-          <div className="crypt-panel-header">
-            <div className="crypt-file-box-large-text">
-              {getTranslation(this.state.lang).cryptFileInput_dropFiles}
-            </div>
-            <div className="crypt-file-box-small-text">
-              {getTranslation(this.state.lang).cryptFileInput_clickFiles}
-            </div>
-            <div className="crypt-file-box-tiny-text">
-              {getTranslation(this.state.lang).cryptFileInput_sendUpto}
-            </div>
-          </div>
           {this.contentPanel()}
         </div>
         {/*

@@ -29,7 +29,7 @@ struct MailStrings<'a> {
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
-    subject_str: "heeft je een bestand gestuurd via Cryptify",
+    subject_str: "heeft je een bestand gestuurd via PostGuard",
     sender_str: "heeft je bestanden gestuurd",
     expires_str: "Verloopt op",
     download_str: "Download jouw bestanden",
@@ -37,7 +37,7 @@ const NL_STRINGS: MailStrings = MailStrings {
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
-    subject_str: "sent you files via Cryptify",
+    subject_str: "sent you files via PostGuard",
     sender_str: "sent you files",
     expires_str: "Expires on",
     download_str: "Download your files",
@@ -113,7 +113,7 @@ pub async fn send_email(
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // combine URL with mail variables into template
-    let url = format!("{}?download={}", config.server_url(), uuid);
+    let url = str::replace(config.server_url(), "{uuid}", uuid);
     let (email, subject) = email_templates(state, &url);
     let email = Message::builder()
         .header(ContentType::TEXT_HTML)

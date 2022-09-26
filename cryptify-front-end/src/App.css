@@ -207,7 +207,6 @@ body,
 }
 
 .content-panel .crypt-panel-header {
-  padding-top: 2.6em;
   display: table;
   margin-bottom: 0.25em;
   width: 100%;
@@ -410,13 +409,17 @@ a {
 }
 
 .crypt-progress-container {
-  padding-top: 2.5em;
+  padding-top: 4.5em;
   font-size: 1.15em;
 }
 
 @media only screen and (max-width: 500px) {
   .crypt-progress-container {
-    padding-top: 0pt;
+    padding-top: 10rem;
+  }
+
+  .crypt-progress-container-decrypt {
+    padding-top: 2rem;
   }
 }
 

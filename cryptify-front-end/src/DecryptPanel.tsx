@@ -337,7 +337,7 @@ export default class DecryptPanel extends React.Component<
     }
 
     return (
-      <div className="crypt-progress-container">
+      <div className="crypt-progress-container-decrypt">
         <h3>
           {isMobile
             ? getTranslation(this.props.lang)

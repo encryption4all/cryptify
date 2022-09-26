@@ -1,8 +1,8 @@
 [global]
-server_url = "http://localhost"
+server_url = "http://localhost:5173/?download={uuid}#filesharing"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
-email_from = "noreply@cryptify.local"
+email_from = "noreply@postguard.local"
 smtp_url = "mailhog"
 smtp_port = 1025
 # smtp_username = ""

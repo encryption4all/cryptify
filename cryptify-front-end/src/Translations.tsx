@@ -132,7 +132,7 @@ const english: Translation = {
   cryptFileList_filesAdded: (n: number, fs: string) => `${n} file(s) added - ${fs} left`,
 
   // decryptPanel
-  decryptPanel_header: "DOWNLOAD & DECRYPT",
+  decryptPanel_header: "Decrypt your files",
   decryptPanel_downloadDecrypt: "Downloading & Decrypting...",
   decryptPanel_irmaInstructionHeaderQr: "Scan QR-code with IRMA",
   decryptPanel_irmaInstructionHeaderMobile: "Prove your identity with IRMA",

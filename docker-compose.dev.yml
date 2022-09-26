@@ -34,8 +34,8 @@ services:
             - "./cryptify-front-end/build:/var/www/html/:ro"
             - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
         ports:
-            - "80:80"
-            - "8088:8088"
+            - "8080:80"
+            - "8088:80"
 
     mailhog:
         image: mailhog/mailhog:v1.0.0
