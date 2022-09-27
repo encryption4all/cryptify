@@ -408,18 +408,20 @@ a {
   color: #4ea6ea;
 }
 
+form {
+  display: flex;
+  flex-direction: column;
+  max-width: 400px;
+}
+
 .crypt-progress-container {
-  padding-top: 4.5em;
+  margin-top: 4.5em;
   font-size: 1.15em;
 }
 
 @media only screen and (max-width: 500px) {
-  .crypt-progress-container {
-    padding-top: 10rem;
-  }
-
-  .crypt-progress-container-decrypt {
-    padding-top: 2rem;
+  .crypt-progress-container:not(:first-child) {
+    margin-top: 8em;
   }
 }
 
