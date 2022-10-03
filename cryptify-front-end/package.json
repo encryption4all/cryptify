@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "main": "./public/electron.js",
-  "homepage": "./",
+  "homepage": "/filesharing/",
   "author": "Rowan Goemans <rowan.goemans@bdtnl.com>",
   "build": {
     "appId": "cryptify",
