@@ -124,7 +124,9 @@ pub async fn send_email(
 
     // setup SMTP connection
     let mut mailer_builder =
-        SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port());
+        SmtpTransport::starttls_relay(config.smtp_url())?.port(config.smtp_port());
+
+    // add credentials, if present
     if let Some((username, password)) = config.smtp_credentials() {
         let credentials = Credentials::new(username.to_owned(), password.to_owned());
         mailer_builder = mailer_builder.credentials(credentials);

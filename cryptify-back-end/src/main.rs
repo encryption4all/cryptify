@@ -428,7 +428,7 @@ async fn upload_finalize(
 
     send_email(config, &state, uuid)
         .await
-        .map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
+        .map_err(|_| Error::InternalServerError(Some("could not send email".to_owned())))?;
 
     Ok(Some(()))
 }
@@ -442,7 +442,7 @@ fn rocket() -> _ {
         .expect("Missing configuration");
 
     let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::all())
+        .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
         .allowed_methods(
             vec![Method::Get, Method::Post, Method::Put]
                 .into_iter()
