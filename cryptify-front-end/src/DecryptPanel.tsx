@@ -20,9 +20,7 @@ const IrmaCore = require("@privacybydesign/irma-core");
 const IrmaWeb = require("@privacybydesign/irma-web");
 const IrmaClient = require("@privacybydesign/irma-client");
 
-// TODO: change to https://cryptify.nl/mitm.html?=version=2.0.0
-// or configure with public url config?
-streamSaver.mitm = "mitm.html?version=2.0.0";
+streamSaver.mitm = `${process.env.PUBLIC_URL}/mitm.html?version=2.0.0`;
 
 enum DecryptionState {
   IrmaSession = 1,
