@@ -4,6 +4,7 @@
   font-style: normal;
   font-weight: 400;
   src: url("./resources/fonts/Overpass-Regular.ttf") format("truetype");
+  font-display: swap;
 }
 
 /* overpass-700 - latin */
@@ -12,6 +13,7 @@
   font-style: normal;
   font-weight: 700;
   src: url("./resources/fonts/Overpass-Bold.ttf") format("truetype");
+  font-display: swap;
 }
 
 html,
