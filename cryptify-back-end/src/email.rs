@@ -89,12 +89,14 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
         Language::En => EN_STRINGS,
         Language::Nl => NL_STRINGS,
     };
+
+    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
     let email = EmailTemplate {
         sender_str: strings.sender_str,
         expires_str: strings.expires_str,
         download_str: strings.download_str,
         link_str: strings.link_str,
-        sender: &state.sender,
+        sender: &sender_str,
         file_size: &format_file_size(state.uploaded),
         expiry_date: &format_date(state.expires, &state.mail_lang),
         html_content: &state.mail_content,
@@ -102,7 +104,7 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
     };
     let subject = SubjectTemplate {
         subject_str: strings.subject_str,
-        sender: &state.sender,
+        sender: &sender_str,
     };
     (email.to_string(), subject.to_string())
 }

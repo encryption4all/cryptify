@@ -10,7 +10,7 @@ edition = "2018"
 askama = "0.10.5"
 chrono = { version = "0.4.19", features = ["unstable-locales"] }
 irma = "0.2.1"
-lettre = "0.10.0-rc.3"
+lettre = "0.10.1"
 log = "0.4.14"
 qrcode = "0.12.0"
 rand = "0.8.4"

@@ -125,8 +125,7 @@ async fn upload_init(
             _ => None,
         }
     } else {
-        // Otherwise just take what was in the request.
-        Some(request.sender.clone())
+        None
     };
 
     let current_time = chrono::offset::Utc::now().timestamp();
@@ -150,7 +149,7 @@ async fn upload_init(
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
                     expires: current_time + 120960,
-                    sender: sender.clone().unwrap_or_else(|| "anonymous".to_string()),
+                    sender: sender.clone(),
                     recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
@@ -182,7 +181,7 @@ impl FromStr for ContentRange {
         let mut parts = s.split_whitespace();
         let unit = parts.next().ok_or("Missing unit")?;
         let range = parts.next().ok_or("Missing range")?;
-        if parts.next() != None {
+        if parts.next().is_some() {
             return Err("Excess data".into());
         }
         if unit != "bytes" {
@@ -193,7 +192,7 @@ impl FromStr for ContentRange {
             .next()
             .ok_or("Missing lower-upper part of range")?;
         let size = rangeparts.next().ok_or("Missing size part of range")?;
-        if rangeparts.next() != None {
+        if rangeparts.next().is_some() {
             return Err("Excess data in range".into());
         }
         let size = if size != "*" {
