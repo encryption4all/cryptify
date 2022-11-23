@@ -1,21 +1,19 @@
-import "./EncryptPanel.css";
-import 'web-streams-polyfill';
-import React from 'react';
-import CryptFileInput from './CryptFileInput';
-import CryptFileList from './CryptFileList';
+import React from "react";
+import CryptFileInput from "./CryptFileInput";
+import CryptFileList from "./CryptFileList";
 
 //IRMA Packages/dependencies
-import irmaLogo from './resources/irma-logo.svg';
-import appleAppStoreEN from './resources/apple-appstore-en.svg';
-import googlePlayStoreEN from './resources/google-playstore-en.svg';
-import appleAppStoreNL from './resources/apple-appstore-nl.svg';
-import googlePlayStoreNL from './resources/google-playstore-nl.svg';
+import irmaLogo from "./resources/irma-logo.svg";
+import appleAppStoreEN from "./resources/apple-appstore-en.svg";
+import googlePlayStoreEN from "./resources/google-playstore-en.svg";
+import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
+import googlePlayStoreNL from "./resources/google-playstore-nl.svg";
 
-import { Writer } from '@transcend-io/conflux';
-import checkmark from './resources/checkmark.svg';
-import {createFileReadable, getFileStoreStream} from './FileProvider';
-import Lang from './Lang';
-import getTranslation from './Translations';
+import { Writer } from "@transcend-io/conflux";
+import checkmark from "./resources/checkmark.svg";
+import { createFileReadable, getFileStoreStream } from "./FileProvider";
+import Lang from "./Lang";
+import getTranslation from "./Translations";
 
 import {
   MAX_UPLOAD_SIZE,
@@ -28,9 +26,9 @@ import Chunker from "./utils";
 import { withTransform } from "./utils";
 
 //IRMA Packages/dependencies
-const IrmaCore = require('@privacybydesign/irma-core');
-const IrmaWeb = require('@privacybydesign/irma-web');
-const IrmaClient = require('@privacybydesign/irma-client');
+const IrmaCore = require("@privacybydesign/irma-core");
+const IrmaWeb = require("@privacybydesign/irma-web");
+const IrmaClient = require("@privacybydesign/irma-client");
 
 enum EncryptionState {
   FileSelection = 1,
@@ -38,11 +36,12 @@ enum EncryptionState {
   Done,
   Error,
   Verify,
-  Anonymous
+  Anonymous,
 }
 
 type EncryptState = {
   recipient: string;
+  recipientValid: boolean;
   sender: string;
   message: string;
   files: File[];
@@ -54,15 +53,22 @@ type EncryptState = {
   encryptStartTime: number;
   modPromise: Promise<any>;
   pkPromise: Promise<any>;
-  irma_token: string
+  irma_token: string;
 };
 
 type EncryptProps = {
   lang: Lang;
 };
 
+async function getParameters(): Promise<String> {
+  let resp = await fetch(`${PKG_URL}/v2/parameters`);
+  let params = await resp.json();
+  return params.publicKey;
+}
+
 const defaultEncryptState: EncryptState = {
   recipient: "",
+  recipientValid: false,
   sender: "",
   message: "",
   files: [],
@@ -73,8 +79,8 @@ const defaultEncryptState: EncryptState = {
   selfAborted: false,
   encryptStartTime: 0,
   modPromise: import("@e4a/irmaseal-wasm-bindings"),
-  pkPromise: fetch(`${PKG_URL}/v2/parameters`), 
-  irma_token: ""
+  pkPromise: getParameters(),
+  irma_token: "",
 };
 
 export default class EncryptPanel extends React.Component<
@@ -87,39 +93,43 @@ export default class EncryptPanel extends React.Component<
   }
 
   isMobile(): boolean {
-    if (typeof window === 'undefined' ) {
+    if (typeof window === "undefined") {
       return false;
     }
-  
+
     // IE11 doesn't have window.navigator, test differently
     // https://stackoverflow.com/questions/21825157/internet-explorer-11-detection
     // @ts-ignore
     if (!!window.MSInputMethodContext && !!document.documentMode) {
       return false;
     }
-  
+
     if (/Android/i.test(window.navigator.userAgent)) {
       return true;
     }
-  
+
     // https://stackoverflow.com/questions/9038625/detect-if-device-is-ios
     if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
       return true;
     }
-  
+
     // https://stackoverflow.com/questions/57776001/how-to-detect-ipad-pro-as-ipad-using-javascript
-    if (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 2) {
+    if (
+      /Macintosh/.test(navigator.userAgent) &&
+      navigator.maxTouchPoints &&
+      navigator.maxTouchPoints > 2
+    ) {
       return true;
     }
-  
+
     // Neither Android nor iOS, assuming desktop
     return false;
-  };
+  }
 
   onFile(files: FileList) {
     const fileArr = Array.from(files);
 
-    this.setState(state => ({
+    this.setState((state) => ({
       files: state.files.concat(fileArr),
       percentages: state.percentages.concat(fileArr.map((_) => 0)),
       done: state.done.concat(fileArr.map((_) => false)),
@@ -127,7 +137,7 @@ export default class EncryptPanel extends React.Component<
   }
 
   onRemoveFile(index: number) {
-    this.setState(state => ({
+    this.setState((state) => ({
       files: state.files.filter((_, i) => i !== index),
       percentages: state.percentages.filter((_, i) => i !== index),
       done: state.done.filter((_, i) => i !== index),
@@ -136,7 +146,8 @@ export default class EncryptPanel extends React.Component<
 
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      recipient: ev.target.value.toLowerCase(),
+      recipient: ev.target.value.toLowerCase().replace(/ /g, ""),
+      recipientValid: ev.target.form?.checkValidity() ?? false, 
     });
   }
 
@@ -149,11 +160,14 @@ export default class EncryptPanel extends React.Component<
 
   // Function when a user does not has access to the sender field.
   onChangeSenderString(sender: string) {
-    this.setState({
-      sender: sender,
-    }, () => {
-      this.onEncrypt()
-    });
+    this.setState(
+      {
+        sender: sender,
+      },
+      () => {
+        this.onEncrypt();
+      }
+    );
   }
 
   // TODO: unused
@@ -164,16 +178,6 @@ export default class EncryptPanel extends React.Component<
   onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       message: ev.target.value,
-    });
-  }
-
-  // Function when a user does not have access to the sender field.
-  onChangeAnonymousString(sender: string, msg: string) {
-    this.setState({
-      sender: sender,
-      message: msg,
-    }, () => {
-      this.onEncrypt();
     });
   }
 
@@ -222,10 +226,10 @@ export default class EncryptPanel extends React.Component<
   async applyEncryption() {
     if (!this.canEncrypt()) return;
 
-    const resp = await this.state.pkPromise;
-    const params = JSON.parse(await resp.text());
-    const pk = params.publicKey;
+    // make sure these are fulfilled
+    const pk = await this.state.pkPromise;
     const mod = await this.state.modPromise;
+
     const ts = Math.round(Date.now() / 1000);
 
     const policies = {
@@ -235,9 +239,7 @@ export default class EncryptPanel extends React.Component<
       },
     };
 
-    const uploadChunker = new Chunker(
-      UPLOAD_CHUNK_SIZE
-    ) as TransformStream;
+    const uploadChunker = new Chunker(UPLOAD_CHUNK_SIZE) as TransformStream;
 
     // Create streams that takes all input files and zips them into an output stream.
     const zipTf = new Writer();
@@ -271,7 +273,7 @@ export default class EncryptPanel extends React.Component<
         (n, last) => this.reportProgress(resolve, n, last)
       ) as [WritableStream, string];
 
-      this.setState({sender});
+      this.setState({ sender });
 
       mod.seal(
         pk,
@@ -320,36 +322,43 @@ export default class EncryptPanel extends React.Component<
   }
 
   async onVerify() {
-    this.setState({
-      encryptionState: EncryptionState.Verify,
-    }, async () => {
+    this.setState(
+      {
+        encryptionState: EncryptionState.Verify,
+      },
+      async () => {
+        let token = "";
+        const irma = new IrmaCore({
+          debugging: true, // Enable to get helpful output in the browser console
+          element: ".crypt-irma-qr", // Which DOM element to render to
 
-		let token = "";
-    const irma = new IrmaCore({
-      debugging: true,            // Enable to get helpful output in the browser console
-      element: ".crypt-irma-qr",  // Which DOM element to render to
-      
-      session: {
-        url: `${BACKEND_URL}/verification`,
-        start: {
-          url: (o: any) => `${o.url}/start`,
-          method: 'GET'
-        },
-				mapping: {
-    			sessionToken: r => {token = r.token; return r.token},
-				},
-				result: false
+          session: {
+            url: `${BACKEND_URL}/verification`,
+            start: {
+              url: (o: any) => `${o.url}/start`,
+              method: "GET",
+            },
+            mapping: {
+              sessionToken: (r) => {
+                token = r.token;
+                return r.token;
+              },
+            },
+            result: false,
+          },
+        });
+
+        irma.use(IrmaWeb);
+        irma.use(IrmaClient);
+
+        await irma
+          .start()
+          .catch((e) => console.error("failed IRMA session: ", e));
+
+        this.setState({ irma_token: token });
+        this.onEncrypt();
       }
-    });
-
-    irma.use(IrmaWeb);
-    irma.use(IrmaClient);
-
-    await irma.start().catch((e) => console.error("failed IRMA session: ", e));
-
-    this.setState({irma_token: token});
-		this.onEncrypt();
-    });
+    );
   }
 
   onCancel(ev: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
@@ -373,10 +382,12 @@ export default class EncryptPanel extends React.Component<
       .map((f) => f.size)
       .reduce((a, b) => a + b, 0);
 
-    return totalSize < MAX_UPLOAD_SIZE
-        && this.state.recipient.length > 0
-        //&& this.state.sender.length > 0
-        && this.state.files.length > 0;
+    return (
+      totalSize < MAX_UPLOAD_SIZE &&
+      this.state.recipient.length > 0 &&
+      this.state.recipientValid &&
+      this.state.files.length > 0
+    );
   }
 
   renderfilesField() {
@@ -419,16 +430,16 @@ export default class EncryptPanel extends React.Component<
   renderUserInputs() {
     return (
       <div className="crypt-progress-container">
-        <div className="crypt-select-protection-input-box">
+        <form className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
           <input
             placeholder=""
-            type="text"
-            required={true}
+            type="email"
+            required
             value={this.state.recipient}
             onChange={(e) => this.onChangeRecipient(e)}
           />
-        </div>
+        </form>
         {/*
         
         //Removed sender field due to IRMA QR-code scanning to verify sender.
@@ -484,70 +495,96 @@ export default class EncryptPanel extends React.Component<
 
   renderVerification() {
     const isMobile = this.isMobile();
-    let iosBtn = ""; 
-    let iosHref = ""; 
-    let androidBtn = ""; 
+    let iosBtn = "";
+    let iosHref = "";
+    let androidBtn = "";
     let androidHref = "";
     switch (this.props.lang) {
-    case Lang.EN:
-      iosBtn = appleAppStoreEN;
-      iosHref = "https://apps.apple.com/app/irma-authenticatie/id1294092994";
-      androidBtn = googlePlayStoreEN;
-      androidHref = "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=en";
-      break;
-    case Lang.NL:
-      iosBtn = appleAppStoreNL;
-      iosHref = "https://apps.apple.com/nl/app/irma-authenticatie/id1294092994";
-      androidBtn = googlePlayStoreNL;
-      androidHref = "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=nl";
-      break;
+      case Lang.EN:
+        iosBtn = appleAppStoreEN;
+        iosHref = "https://apps.apple.com/app/irma-authenticatie/id1294092994";
+        androidBtn = googlePlayStoreEN;
+        androidHref =
+          "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=en";
+        break;
+      case Lang.NL:
+        iosBtn = appleAppStoreNL;
+        iosHref =
+          "https://apps.apple.com/nl/app/irma-authenticatie/id1294092994";
+        androidBtn = googlePlayStoreNL;
+        androidHref =
+          "https://play.google.com/store/apps/details?id=org.irmacard.cardemu&hl=nl";
+        break;
     }
 
     return (
       <div className="crypt-progress-container">
         <h3>
-          { isMobile
-            ? getTranslation(this.props.lang).encryptPanel_irmaInstructionHeaderMobile
-            : getTranslation(this.props.lang).encryptPanel_irmaInstructionHeaderQr
-          }
+          {isMobile
+            ? getTranslation(this.props.lang)
+                .encryptPanel_irmaInstructionHeaderMobile
+            : getTranslation(this.props.lang)
+                .encryptPanel_irmaInstructionHeaderQr}
         </h3>
         <p>
-          { isMobile
+          {isMobile
             ? getTranslation(this.props.lang).encryptPanel_irmaInstructionMobile
-            : getTranslation(this.props.lang).encryptPanel_irmaInstructionQr
-          }
+            : getTranslation(this.props.lang).encryptPanel_irmaInstructionQr}
         </p>
 
         <div className="crypt-irma-qr"></div>
 
         <div className="get-irma-here-anchor">
           <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
-          <div className="get-irma-text"
-            style={{display: "inline-block", verticalAlign: "middle", height: "45pt", marginLeft: "5pt", marginBottom: "calc(1em/2)"}}>
-            { getTranslation(this.props.lang).decryptPanel_noIrma }
+          <div
+            className="get-irma-text"
+            style={{
+              display: "inline-block",
+              verticalAlign: "middle",
+              height: "45pt",
+              marginLeft: "5pt",
+              marginBottom: "calc(1em/2)",
+            }}
+          >
+            {getTranslation(this.props.lang).decryptPanel_noIrma}
           </div>
           <div className="get-irma-buttons">
-            <a href={iosHref}
-              style={{display: "inline-block", height: "38pt", marginRight: "15pt"}}>
-              <img style={{height: "100%"}} className="irma-appstore-button" src={iosBtn} alt="apple-appstore" />
+            <a
+              href={iosHref}
+              style={{
+                display: "inline-block",
+                height: "38pt",
+                marginRight: "15pt",
+              }}
+            >
+              <img
+                style={{ height: "100%" }}
+                className="irma-appstore-button"
+                src={iosBtn}
+                alt="apple-appstore"
+              />
             </a>
-            <a href={androidHref}
-              style={{display: "inline-block", height: "38pt"}}>
-              <img  style={{height: "100%"}} className="irma-appstore-button" src={androidBtn} alt="google-playstore" />
+            <a
+              href={androidHref}
+              style={{ display: "inline-block", height: "38pt" }}
+            >
+              <img
+                style={{ height: "100%" }}
+                className="irma-appstore-button"
+                src={androidBtn}
+                alt="google-playstore"
+              />
             </a>
           </div>
         </div>
 
         <button
           className={"crypt-btn-anonymous crypt-btn"}
-          onClick={(e) => { 
-            this.onChangeAnonymousString("Someone",getTranslation(this.props.lang).encryptPanel_messageAnonymous);
-        }}
+          onClick={() => this.onEncrypt()}
           type="button"
         >
-          { getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous }
+          {getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous}
         </button>
-
       </div>
     );
   }
@@ -622,10 +659,16 @@ export default class EncryptPanel extends React.Component<
     return (
       <div className="crypt-progress-container">
         <h3 className="crypt-progress-error">{"Error occured"}</h3>
-        <p>{getTranslation(this.props.lang).error}</p>
+        <p
+          dangerouslySetInnerHTML={{
+            __html: getTranslation(this.props.lang).error,
+          }}
+        />
         <button
           className={"crypt-btn-main crypt-btn"}
-          onClick={(e) => this.onEncrypt()}
+          onClick={() =>
+            this.setState({ encryptionState: EncryptionState.FileSelection })
+          }
           type="button"
         >
           {getTranslation(this.props.lang).tryAgain}
@@ -635,15 +678,9 @@ export default class EncryptPanel extends React.Component<
   }
 
   render() {
-    if (this.state.encryptionState === EncryptionState.Verify)
-    {
-      return (
-        <form>
-          {this.renderVerification()}
-        </form>
-      );
-    }
-    else if (this.state.encryptionState === EncryptionState.FileSelection) {
+    if (this.state.encryptionState === EncryptionState.Verify) {
+      return <form>{this.renderVerification()}</form>;
+    } else if (this.state.encryptionState === EncryptionState.FileSelection) {
       return (
         <form
           onSubmit={(e) => {

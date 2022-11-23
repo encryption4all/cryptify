@@ -98,7 +98,7 @@ const english: Translation = {
   // generic
   estimate: "Estimating...",
   cancel: "Cancel",
-  error: "Oops... We are really sorry but something went wrong. Please try again.",
+  error: "Oops... We are really sorry but something went wrong. Please try again or contact <a href=\"mailto:info@postguard.nl\">us</a>.",
   tryAgain: "Try again",
   timeremaining: (remaining: number) => {
     if (remaining < 1000 * 10) {
@@ -197,7 +197,7 @@ const dutch: Translation = {
   // generic
   estimate: "schatten...",
   cancel: "Annuleren",
-  error: "Oeps... Excuses, er is iets fout gegaan. Probeer het nog een keer.",
+  error: "Oeps... Excuses, er is iets fout gegaan. Probeer het nog een keer of neem contact op met <a href=\"mailto:info@postguard.nl\">ons</a>.",
   tryAgain: "Opnieuw proberen",
   
   timeremaining: (remaining: number) => {

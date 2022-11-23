@@ -57,6 +57,6 @@ export function withTransform(
   transform: TransformStream,
   signal: AbortSignal
 ) {
-  transform.readable.pipeTo(writable, { signal }).catch(() => {});
+  transform.readable.pipeTo(writable, { signal });
   return transform.writable;
 }
