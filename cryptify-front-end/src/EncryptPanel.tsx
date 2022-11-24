@@ -170,11 +170,6 @@ export default class EncryptPanel extends React.Component<
     );
   }
 
-  // TODO: unused
-  onChangeMobileNumber(ev: React.ChangeEvent<HTMLInputElement>) {
-    this.setState({});
-  }
-
   onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       message: ev.target.value,
@@ -348,6 +343,7 @@ export default class EncryptPanel extends React.Component<
           },
         });
 
+
         irma.use(IrmaWeb);
         irma.use(IrmaClient);
 
@@ -429,7 +425,7 @@ export default class EncryptPanel extends React.Component<
   renderUserInputs() {
     return (
       <div className="crypt-progress-container">
-        <form className="crypt-select-protection-input-box">
+        <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
           <input
             placeholder=""
@@ -438,34 +434,7 @@ export default class EncryptPanel extends React.Component<
             value={this.state.recipient}
             onChange={(e) => this.onChangeRecipient(e)}
           />
-        </form>
-        {/*
-        
-        //Removed sender field due to IRMA QR-code scanning to verify sender.
-        <div className="crypt-select-protection-input-box">
-<<<<<<< HEAD
-          <h4>{getTranslation(this.props.lang).encryptPanel_emailSender}</h4>
-          <input
-            placeholder=""
-            type="text"
-            required={true}
-            value={this.state.sender}
-            onChange={(e) => this.onChangeSender(e)}
-||||||| a904de8
-          <h4>{ getTranslation(this.props.lang).encryptPanel_emailSender }</h4>
-          <input placeholder="" type="text" required={true}
-                value={this.state.sender}
-                onChange={(e) => this.onChangeSender(e)}
-=======
-          <h4>{ getTranslation(this.props.lang).encryptPanel_emailSender }</h4>
-          <input placeholder="" type="text" required={true}
-                value={this.state.sender}
-                onChange={(e) => this.onChangeSenderEvent(e)}
->>>>>>> main
-          />
-        </div> 
-        
-        */}
+        </div>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>
           <textarea
