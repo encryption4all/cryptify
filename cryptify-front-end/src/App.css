@@ -277,15 +277,18 @@ body,
 }
 
 .crypt-select-protection-input-box input[type="text"],
-input[type="email"] {
+input[type="email"],
+textarea {
   font-size: 1.1em;
   border: 0;
   box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
   width: 100%;
+  resize: none;
 }
 
 .crypt-select-protection-input-box input[type="text"]:focus,
-input[type="email"]:focus {
+input[type="email"]:focus,
+textarea:focus {
   outline: none;
 }
 
