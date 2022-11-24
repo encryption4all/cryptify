@@ -355,8 +355,7 @@ export default class EncryptPanel extends React.Component<
           .start()
           .catch((e) => console.error("failed IRMA session: ", e));
 
-        this.setState({ irma_token: token });
-        this.onEncrypt();
+        this.setState({ irma_token: token }, () => this.onEncrypt());
       }
     );
   }
