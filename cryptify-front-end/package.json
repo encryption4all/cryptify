@@ -42,7 +42,7 @@
     }
   },
   "dependencies": {
-    "@e4a/irmaseal-wasm-bindings": "^0.2.0",
+    "@e4a/irmaseal-wasm-bindings": "^0.2.2",
     "@privacybydesign/irma-client": "^0.3.3",
     "@privacybydesign/irma-core": "^0.3.3",
     "@privacybydesign/irma-popup": "^0.3.3",
