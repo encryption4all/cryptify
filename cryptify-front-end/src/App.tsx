@@ -1,12 +1,9 @@
 import React from "react";
 import "./App.css";
-import headerLogo from "./resources/cryptify-dark.svg";
 
-import InfoPanel from "./InfoPanel";
 import EncryptPanel from "./EncryptPanel";
 import DecryptPanel from "./DecryptPanel";
 import Lang from "./Lang";
-import getTranslation from "./Translations";
 
 type AppState = {
   lang: Lang;
@@ -16,7 +13,7 @@ type AppProps = {
   downloadUuid: string | null;
 };
 
-const langKey = "cryptify-language";
+const langKey = "preferredLanguage";
 
 class App extends React.Component<AppProps, AppState> {
   constructor(props: AppProps) {
@@ -24,28 +21,40 @@ class App extends React.Component<AppProps, AppState> {
     this.state = {
       lang: this.getLangSetting(),
     };
+
+    this.langListener = this.langListener.bind(this);
+  }
+
+  langListener(e: MessageEvent): void {
+    this.setLang(e.data.lang === "nl-NL" ? Lang.NL : Lang.EN);
+  }
+
+  componentDidMount(): void {
+    window.addEventListener('message', this.langListener);
+  }
+
+  componentWillUnmount(): void {
+    window.removeEventListener('message', this.langListener);
   }
 
   getLangSetting(): Lang {
-    let currentLang = localStorage.getItem(langKey);
+    let storedLang = localStorage.getItem(langKey);
+    let currentLang = storedLang === "nl-NL" ? Lang.NL : Lang.EN;
     if (
       currentLang === null ||
       (currentLang !== (Lang.EN as string) &&
         currentLang !== (Lang.NL as string))
     ) {
       const userLang = navigator.language;
-      currentLang = Lang.EN as string;
+      currentLang = Lang.EN;
       if (userLang === "nl-NL") {
-        currentLang = Lang.NL as string;
+        currentLang = Lang.NL;
       }
-      localStorage.setItem(langKey, currentLang);
     }
     return currentLang as Lang;
   }
 
   setLang(lang: Lang): void {
-    localStorage.setItem(langKey, lang as string);
-
     this.setState({
       lang: lang,
     });
