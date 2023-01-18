@@ -148,7 +148,7 @@ async fn upload_init(
                 FileState {
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
-                    expires: current_time + 120960,
+                    expires: current_time + 1_209_600,
                     sender: sender.clone(),
                     recipient,
                     mail_content: request.mail_content.clone(),
