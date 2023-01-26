@@ -12,7 +12,7 @@ import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
 import googlePlayStoreNL from "./resources/google-playstore-nl.svg";
 import checkmark from "./resources/checkmark.svg";
 
-import { SMOOTH_TIME, PKG_URL } from "./Constants";
+import { SMOOTH_TIME, PKG_URL, METRICS_HEADER } from "./Constants";
 import { getFileLoadStream } from "./FileProvider";
 import { withTransform } from "./utils";
 
@@ -164,7 +164,7 @@ export default class DecryptPanel extends React.Component<
       start: {
         url: (o) => `${o.url}/v2/request/start`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...METRICS_HEADER },
         body: JSON.stringify(policy),
       },
       mapping: {
@@ -177,6 +177,7 @@ export default class DecryptPanel extends React.Component<
       },
       result: {
         url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
+        headers: METRICS_HEADER,
         parseResponse: (r) => {
           return r
             .text()
@@ -184,6 +185,7 @@ export default class DecryptPanel extends React.Component<
               fetch(`${PKG_URL}/v2/request/key/${timestamp.toString()}`, {
                 headers: {
                   Authorization: `Bearer ${jwt}`,
+                  ...METRICS_HEADER,
                 },
               })
             )

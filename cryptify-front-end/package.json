@@ -1,10 +1,13 @@
 {
-  "name": "cryptify-front-end",
+  "name": "pg-filesharing",
   "version": "0.1.0",
   "private": true,
   "main": "./public/electron.js",
   "homepage": "/filesharing/",
-  "author": "Rowan Goemans <rowan.goemans@bdtnl.com>",
+  "authors": [
+    "Rowan Goemans <rowan.goemans@bdtnl.com>",
+    "L. Botros <l.botros@cs.ru.nl>"
+  ],
   "build": {
     "appId": "cryptify",
     "files": [
@@ -50,6 +53,7 @@
     "@transcend-io/conflux": "^3.2.0",
     "react": "^18.1.0",
     "react-circular-progressbar": "^2.0.3",
+    "react-device-detect": "^2.2.2",
     "react-dom": "^18.1.0",
     "react-file-drop": "^3.1.5",
     "react-scripts": "^5.0.1",

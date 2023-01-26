@@ -21,6 +21,7 @@ import {
   PKG_URL,
   SMOOTH_TIME,
   BACKEND_URL,
+  METRICS_HEADER,
 } from "./Constants";
 import Chunker from "./utils";
 import { withTransform } from "./utils";
@@ -61,7 +62,9 @@ type EncryptProps = {
 };
 
 async function getParameters(): Promise<String> {
-  let resp = await fetch(`${PKG_URL}/v2/parameters`);
+  let resp = await fetch(`${PKG_URL}/v2/parameters`, {
+    headers: METRICS_HEADER,
+  });
   let params = await resp.json();
   return params.publicKey;
 }
@@ -147,7 +150,7 @@ export default class EncryptPanel extends React.Component<
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: ev.target.value.toLowerCase().replace(/ /g, ""),
-      recipientValid: ev.target.form?.checkValidity() ?? false, 
+      recipientValid: ev.target.form?.checkValidity() ?? false,
     });
   }
 
@@ -342,7 +345,6 @@ export default class EncryptPanel extends React.Component<
             result: false,
           },
         });
-
 
         irma.use(IrmaWeb);
         irma.use(IrmaClient);
