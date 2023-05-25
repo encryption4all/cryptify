@@ -7,7 +7,7 @@
 .file-icon {
   display: inline-block;
   height: 1em;
-  width: 0.85em;
+  width: 0.75em;
   padding-left: 0.58em;
   padding-bottom: 0.25em;
   vertical-align: text-bottom;
@@ -34,7 +34,8 @@
 }
 
 .encrypt-panel .crypt-file-list {
-  height: 21.6em;
+  padding-right: 0.5em;
+  max-height: 20em;
   overflow-y: auto
 }
 

@@ -37,46 +37,19 @@ use store::{FileState, Store};
 
 const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MB
 
-#[get("/verification/start")]
-async fn irma_session_start(config: &State<CryptifyConfig>) -> Result<String, Error> {
-    let client = IrmaClient::new(config.irma_server()).map_err(|_e| {
-        Error::InternalServerError(Some("could not create irma client".to_string()))
-    })?;
-
-    let request = DisclosureRequestBuilder::new()
-        .add_discon(vec![vec![AttributeRequest::Simple(
-            "pbdf.sidn-pbdf.email.email".into(),
-        )]])
-        .build();
-
-    let session = client.request(&request).await.map_err(|_e| {
-        Error::InternalServerError(Some(
-            "failed getting session package from IRMA server".to_string(),
-        ))
-    })?;
-
-    serde_json::to_string(&session).map_err(|_e| {
-        Error::InternalServerError(Some("could not serialize session package".to_string()))
-    })
-}
-
 #[derive(Serialize, Deserialize)]
 struct InitBody {
-    sender: String,
     recipient: String,
     #[serde(rename = "mailContent")]
     mail_content: String,
     #[serde(rename = "mailLang")]
     mail_lang: email::Language,
-    irma_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename = "camelCase")]
 struct InitResponse {
     uuid: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sender: Option<String>,
 }
 
 struct CryptifyToken(String);
@@ -99,35 +72,6 @@ async fn upload_init(
     store: &State<Store>,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
-    let sender = if !request.irma_token.is_empty() {
-        // If there is a token, verify the session results.
-        let client =
-            IrmaClient::new(config.irma_server()).map_err(|_e| Error::InternalServerError(None))?;
-
-        let res = client
-            .result(&SessionToken(request.irma_token.to_string()))
-            .await
-            .map_err(|_e| Error::InternalServerError(None))?;
-
-        match res {
-            SessionResult {
-                sessiontype: SessionType::Disclosing,
-                status: SessionStatus::Done,
-                proof_status: Some(ProofStatus::Valid),
-                disclosed,
-                ..
-            } if disclosed.len() == 1
-                && disclosed[0].len() == 1
-                && disclosed[0][0].status == AttributeStatus::Present =>
-            {
-                disclosed[0][0].raw_value.clone()
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
 
@@ -149,7 +93,6 @@ async fn upload_init(
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
                     expires: current_time + 1_209_600,
-                    sender: sender.clone(),
                     recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
@@ -157,7 +100,7 @@ async fn upload_init(
             );
 
             Ok(InitResponder {
-                inner: Json(InitResponse { uuid, sender }),
+                inner: Json(InitResponse { uuid }),
                 cryptify_token: CryptifyToken(init_cryptify_token),
             })
         }
@@ -455,15 +398,7 @@ fn rocket() -> _ {
 
     rocket
         .attach(cors)
-        .mount(
-            "/",
-            routes![
-                upload_init,
-                upload_chunk,
-                upload_finalize,
-                irma_session_start,
-            ],
-        )
+        .mount("/", routes![upload_init, upload_chunk, upload_finalize,])
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())

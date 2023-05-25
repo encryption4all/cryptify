@@ -182,6 +182,7 @@ body,
 
 @media only screen and (max-width: 1170px) {
   .content-panel {
+    padding-top: 2em;
     float: none !important;
     width: calc(100% - 5.3em);
   }
@@ -209,7 +210,9 @@ body,
 }
 
 .content-panel .crypt-panel-header {
-  display: table;
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
   margin-bottom: 0.25em;
   width: 100%;
 }

@@ -38,7 +38,6 @@ async function initFile(
   recipient: string,
   mailContent: string | null,
   lang: Lang,
-  irma_token: string
 ): Promise<[FileState, string]> {
   const response = await fetch(`${BACKEND_URL}/fileupload/init`, {
     signal: abortSignal,
@@ -51,7 +50,6 @@ async function initFile(
       recipient: recipient,
       mailContent: mailContent,
       mailLang: lang,
-      irma_token: irma_token,
     }),
   });
 
@@ -161,7 +159,6 @@ export function getFileStoreStream(
   recipient: string,
   mailContent: string | null,
   lang: Lang,
-  irma_token: string,
   progressReported: (uploaded: number, last: boolean) => void
 ): [WritableStream<Uint8Array>, string] {
   let state: FileState = {
@@ -180,7 +177,6 @@ export function getFileStoreStream(
         recipient,
         mailContent,
         lang,
-        irma_token
       );
       progressReported(processed, false);
       if (abortController.signal.aborted) {

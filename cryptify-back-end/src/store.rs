@@ -12,7 +12,6 @@ pub struct FileState {
     pub uploaded: u64,
     pub cryptify_token: String,
     pub expires: i64,
-    pub sender: Option<String>,
     pub recipient: lettre::message::Mailbox,
     pub mail_content: String,
     pub mail_lang: email::Language,

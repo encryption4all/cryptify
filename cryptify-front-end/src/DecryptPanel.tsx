@@ -16,9 +16,11 @@ import { SMOOTH_TIME, PKG_URL, METRICS_HEADER } from "./Constants";
 import { getFileLoadStream } from "./FileProvider";
 import { withTransform } from "./utils";
 
-const IrmaCore = require("@privacybydesign/irma-core");
-const IrmaWeb = require("@privacybydesign/irma-web");
-const IrmaClient = require("@privacybydesign/irma-client");
+import YiviCore from "@privacybydesign/yivi-core";
+import YiviWeb from "@privacybydesign/yivi-web";
+import YiviClient from "@privacybydesign/yivi-client";
+
+import "@privacybydesign/yivi-css";
 
 streamSaver.mitm = `${process.env.PUBLIC_URL}/mitm.html?version=2.0.0`;
 
@@ -46,12 +48,22 @@ type DecryptState = {
   selfAborted: boolean;
   decryptStartTime: number;
   modPromise: Promise<any>;
+  vkPromise: Promise<string>;
+  senderPublic: string;
 };
 
 type DecryptProps = {
   lang: Lang;
   downloadUuid: string;
 };
+
+async function getVerificationKey(): Promise<string> {
+  let resp = await fetch(`${PKG_URL}/v2/sign/parameters`, {
+    headers: METRICS_HEADER,
+  });
+  let params = await resp.json();
+  return params.publicKey;
+}
 
 const defaultDecryptState: DecryptState = {
   decryptionState: DecryptionState.IrmaSession,
@@ -62,7 +74,9 @@ const defaultDecryptState: DecryptState = {
   abort: new AbortController(),
   selfAborted: false,
   decryptStartTime: 0,
-  modPromise: import("@e4a/irmaseal-wasm-bindings/"),
+  modPromise: import("@e4a/pg-wasm"),
+  vkPromise: getVerificationKey(),
+  senderPublic: "",
 };
 
 export default class DecryptPanel extends React.Component<
@@ -148,12 +162,18 @@ export default class DecryptPanel extends React.Component<
       fakeFile: fakeFile,
     });
 
+    const vk = await this.state.vkPromise;
     const mod = await this.state.modPromise;
-    const unsealer = await mod.Unsealer.new(encrypted);
+    const unsealer = await mod.StreamUnsealer.new(encrypted, vk);
 
-    const hidden = unsealer.get_hidden_policies();
-    const email = Object.keys(hidden)[0];
-    const timestamp = hidden[email].ts;
+    const recipients = unsealer.inspect_header();
+    const sender = unsealer.public_identity();
+
+    // NOTE: there should be one recipient
+    this.setState({ senderPublic: sender.con[0].v });
+    const {
+      value: [email, { ts: timestamp }],
+    } = recipients.entries().next();
 
     const policy = {
       con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }],
@@ -168,7 +188,7 @@ export default class DecryptPanel extends React.Component<
         body: JSON.stringify(policy),
       },
       mapping: {
-        // temporary fix
+        // temporary fix, only required for the ihub pkg
         sessionPtr: (r: any) => {
           const ptr = r.sessionPtr;
           ptr.u = `https://ihub.ru.nl/irma/1/${ptr.u}`;
@@ -200,15 +220,23 @@ export default class DecryptPanel extends React.Component<
       },
     };
 
-    const irma = new IrmaCore({
+    const yivi = new YiviCore({
       element: ".crypt-irma-qr",
       session: session,
+      state: {
+        serverSentEvents: false,
+        polling: {
+          endpoint: "status",
+          interval: 500,
+          startState: "INITIALIZED",
+        },
+      },
       language: (this.props.lang as string).toLowerCase(),
     });
 
-    irma.use(IrmaWeb);
-    irma.use(IrmaClient);
-    const usk = await irma.start();
+    yivi.use(YiviWeb);
+    yivi.use(YiviClient);
+    const usk = await yivi.start();
 
     this.setState({
       decryptionState: DecryptionState.AskDownload,
@@ -253,11 +281,8 @@ export default class DecryptPanel extends React.Component<
     );
     const fileStream = rawFileStream as WritableStream<Uint8Array>;
 
-    const {
-      unsealer,
-      usk,
-      id,
-    }: { unsealer: any; usk: string; id: string } = this.state.decryptInfo;
+    const { unsealer, usk, id }: { unsealer: any; usk: string; id: string } =
+      this.state.decryptInfo;
 
     const finished = new Promise<void>(async (resolve, _) => {
       const progress = createProgressReporter((processed, done) => {
@@ -279,20 +304,29 @@ export default class DecryptPanel extends React.Component<
         }
       }) as TransformStream<Uint8Array, Uint8Array>;
 
-      await unsealer.unseal(
+      const verified = await unsealer.unseal(
         id,
         usk,
         withTransform(fileStream, progress, this.state.abort.signal)
       );
-     });
+    });
 
-   await finished;
+    await finished;
 
     this.setState({
       decryptionState: DecryptionState.Done,
       percentage: 100,
       done: true,
     });
+  }
+
+  // TODO:
+  renderSenderPublicIdentity() {
+    return (
+      <div className="crypt-panel-header">
+        <h1>You received files from: {this.state.senderPublic}</h1>
+      </div>
+    );
   }
 
   renderfilesField() {
@@ -457,6 +491,15 @@ export default class DecryptPanel extends React.Component<
           />
           {getTranslation(this.props.lang).decryptPanel_succes}
         </h3>
+        <h3>
+          <img
+            className="checkmark-icon"
+            src={checkmark}
+            alt="checkmark-icon"
+            style={{ height: "0.85em" }}
+          />
+          The files are from: {this.state.senderPublic}
+        </h3>
       </div>
     );
   }
@@ -481,6 +524,7 @@ export default class DecryptPanel extends React.Component<
     if (this.state.decryptionState === DecryptionState.IrmaSession) {
       return (
         <div>
+          {this.renderSenderPublicIdentity()}
           {this.renderfilesField()}
           {this.renderIrmaSession()}
         </div>

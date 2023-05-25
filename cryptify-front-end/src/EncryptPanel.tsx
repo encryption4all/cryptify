@@ -20,30 +20,38 @@ import {
   UPLOAD_CHUNK_SIZE,
   PKG_URL,
   SMOOTH_TIME,
-  BACKEND_URL,
   METRICS_HEADER,
 } from "./Constants";
 import Chunker from "./utils";
 import { withTransform } from "./utils";
+import type { ISealOptions, ISigningKey } from "@e4a/pg-wasm";
 
-//IRMA Packages/dependencies
-const IrmaCore = require("@privacybydesign/irma-core");
-const IrmaWeb = require("@privacybydesign/irma-web");
-const IrmaClient = require("@privacybydesign/irma-client");
+import YiviCore from "@privacybydesign/yivi-core";
+import YiviWeb from "@privacybydesign/yivi-web";
+import YiviClient from "@privacybydesign/yivi-client";
+
+import "@privacybydesign/yivi-css";
+
+async function getParameters(): Promise<String> {
+  let resp = await fetch(`${PKG_URL}/v2/parameters`, {
+    headers: METRICS_HEADER,
+  });
+  let params = await resp.json();
+  return params.publicKey;
+}
 
 enum EncryptionState {
   FileSelection = 1,
   Encrypting,
   Done,
   Error,
-  Verify,
-  Anonymous,
+  Sign,
 }
 
 type EncryptState = {
   recipient: string;
-  recipientValid: boolean;
   sender: string;
+  formValid: boolean;
   message: string;
   files: File[];
   percentages: number[];
@@ -54,25 +62,17 @@ type EncryptState = {
   encryptStartTime: number;
   modPromise: Promise<any>;
   pkPromise: Promise<any>;
-  irma_token: string;
+  signKey?: ISigningKey;
 };
 
 type EncryptProps = {
   lang: Lang;
 };
 
-async function getParameters(): Promise<String> {
-  let resp = await fetch(`${PKG_URL}/v2/parameters`, {
-    headers: METRICS_HEADER,
-  });
-  let params = await resp.json();
-  return params.publicKey;
-}
-
 const defaultEncryptState: EncryptState = {
   recipient: "",
-  recipientValid: false,
   sender: "",
+  formValid: false,
   message: "",
   files: [],
   percentages: [],
@@ -81,9 +81,8 @@ const defaultEncryptState: EncryptState = {
   abort: new AbortController(),
   selfAborted: false,
   encryptStartTime: 0,
-  modPromise: import("@e4a/irmaseal-wasm-bindings"),
+  modPromise: import("@e4a/pg-wasm"),
   pkPromise: getParameters(),
-  irma_token: "",
 };
 
 export default class EncryptPanel extends React.Component<
@@ -150,30 +149,18 @@ export default class EncryptPanel extends React.Component<
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       recipient: ev.target.value.toLowerCase().replace(/ /g, ""),
-      recipientValid: ev.target.form?.checkValidity() ?? false,
+      formValid: ev.target.form?.checkValidity() ?? false,
     });
   }
 
-  // TODO: can go?
-  onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
+  onChangeSender(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      sender: ev.target.value.toLowerCase(),
+      sender: ev.target.value.toLowerCase().replace(/ /g, ""),
+      formValid: ev.target.form?.checkValidity() ?? false,
     });
   }
 
-  // Function when a user does not has access to the sender field.
-  onChangeSenderString(sender: string) {
-    this.setState(
-      {
-        sender: sender,
-      },
-      () => {
-        this.onEncrypt();
-      }
-    );
-  }
-
-  onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
+  onChangeMessage(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       message: ev.target.value,
     });
@@ -226,15 +213,25 @@ export default class EncryptPanel extends React.Component<
 
     // make sure these are fulfilled
     const pk = await this.state.pkPromise;
-    const mod = await this.state.modPromise;
+    const { sealStream } = await this.state.modPromise;
 
     const ts = Math.round(Date.now() / 1000);
-
-    const policies = {
+    const enc_policy = {
       [this.state.recipient]: {
         ts,
         con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
       },
+    };
+
+    if (!this.state.signKey) {
+      this.setState({ encryptionState: EncryptionState.Error });
+      return;
+    }
+
+    const options: ISealOptions = {
+      policy: enc_policy,
+      pubSignKey: this.state.signKey,
+      // optionally add other attributes here
     };
 
     const uploadChunker = new Chunker(UPLOAD_CHUNK_SIZE) as TransformStream;
@@ -267,15 +264,14 @@ export default class EncryptPanel extends React.Component<
         this.state.recipient,
         this.state.message,
         this.props.lang,
-        this.state.irma_token,
         (n, last) => this.reportProgress(resolve, n, last)
       ) as [WritableStream, string];
 
       this.setState({ sender });
 
-      mod.seal(
+      sealStream(
         pk,
-        policies,
+        options,
         readable,
         withTransform(fileStream, uploadChunker, this.state.abort.signal)
       );
@@ -319,41 +315,79 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
-  async onVerify() {
+  async onSign() {
     this.setState(
       {
-        encryptionState: EncryptionState.Verify,
+        encryptionState: EncryptionState.Sign,
       },
       async () => {
-        let token = "";
-        const irma = new IrmaCore({
+        // retrieve signing key
+        const sign_policy = {
+          con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.sender }],
+        };
+
+        const session = {
+          url: PKG_URL,
+          start: {
+            url: (o) => `${o.url}/v2/request/start`,
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sign_policy),
+          },
+          mapping: {
+            // temporary fix
+            sessionPtr: (r) => {
+              const ptr = r.sessionPtr;
+              ptr.u = `https://ihub.ru.nl/irma/1/${ptr.u}`;
+              return ptr;
+            },
+          },
+          result: {
+            url: (o, { sessionToken }) =>
+              `${o.url}/v2/request/jwt/${sessionToken}`,
+            parseResponse: (r) => {
+              return r
+                .text()
+                .then((jwt) =>
+                  fetch(`${PKG_URL}/v2/irma/sign/key`, {
+                    headers: {
+                      Authorization: `Bearer ${jwt}`,
+                    },
+                  })
+                )
+                .then((r) => r.json())
+                .then((json) => {
+                  if (json.status !== "DONE" || json.proofStatus !== "VALID")
+                    throw new Error("not done and valid");
+                  return json.key;
+                })
+                .catch((e) => console.log("error: ", e));
+            },
+          },
+        };
+
+        const yivi = new YiviCore({
           debugging: true, // Enable to get helpful output in the browser console
           element: ".crypt-irma-qr", // Which DOM element to render to
-
-          session: {
-            url: `${BACKEND_URL}/verification`,
-            start: {
-              url: (o: any) => `${o.url}/start`,
-              method: "GET",
+          session,
+          state: {
+            serverSentEvents: false,
+            polling: {
+              endpoint: "status",
+              interval: 500,
+              startState: "INITIALIZED",
             },
-            mapping: {
-              sessionToken: (r) => {
-                token = r.token;
-                return r.token;
-              },
-            },
-            result: false,
           },
         });
 
-        irma.use(IrmaWeb);
-        irma.use(IrmaClient);
+        yivi.use(YiviWeb);
+        yivi.use(YiviClient);
 
-        await irma
+        const signKey = await yivi
           .start()
           .catch((e) => console.error("failed IRMA session: ", e));
 
-        this.setState({ irma_token: token }, () => this.onEncrypt());
+        this.setState({ signKey }, () => this.onEncrypt());
       }
     );
   }
@@ -382,7 +416,7 @@ export default class EncryptPanel extends React.Component<
     return (
       totalSize < MAX_UPLOAD_SIZE &&
       this.state.recipient.length > 0 &&
-      this.state.recipientValid &&
+      this.state.formValid &&
       this.state.files.length > 0
     );
   }
@@ -428,6 +462,16 @@ export default class EncryptPanel extends React.Component<
     return (
       <div className="crypt-progress-container">
         <div className="crypt-select-protection-input-box">
+          <h4>{getTranslation(this.props.lang).encryptPanel_emailSender}</h4>
+          <input
+            placeholder=""
+            type="email"
+            required
+            value={this.state.sender}
+            onChange={(e) => this.onChangeSender(e)}
+          />
+        </div>
+        <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
           <input
             placeholder=""
@@ -443,7 +487,7 @@ export default class EncryptPanel extends React.Component<
             required={false}
             rows={4}
             value={this.state.message}
-            onChange={(e) => this.onChangeMessageEvent(e)}
+            onChange={(e) => this.onChangeMessage(e)}
           />
         </div>
         <button
@@ -453,7 +497,7 @@ export default class EncryptPanel extends React.Component<
           }
           onClick={(e) => {
             if (this.canEncrypt()) {
-              this.onVerify();
+              this.onSign();
             }
           }}
         >
@@ -547,14 +591,6 @@ export default class EncryptPanel extends React.Component<
             </a>
           </div>
         </div>
-
-        <button
-          className={"crypt-btn-anonymous crypt-btn"}
-          onClick={() => this.onEncrypt()}
-          type="button"
-        >
-          {getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous}
-        </button>
       </div>
     );
   }
@@ -648,7 +684,7 @@ export default class EncryptPanel extends React.Component<
   }
 
   render() {
-    if (this.state.encryptionState === EncryptionState.Verify) {
+    if (this.state.encryptionState === EncryptionState.Sign) {
       return <form>{this.renderVerification()}</form>;
     } else if (this.state.encryptionState === EncryptionState.FileSelection) {
       return (

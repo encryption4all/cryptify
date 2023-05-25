@@ -23,17 +23,6 @@ class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
   render() {
     return (
       <div className="crypt-file-box">
-        <div className="crypt-panel-header">
-          <div className="crypt-file-box-large-text">
-            {getTranslation(this.props.lang).cryptFileInput_dropFiles}
-          </div>
-          <div className="crypt-file-box-small-text">
-            {getTranslation(this.props.lang).cryptFileInput_clickFiles}
-          </div>
-          <div className="crypt-file-box-tiny-text">
-            {getTranslation(this.props.lang).cryptFileInput_sendUpto}
-          </div>
-        </div>
         <FileDrop onDrop={(files, _) => this.onFiles(files)}>
           <input
             multiple={this.props.multiple}
@@ -48,8 +37,16 @@ class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
               htmlFor="crypt-file-input"
             >
               <div className="crypt-file-box-content">
-                <div className="crypt-btn crypt-file-btn">
-                  {getTranslation(this.props.lang).cryptFileInput_addFileBtn}
+                <div className="crypt-panel-header">
+                  <div className="crypt-file-box-large-text">
+                    {getTranslation(this.props.lang).cryptFileInput_dropFiles}
+                  </div>
+                  <div className="crypt-btn crypt-file-btn">
+                    {getTranslation(this.props.lang).cryptFileInput_addFileBtn}
+                  </div>
+                  <div className="crypt-file-box-tiny-text">
+                    {getTranslation(this.props.lang).cryptFileInput_sendUpto}
+                  </div>
                 </div>
               </div>
             </label>

@@ -90,7 +90,7 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
         Language::Nl => NL_STRINGS,
     };
 
-    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
+    let sender_str = "Someone".to_string(); //todo
     let email = EmailTemplate {
         sender_str: strings.sender_str,
         expires_str: strings.expires_str,

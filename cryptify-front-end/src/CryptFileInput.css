@@ -4,7 +4,7 @@
     border-radius: 8px;
     color: black;
     position: relative;
-    height: 150px;
+    height: 250px;
 }
 
 .file-drop > .file-drop-target.file-drop-dragging-over-target {
@@ -80,7 +80,7 @@
 }
 
 .crypt-file-box-large-text {
-    margin-top: 2.5em;
+    margin-top: 1.5em;
     font-weight: bold;
     font-size: 2em;
     line-height: 1.2em;

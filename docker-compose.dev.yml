@@ -1,53 +1,45 @@
 version: "3.4"
 services:
-    backend:
-        build:
-            dockerfile: rust.dev.Dockerfile
-        depends_on:
-            - irma
-            - mailhog
-        volumes:
-            - "./cryptify-back-end/:/app"
-            - "./conf/config.dev.toml/:/app/config.toml:ro"
-        working_dir: /app
-        environment:
-            ROCKET_ENV: development
-            ROCKET_CONFIG: "config.toml"
-        command: "bash -c 'mkdir -p /tmp/data && cargo watch -x run'"
+  backend:
+    build:
+      dockerfile: rust.dev.Dockerfile
+    depends_on:
+      - irma
+      - mailhog
+    volumes:
+      - "./cryptify-back-end/:/app"
+      - "./conf/config.dev.toml/:/app/config.toml:ro"
+    working_dir: /app
+    environment:
+      ROCKET_ENV: development
+      ROCKET_CONFIG: "config.toml"
+    command: "bash -c 'mkdir -p /tmp/data && cargo watch -x run'"
 
-    frontend:
-        image: node:17
-        stdin_open: true
-        volumes:
-            - "./cryptify-front-end/:/app"
-        working_dir: /app
-        environment:
-            NODE_OPTIONS: "--openssl-legacy-provider"
-        command: "npm start"
+  frontend:
+    image: node:17
+    stdin_open: true
+    volumes:
+      - "./cryptify-front-end/:/app"
+    working_dir: /app
+    environment:
+      NODE_OPTIONS: "--openssl-legacy-provider"
+    command: "npm run start"
 
-    nginx:
-        image: nginx:1.18
-        depends_on:
-            - frontend
-            - backend
-        volumes:
-            - "./cryptify-front-end/build:/var/www/html/:ro"
-            - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
-        ports:
-            - "8080:80"
-            - "8088:80"
+  nginx:
+    image: nginx:1.18
+    depends_on:
+      - frontend
+      - backend
+    volumes:
+      - "./cryptify-front-end/build:/var/www/html/:ro"
+      - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
+    ports:
+      - "8080:80"
+      - "8088:80"
 
-    mailhog:
-        image: mailhog/mailhog:v1.0.0
-        environment:
-            MH_API_BIND_ADDR: 0.0.0.0:1080
-            MH_UI_BIND_ADDR: 0.0.0.0:1080
-            MH_SMTP_BIND_ADDR: 0.0.0.0:1025
-            TZ: Europe/Amsterdam
-        ports: ["127.0.0.1:1080:1080"]
-
-    irma:
-        image: privacybydesign/irma:edge
-        build:
-            context: https://github.com/privacybydesign/irmago.git
-        command: "server --sse -p 8088"
+  mailcrab:
+    image: marlonb/mailcrab:latest
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    networks: [default]
