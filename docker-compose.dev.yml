@@ -4,8 +4,7 @@ services:
     build:
       dockerfile: rust.dev.Dockerfile
     depends_on:
-      - irma
-      - mailhog
+      - mailcrab
     volumes:
       - "./cryptify-back-end/:/app"
       - "./conf/config.dev.toml/:/app/config.toml:ro"

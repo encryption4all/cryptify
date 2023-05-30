@@ -31,8 +31,7 @@ services:
       dockerfile: backend.Dockerfile
     depends_on:
       - build-backend
-      - mailhog
-      - irma
+      - mailcrab
     volumes:
       - "./cryptify-back-end/:/app"
       - "./conf/config.toml/:/app/config.toml:ro"
