@@ -1,10 +1,10 @@
 [global]
-server_url = "https://cryptify.nl"
+server_url = "https://postguard.nl/?download={uuid}#filesharing"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
-email_from = "noreply@cryptify.nl"
-smtp_url = "mailhog"
-smtp_port = 1025
-# smtp_username = ""
-# smtp_password = ""
+email_from = "noreply@postguard.nl"
+# smtp_url = ""
+# smtp_port = "" 
+# smtp_credentials = ["user", "pw"]
 irma_server = "http://irma:8088/"
+allowed_origins = "^https://postguard.(eu|nl)$"

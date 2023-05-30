@@ -29,8 +29,8 @@ use rocket::{
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
-//use rocket::http::Method;
-//use rocket_cors::{AllowedOrigins, CorsOptions};
+use rocket::http::Method;
+use rocket_cors::{AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
@@ -125,8 +125,7 @@ async fn upload_init(
             _ => None,
         }
     } else {
-        // Otherwise just take what was in the request.
-        Some(request.sender.clone())
+        None
     };
 
     let current_time = chrono::offset::Utc::now().timestamp();
@@ -149,8 +148,8 @@ async fn upload_init(
                 FileState {
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
-                    expires: current_time + 120960,
-                    sender: sender.clone().unwrap_or_else(|| "anonymous".to_string()),
+                    expires: current_time + 1_209_600,
+                    sender: sender.clone(),
                     recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
@@ -182,7 +181,7 @@ impl FromStr for ContentRange {
         let mut parts = s.split_whitespace();
         let unit = parts.next().ok_or("Missing unit")?;
         let range = parts.next().ok_or("Missing range")?;
-        if parts.next() != None {
+        if parts.next().is_some() {
             return Err("Excess data".into());
         }
         if unit != "bytes" {
@@ -193,7 +192,7 @@ impl FromStr for ContentRange {
             .next()
             .ok_or("Missing lower-upper part of range")?;
         let size = rangeparts.next().ok_or("Missing size part of range")?;
-        if rangeparts.next() != None {
+        if rangeparts.next().is_some() {
             return Err("Excess data in range".into());
         }
         let size = if size != "*" {
@@ -428,7 +427,7 @@ async fn upload_finalize(
 
     send_email(config, &state, uuid)
         .await
-        .map_err(|_| Error::InternalServerError(Some("Could not send email".to_owned())))?;
+        .map_err(|_| Error::InternalServerError(Some("could not send email".to_owned())))?;
 
     Ok(Some(()))
 }
@@ -441,21 +440,21 @@ fn rocket() -> _ {
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
-    //let cors = CorsOptions::default()
-    //    .allowed_origins(AllowedOrigins::all())
-    //    .allowed_methods(
-    //        vec![Method::Get, Method::Post, Method::Put]
-    //            .into_iter()
-    //            .map(From::from)
-    //            .collect(),
-    //    )
-    //    .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
-    //    .max_age(Some(86400))
-    //    .to_cors()
-    //    .expect("unable to configure CORS");
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Put]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
+        .max_age(Some(86400))
+        .to_cors()
+        .expect("unable to configure CORS");
 
     rocket
-        //    .attach(cors)
+        .attach(cors)
         .mount(
             "/",
             routes![

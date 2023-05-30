@@ -98,7 +98,7 @@ const english: Translation = {
   // generic
   estimate: "Estimating...",
   cancel: "Cancel",
-  error: "Oops... We are really sorry but something went wrong. Please try again.",
+  error: "Oops... We are really sorry but something went wrong. Please try again or contact <a href=\"mailto:info@postguard.nl\">us</a>.",
   tryAgain: "Try again",
   timeremaining: (remaining: number) => {
     if (remaining < 1000 * 10) {
@@ -124,7 +124,7 @@ const english: Translation = {
   cryptFileInput_dropFiles: "Drag & drop files",
   cryptFileInput_clickFiles: "Or click the button below",
   cryptFileInput_sendUpto: "2GB maximum",
-  cryptFileInput_addFileBtn: "Add files",
+  cryptFileInput_addFileBtn: "Upload files",
 
   // cryptFileList
   cryptFileList_addMoreFiles: "Add more files",
@@ -132,7 +132,7 @@ const english: Translation = {
   cryptFileList_filesAdded: (n: number, fs: string) => `${n} file(s) added - ${fs} left`,
 
   // decryptPanel
-  decryptPanel_header: "DOWNLOAD & DECRYPT",
+  decryptPanel_header: "Decrypt your files",
   decryptPanel_downloadDecrypt: "Downloading & Decrypting...",
   decryptPanel_irmaInstructionHeaderQr: "Scan QR-code with IRMA",
   decryptPanel_irmaInstructionHeaderMobile: "Prove your identity with IRMA",
@@ -149,10 +149,10 @@ const english: Translation = {
   encryptPanel_emailRecipient: "Email recipient",
   encryptPanel_emailSender: "Your email",
   encryptPanel_message: "Message",
-  encryptPanel_messageAnonymous: "Attention! This message is send anonymously so please be careful when downloading and opening the files.",
+  encryptPanel_messageAnonymous: "Attention! This message is sent anonymously so please be careful when downloading and opening the files.",
   encryptPanel_encryptSend: "Encrypt & send",
   encryptPanel_encrypting: "Encrypting & uploading...",
-  encryptPanel_encryptingInfo: "Your files are being encrypted first and afterwards are send to: ",
+  encryptPanel_encryptingInfo: "Your files are being encrypted first and afterwards are sent to: ",
   encryptPanel_succes: "Successfully encrypted and uploaded",
   encryptPanel_succesInfo: "Your encrypted files have been encrypted and uploaded. An email with a download link has been sent to: ",
   encryptPanel_another: "Send another",
@@ -197,7 +197,7 @@ const dutch: Translation = {
   // generic
   estimate: "schatten...",
   cancel: "Annuleren",
-  error: "Oeps... Excuses, er is iets fout gegaan. Probeer het nog een keer.",
+  error: "Oeps... Excuses, er is iets fout gegaan. Probeer het nog een keer of neem contact op met <a href=\"mailto:info@postguard.nl\">ons</a>.",
   tryAgain: "Opnieuw proberen",
   
   timeremaining: (remaining: number) => {

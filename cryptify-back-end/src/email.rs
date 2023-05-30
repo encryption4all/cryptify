@@ -29,7 +29,7 @@ struct MailStrings<'a> {
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
-    subject_str: "heeft je een bestand gestuurd via Cryptify",
+    subject_str: "heeft je een bestand gestuurd via PostGuard",
     sender_str: "heeft je bestanden gestuurd",
     expires_str: "Verloopt op",
     download_str: "Download jouw bestanden",
@@ -37,7 +37,7 @@ const NL_STRINGS: MailStrings = MailStrings {
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
-    subject_str: "sent you files via Cryptify",
+    subject_str: "sent you files via PostGuard",
     sender_str: "sent you files",
     expires_str: "Expires on",
     download_str: "Download your files",
@@ -89,12 +89,14 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
         Language::En => EN_STRINGS,
         Language::Nl => NL_STRINGS,
     };
+
+    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
     let email = EmailTemplate {
         sender_str: strings.sender_str,
         expires_str: strings.expires_str,
         download_str: strings.download_str,
         link_str: strings.link_str,
-        sender: &state.sender,
+        sender: &sender_str,
         file_size: &format_file_size(state.uploaded),
         expiry_date: &format_date(state.expires, &state.mail_lang),
         html_content: &state.mail_content,
@@ -102,7 +104,7 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
     };
     let subject = SubjectTemplate {
         subject_str: strings.subject_str,
-        sender: &state.sender,
+        sender: &sender_str,
     };
     (email.to_string(), subject.to_string())
 }
@@ -113,7 +115,7 @@ pub async fn send_email(
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // combine URL with mail variables into template
-    let url = format!("{}?download={}", config.server_url(), uuid);
+    let url = str::replace(config.server_url(), "{uuid}", uuid);
     let (email, subject) = email_templates(state, &url);
     let email = Message::builder()
         .header(ContentType::TEXT_HTML)
@@ -123,8 +125,13 @@ pub async fn send_email(
         .body(email)?;
 
     // setup SMTP connection
-    let mut mailer_builder =
-        SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port());
+    let mut mailer_builder = if cfg!(debug_assertions) {
+        SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port())
+    } else {
+        SmtpTransport::starttls_relay(config.smtp_url())?.port(config.smtp_port())
+    };
+
+    // add credentials, if present
     if let Some((username, password)) = config.smtp_credentials() {
         let credentials = Credentials::new(username.to_owned(), password.to_owned());
         mailer_builder = mailer_builder.credentials(credentials);

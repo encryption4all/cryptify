@@ -10,14 +10,14 @@
 
 @media only screen and (max-width: 500px) {
   .crypt-file-upload-box {
-    height: 12.5em
+    height: 12.5em;
   }
 }
 
 .crypt-select-protection-input-box textarea {
   font-size: 1.1em;
   border: 0;
-  box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
+  box-shadow: 0pt 1pt 0pt 0px black, 0px 1pt 0pt 0pt #ebebeb;
   -webkit-transition: box-shadow 0.3s;
   transition: box-shadow 0.3s;
   width: 100%;
@@ -49,11 +49,11 @@
 }
 
 .irma-web-content {
-  justify-content: left!important;
-  margin-left: 0!important;
-  margin-right: 0!important;
-  margin-top: 1.5em!important;
-  margin-bottom: 1.5em!important;
+  justify-content: left !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  margin-top: 1.5em !important;
+  margin-bottom: 1.5em !important;
   width: 19.1em;
 }
 
@@ -62,8 +62,8 @@
 }
 
 .crypt-irma-qr .irma-web-qr-canvas {
-  width: 100%!important;
-  height: 100%!important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .get-irma-here-anchor {
@@ -74,7 +74,7 @@
 .get-irma-here-anchor .irma-logo {
   height: 3.75em;
   display: inline-block;
-};
+}
 
 .get-irma-here-anchor .irma-appstore-button {
   height: 3.33em;
@@ -88,11 +88,11 @@
   height: 3.75em;
   vertical-align: middle;
   margin-left: 0.41em;
-  margin-bottom: calc(1em/2);
+  margin-bottom: calc(1em / 2);
 }
 
 .get-irma-buttons {
   top: -0.83em;
   position: relative;
-  cursor: pointer!important;
+  cursor: pointer !important;
 }
