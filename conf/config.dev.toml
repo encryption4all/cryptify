@@ -3,7 +3,8 @@ server_url = "http://localhost:8080/?download={uuid}#filesharing"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.local"
-smtp_url = "mailhog"
+smtp_url = "mailcrab"
 smtp_port = 1025
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^http://localhost:8080$"
+pkg_url = "https://main.irmaseal-pkg.ihub.ru.nl" 

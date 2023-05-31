@@ -76,7 +76,7 @@ fn format_file_size(size: u64) -> String {
 }
 
 fn format_date(date: i64, lang: &Language) -> String {
-    let dt = chrono::Utc.timestamp(date, 0);
+    let dt = chrono::Utc.timestamp_opt(date, 0).unwrap();
     let locale = match lang {
         Language::En => Locale::en_GB,
         Language::Nl => Locale::nl_NL,
@@ -90,7 +90,7 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
         Language::Nl => NL_STRINGS,
     };
 
-    let sender_str = "Someone".to_string(); //todo
+    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
     let email = EmailTemplate {
         sender_str: strings.sender_str,
         expires_str: strings.expires_str,

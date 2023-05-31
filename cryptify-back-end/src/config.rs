@@ -9,6 +9,7 @@ pub struct RawCryptifyConfig {
     smtp_port: u16,
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
+    pkg_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,6 +22,7 @@ pub struct CryptifyConfig {
     smtp_port: u16,
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
+    pkg_url: String,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -36,6 +38,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_port: config.smtp_port,
             smtp_credentials: config.smtp_credentials,
             allowed_origins: config.allowed_origins,
+            pkg_url: config.pkg_url,
         }
     }
 }
@@ -67,5 +70,9 @@ impl CryptifyConfig {
 
     pub fn allowed_origins(&self) -> &str {
         &self.allowed_origins
+    }
+
+    pub fn pkg_url(&self) -> &str {
+        &self.pkg_url
     }
 }

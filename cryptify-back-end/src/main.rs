@@ -10,10 +10,12 @@ use crate::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
-use irma::{
-    AttributeRequest, AttributeStatus, DisclosureRequestBuilder, IrmaClient, ProofStatus,
-    SessionResult, SessionStatus, SessionToken, SessionType,
-};
+use pg_core::api::Parameters;
+use pg_core::artifacts::VerifyingKey;
+use pg_core::client::rust::stream::UnsealerStreamConfig;
+use pg_core::client::Unsealer;
+
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use rand::Rng;
 use sha2::Digest;
@@ -25,7 +27,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, get, http::Header, launch, post, put, request::FromRequest,
+    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, request::FromRequest,
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
@@ -73,7 +75,7 @@ async fn upload_init(
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
-    let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+    let uuid = uuid::Uuid::new_v4().hyphenated().to_string();
 
     match File::create(Path::new(config.data_dir()).join(&uuid)).await {
         Ok(v) => v,
@@ -96,6 +98,7 @@ async fn upload_init(
                     recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
+                    sender: None,
                 },
             );
 
@@ -355,6 +358,7 @@ impl<'r> FromRequest<'r> for FinalizeHeaders {
 async fn upload_finalize(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
+    vk: &State<Parameters<VerifyingKey>>,
     headers: FinalizeHeaders,
     uuid: &str,
 ) -> Result<Option<()>, Error> {
@@ -362,26 +366,55 @@ async fn upload_finalize(
         Some(v) => v,
         None => return Ok(None),
     };
-    let state = state.lock().await;
+    let mut state = state.lock().await;
 
     if headers.content_range.size != Some(state.uploaded) {
         return Err(Error::UnprocessableEntity(None));
     }
 
-    send_email(config, &state, uuid)
+    let mut file = File::open(Path::new(config.data_dir()).join(uuid))
         .await
-        .map_err(|_| Error::InternalServerError(Some("could not send email".to_owned())))?;
+        .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
+        .compat();
+
+    let sender = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
+        .await
+        .map_err(|_| Error::InternalServerError(Some("couldn't read postguard file".to_string())))?
+        .pub_id
+        .con
+        .into_iter()
+        .find(|x| x.atype == "pbdf.sidn-pbdf.email.email")
+        .ok_or(Error::InternalServerError(Some(
+            "no email attribute".to_string(),
+        )))?
+        .value;
+
+    state.sender = sender;
+
+    send_email(config, &state, uuid).await.map_err(|e| {
+        log::error!("{}", e);
+        Error::InternalServerError(Some("could not send email".to_owned()))
+    })?;
 
     Ok(Some(()))
 }
 
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
     let rocket = rocket::build();
     let config = rocket
         .figment()
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
+
+    let vk = reqwest::get(format!("{}/v2/sign/parameters", config.pkg_url()))
+        .await
+        .expect("could not get global verification key")
+        .error_for_status()
+        .expect("wrong response for global verification key")
+        .json::<Parameters<VerifyingKey>>()
+        .await
+        .expect("no verification key");
 
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
@@ -402,4 +435,5 @@ fn rocket() -> _ {
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
+        .manage(vk)
 }
