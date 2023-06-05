@@ -12,10 +12,7 @@ export const SMOOTH_TIME: number = 2;
 
 const prod = process.env.NODE_ENV === "production";
 
-export const PKG_URL = `https://${
-  prod ? "stable" : "main"
-}.irmaseal-pkg.ihub.ru.nl`;
-
+export const PKG_URL = "https://main.postguard.ihub.ru.nl/pkg";
 export const BACKEND_URL = prod ? "https://cryptify.nl/api/v2" : "";
 
 export const METRICS_HEADER = {
