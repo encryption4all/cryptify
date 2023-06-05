@@ -187,14 +187,6 @@ export default class DecryptPanel extends React.Component<
         headers: { "Content-Type": "application/json", ...METRICS_HEADER },
         body: JSON.stringify(policy),
       },
-      mapping: {
-        // temporary fix, only required for the ihub pkg
-        sessionPtr: (r: any) => {
-          const ptr = r.sessionPtr;
-          ptr.u = `https://ihub.ru.nl/irma/1/${ptr.u}`;
-          return ptr;
-        },
-      },
       result: {
         url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
         headers: METRICS_HEADER,

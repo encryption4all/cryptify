@@ -7,4 +7,4 @@ email_from = "noreply@postguard.nl"
 # smtp_port = "" 
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^https://postguard.(eu|nl)$"
-pkg_url = "https://main.irmaseal-pkg.ihub.ru.nl" 
+pkg_url = "https://main.postguard.hub.ru.nl/pkg" 
