@@ -45,7 +45,7 @@
     }
   },
   "dependencies": {
-    "@e4a/pg-wasm": "^0.3.0-rc.3",
+    "@e4a/pg-wasm": "^0.3.0-rc.4",
     "@privacybydesign/yivi-client": "^0.1.2",
     "@privacybydesign/yivi-core": "^0.1.2",
     "@privacybydesign/yivi-css": "^0.1.2",
