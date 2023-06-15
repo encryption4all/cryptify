@@ -93,10 +93,10 @@
     "@types/react": "^18.0.9",
     "@types/react-dom": "^18.0.4",
     "@types/streamsaver": "^2.0.0",
-    "electron": "^8.2.5",
-    "electron-builder": "^22.6.0",
+    "electron": "^25.1.1",
+    "electron-builder": "^24.4.0",
     "electron-reload": "^1.5.0",
-    "nodemon": "^2.0.3",
+    "nodemon": "^2.0.22",
     "typescript": "^3.9.6"
   }
 }
