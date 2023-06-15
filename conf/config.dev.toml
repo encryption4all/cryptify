@@ -7,4 +7,4 @@ smtp_url = "mailcrab"
 smtp_port = 1025
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^http://localhost:8080$"
-pkg_url = "https://main.postguard.ihub.ru.nl/pkg" 
+pkg_url = "https://main.postguard-pkg.ihub.ru.nl" 

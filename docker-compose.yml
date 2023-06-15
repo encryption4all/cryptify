@@ -1,7 +1,7 @@
 version: "3.4"
 services:
   build-backend:
-    image: rust:1.61
+    image: rust:1.69
     volumes:
       - "./cryptify-back-end/:/app"
     working_dir: /app
@@ -19,11 +19,11 @@ services:
     command: "bash -c 'npm install --legacy-peer-deps && npm run build'"
 
   mailcrab:
-  image: marlonb/mailcrab:latest
-  ports:
-    - "1080:1080"
-    - "1025:1025"
-  networks: [default]
+    image: marlonb/mailcrab:latest
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    networks: [default]
 
   backend:
     build:
