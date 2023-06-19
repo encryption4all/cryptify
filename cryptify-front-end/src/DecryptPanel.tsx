@@ -5,7 +5,7 @@ import createProgressReporter from "./ProgressReporter";
 import streamSaver from "streamsaver";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
-import irmaLogo from "./resources/irma-logo.svg";
+import yiviLogo from "./resources/yivi-logo.svg";
 import appleAppStoreEN from "./resources/apple-appstore-en.svg";
 import googlePlayStoreEN from "./resources/google-playstore-en.svg";
 import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
@@ -16,9 +16,9 @@ import { SMOOTH_TIME, PKG_URL, METRICS_HEADER } from "./Constants";
 import { getFileLoadStream } from "./FileProvider";
 import { withTransform } from "./utils";
 
-const IrmaCore = require("@privacybydesign/irma-core");
-const IrmaWeb = require("@privacybydesign/irma-web");
-const IrmaClient = require("@privacybydesign/irma-client");
+const YiviCore = require("@privacybydesign/yivi-core");
+const YiviWeb = require("@privacybydesign/yivi-web");
+const YiviClient = require("@privacybydesign/yivi-client");
 
 streamSaver.mitm = `${process.env.PUBLIC_URL}/mitm.html?version=2.0.0`;
 
@@ -192,14 +192,22 @@ export default class DecryptPanel extends React.Component<
       },
     };
 
-    const irma = new IrmaCore({
+    const irma = new YiviCore({
       element: ".crypt-irma-qr",
       session: session,
       language: (this.props.lang as string).toLowerCase(),
+      state: {
+        serverSentEvents: false,
+        polling: {
+          endpoint: "status",
+          interval: 500,
+          startState: "INITIALIZED",
+        },
+      },
     });
 
-    irma.use(IrmaWeb);
-    irma.use(IrmaClient);
+    irma.use(YiviWeb);
+    irma.use(YiviClient);
     const usk = await irma.start();
 
     this.setState({
@@ -245,11 +253,8 @@ export default class DecryptPanel extends React.Component<
     );
     const fileStream = rawFileStream as WritableStream<Uint8Array>;
 
-    const {
-      unsealer,
-      usk,
-      id,
-    }: { unsealer: any; usk: string; id: string } = this.state.decryptInfo;
+    const { unsealer, usk, id }: { unsealer: any; usk: string; id: string } =
+      this.state.decryptInfo;
 
     const finished = new Promise<void>(async (resolve, _) => {
       const progress = createProgressReporter((processed, done) => {
@@ -276,9 +281,9 @@ export default class DecryptPanel extends React.Component<
         usk,
         withTransform(fileStream, progress, this.state.abort.signal)
       );
-     });
+    });
 
-   await finished;
+    await finished;
 
     this.setState({
       decryptionState: DecryptionState.Done,
@@ -344,7 +349,7 @@ export default class DecryptPanel extends React.Component<
         </p>
         <div className="crypt-irma-qr"></div>
         <div className="get-irma-here-anchor">
-          <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
+          <img className="irma-logo" src={yiviLogo} alt="irma-logo" />
           <div
             className="get-irma-text"
             style={{

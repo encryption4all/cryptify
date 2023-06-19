@@ -3,7 +3,7 @@ import CryptFileInput from "./CryptFileInput";
 import CryptFileList from "./CryptFileList";
 
 //IRMA Packages/dependencies
-import irmaLogo from "./resources/irma-logo.svg";
+import yiviLogo from "./resources/yivi-logo.svg";
 import appleAppStoreEN from "./resources/apple-appstore-en.svg";
 import googlePlayStoreEN from "./resources/google-playstore-en.svg";
 import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
@@ -27,9 +27,9 @@ import Chunker from "./utils";
 import { withTransform } from "./utils";
 
 //IRMA Packages/dependencies
-const IrmaCore = require("@privacybydesign/irma-core");
-const IrmaWeb = require("@privacybydesign/irma-web");
-const IrmaClient = require("@privacybydesign/irma-client");
+const YiviCore = require("@privacybydesign/yivi-core");
+const YiviWeb = require("@privacybydesign/yivi-web");
+const YiviClient = require("@privacybydesign/yivi-client");
 
 enum EncryptionState {
   FileSelection = 1,
@@ -326,10 +326,17 @@ export default class EncryptPanel extends React.Component<
       },
       async () => {
         let token = "";
-        const irma = new IrmaCore({
+        const yivi = new YiviCore({
           debugging: true, // Enable to get helpful output in the browser console
           element: ".crypt-irma-qr", // Which DOM element to render to
-
+          state: {
+            serverSentEvents: false,
+            polling: {
+              endpoint: "status",
+              interval: 500,
+              startState: "INITIALIZED",
+            },
+          },
           session: {
             url: `${BACKEND_URL}/verification`,
             start: {
@@ -346,10 +353,10 @@ export default class EncryptPanel extends React.Component<
           },
         });
 
-        irma.use(IrmaWeb);
-        irma.use(IrmaClient);
+        yivi.use(YiviWeb);
+        yivi.use(YiviClient);
 
-        await irma
+        await yivi
           .start()
           .catch((e) => console.error("failed IRMA session: ", e));
 
@@ -505,7 +512,7 @@ export default class EncryptPanel extends React.Component<
         <div className="crypt-irma-qr"></div>
 
         <div className="get-irma-here-anchor">
-          <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
+          <img className="irma-logo" src={yiviLogo} alt="irma-logo" />
           <div
             className="get-irma-text"
             style={{

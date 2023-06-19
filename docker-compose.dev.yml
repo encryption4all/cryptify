@@ -23,7 +23,7 @@ services:
         working_dir: /app
         environment:
             NODE_OPTIONS: "--openssl-legacy-provider"
-        command: "npm start"
+        command: "bash -c 'npm install --legacy-peer-deps && npm start'"
 
     nginx:
         image: nginx:1.18
