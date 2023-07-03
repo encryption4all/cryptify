@@ -148,9 +148,13 @@ export default class EncryptPanel extends React.Component<
   }
 
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
+    // See: https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
+    const regex =
+      /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    const stripped = ev.target.value.toLowerCase().replace(/ /g, "");
     this.setState({
-      recipient: ev.target.value.toLowerCase().replace(/ /g, ""),
-      recipientValid: ev.target.form?.checkValidity() ?? false,
+      recipient: stripped,
+      recipientValid: regex.test(stripped),
     });
   }
 
@@ -386,12 +390,13 @@ export default class EncryptPanel extends React.Component<
       .map((f) => f.size)
       .reduce((a, b) => a + b, 0);
 
-    return (
+    const canEncrypt =
       totalSize < MAX_UPLOAD_SIZE &&
       this.state.recipient.length > 0 &&
       this.state.recipientValid &&
-      this.state.files.length > 0
-    );
+      this.state.files.length > 0;
+
+    return canEncrypt;
   }
 
   renderfilesField() {
