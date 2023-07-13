@@ -5,7 +5,7 @@ import createProgressReporter from "./ProgressReporter";
 import streamSaver from "streamsaver";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
-import irmaLogo from "./resources/irma-logo.svg";
+import yiviLogo from "./resources/yivi-logo.svg";
 import appleAppStoreEN from "./resources/apple-appstore-en.svg";
 import googlePlayStoreEN from "./resources/google-playstore-en.svg";
 import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
@@ -180,10 +180,12 @@ export default class DecryptPanel extends React.Component<
     const kr = {
       con: con.map(({ t, v }) => {
         if (t === "pbdf.sidn-pbdf.email.email") return { t, v: email };
-        if (v.includes("*")) return { t };
+        if (v.includes("*") || v === "") return { t };
         return { t, v };
       }),
     };
+
+    console.log(kr);
 
     const session = {
       url: PKG_URL,
@@ -307,7 +309,6 @@ export default class DecryptPanel extends React.Component<
         usk,
         withTransform(fileStream, progress, this.state.abort.signal)
       );
-
       this.setState({ senderPrivate: verified.private });
     });
 
@@ -385,7 +386,7 @@ export default class DecryptPanel extends React.Component<
         </p>
         <div className="crypt-irma-qr"></div>
         <div className="get-irma-here-anchor">
-          <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
+          <img className="irma-logo" src={yiviLogo} alt="irma-logo" />
           <div
             className="get-irma-text"
             style={{
@@ -489,7 +490,8 @@ export default class DecryptPanel extends React.Component<
             alt="checkmark-icon"
             style={{ height: "0.85em" }}
           />
-          {getTranslation(this.props.lang).decryptPanel_verifiedEmail}: {this.state.senderPublic}
+          {getTranslation(this.props.lang).decryptPanel_verifiedEmail}:{" "}
+          {this.state.senderPublic}
         </h3>
         {this.state.senderPrivate?.con ? (
           <h3>

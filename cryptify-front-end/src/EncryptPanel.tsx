@@ -5,7 +5,7 @@ import CryptFileInput from "./CryptFileInput";
 import CryptFileList from "./CryptFileList";
 
 //IRMA Packages/dependencies
-import irmaLogo from "./resources/irma-logo.svg";
+import yiviLogo from "./resources/yivi-logo.svg";
 import appleAppStoreEN from "./resources/apple-appstore-en.svg";
 import googlePlayStoreEN from "./resources/google-playstore-en.svg";
 import appleAppStoreNL from "./resources/apple-appstore-nl.svg";
@@ -165,9 +165,13 @@ export default class EncryptPanel extends React.Component<
   }
 
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
+    // See: https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
+    const regex =
+      /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    const stripped = ev.target.value.toLowerCase().replace(/ /g, "");
     this.setState({
-      recipient: ev.target.value.toLowerCase().replace(/ /g, ""),
-      formValid: ev.target.form?.checkValidity() ?? false,
+      recipient: stripped,
+      formValid: regex.test(stripped),
     });
   }
 
@@ -406,12 +410,11 @@ export default class EncryptPanel extends React.Component<
         const pubSignKey = await this.retrieveSignKey(sign_policy);
 
         if (this.state.signAttributes.length > 0) {
-        const privSignKey = await this.retrieveSignKey({
-          con: this.state.signAttributes,
-        });
-        
-        this.setState({ privSignKey });
+          const privSignKey = await this.retrieveSignKey({
+            con: this.state.signAttributes,
+          });
 
+          this.setState({ privSignKey });
         }
 
         this.setState({ pubSignKey }, () => this.onEncrypt());
@@ -440,12 +443,13 @@ export default class EncryptPanel extends React.Component<
       .map((f) => f.size)
       .reduce((a, b) => a + b, 0);
 
-    return (
+    const canEncrypt =
       totalSize < MAX_UPLOAD_SIZE &&
       this.state.recipient.length > 0 &&
       this.state.formValid &&
-      this.state.files.length > 0
-    );
+      this.state.files.length > 0;
+
+    return canEncrypt;
   }
 
   renderfilesField() {
@@ -661,7 +665,7 @@ export default class EncryptPanel extends React.Component<
         <div className="crypt-irma-qr"></div>
 
         <div className="get-irma-here-anchor">
-          <img className="irma-logo" src={irmaLogo} alt="irma-logo" />
+          <img className="irma-logo" src={yiviLogo} alt="irma-logo" />
           <div
             className="get-irma-text"
             style={{
