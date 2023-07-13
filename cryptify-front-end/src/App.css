@@ -244,10 +244,10 @@ body,
 }
 
 .crypt-select-protection-input-box {
-  border-radius: 0.7em;
-  border: 0pt;
   background-color: white;
+  padding-left: 1em;
   margin-bottom: 2.4em;
+  border-left:  2px solid black;
 }
 
 @media only screen and (max-width: 500px) {
@@ -279,13 +279,12 @@ body,
   padding-bottom: 0;
 }
 
-.crypt-select-protection-input-box input[type="text"],
-input[type="email"],
+.crypt-select-protection-input-box input, 
 textarea {
   font-size: 1.1em;
   border: 0;
   box-shadow: 0pt 1pt 0pt 0pt #ebebeb, 0px 1pt 0pt 0pt #ebebeb;
-  width: 100%;
+  width: 90%;
   resize: none;
 }
 

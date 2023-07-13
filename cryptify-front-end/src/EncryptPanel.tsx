@@ -1,3 +1,5 @@
+import "./EncryptPanel.css";
+
 import React from "react";
 import CryptFileInput from "./CryptFileInput";
 import CryptFileList from "./CryptFileList";
@@ -24,13 +26,24 @@ import {
 } from "./Constants";
 import Chunker from "./utils";
 import { withTransform } from "./utils";
-import type { ISealOptions, ISigningKey } from "@e4a/pg-wasm";
+import type { AttributeCon, ISealOptions, ISigningKey } from "@e4a/pg-wasm";
 
 import YiviCore from "@privacybydesign/yivi-core";
 import YiviWeb from "@privacybydesign/yivi-web";
 import YiviClient from "@privacybydesign/yivi-client";
 
 import "@privacybydesign/yivi-css";
+
+type AttType =
+  | "pbdf.sidn-pbdf.mobilenumber.mobilenumber"
+  | "pbdf.gemeente.personalData.fullname"
+  | "pbdf.gemeente.personalData.dateofbirth";
+
+const ATTRIBUTES: Array<AttType> = [
+  "pbdf.sidn-pbdf.mobilenumber.mobilenumber",
+  "pbdf.gemeente.personalData.fullname",
+  "pbdf.gemeente.personalData.dateofbirth",
+];
 
 async function getParameters(): Promise<String> {
   let resp = await fetch(`${PKG_URL}/v2/parameters`, {
@@ -62,7 +75,10 @@ type EncryptState = {
   encryptStartTime: number;
   modPromise: Promise<any>;
   pkPromise: Promise<any>;
-  signKey?: ISigningKey;
+  pubSignKey?: ISigningKey;
+  privSignKey?: ISigningKey;
+  signAttributes: AttributeCon;
+  encAttributes: AttributeCon;
 };
 
 type EncryptProps = {
@@ -83,6 +99,8 @@ const defaultEncryptState: EncryptState = {
   encryptStartTime: 0,
   modPromise: import("@e4a/pg-wasm"),
   pkPromise: getParameters(),
+  encAttributes: [],
+  signAttributes: [],
 };
 
 export default class EncryptPanel extends React.Component<
@@ -219,19 +237,22 @@ export default class EncryptPanel extends React.Component<
     const enc_policy = {
       [this.state.recipient]: {
         ts,
-        con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
+        con: [
+          { t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient },
+          ...this.state.encAttributes,
+        ],
       },
     };
 
-    if (!this.state.signKey) {
+    if (!this.state.pubSignKey) {
       this.setState({ encryptionState: EncryptionState.Error });
       return;
     }
 
     const options: ISealOptions = {
       policy: enc_policy,
-      pubSignKey: this.state.signKey,
-      // optionally add other attributes here
+      pubSignKey: this.state.pubSignKey,
+      ...(this.state.privSignKey && { privSignKey: this.state.privSignKey }),
     };
 
     const uploadChunker = new Chunker(UPLOAD_CHUNK_SIZE) as TransformStream;
@@ -315,71 +336,85 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
+  async retrieveSignKey(pol: any): Promise<any> {
+    const session = {
+      url: PKG_URL,
+      start: {
+        url: (o) => `${o.url}/v2/request/start`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pol),
+      },
+      result: {
+        url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
+        parseResponse: (r) => {
+          return r
+            .text()
+            .then((jwt) =>
+              fetch(`${PKG_URL}/v2/irma/sign/key`, {
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                },
+              })
+            )
+            .then((r) => r.json())
+            .then((json) => {
+              if (json.status !== "DONE" || json.proofStatus !== "VALID")
+                throw new Error("not done and valid");
+              return json.key;
+            })
+            .catch((e) => console.log("error: ", e));
+        },
+      },
+    };
+
+    const yivi = new YiviCore({
+      debugging: false,
+      element: ".crypt-irma-qr",
+      session,
+      state: {
+        serverSentEvents: false,
+        polling: {
+          endpoint: "status",
+          interval: 500,
+          startState: "INITIALIZED",
+        },
+      },
+    });
+
+    yivi.use(YiviWeb);
+    yivi.use(YiviClient);
+
+    const signKey = await yivi
+      .start()
+      .catch((e) => console.error("failed IRMA session: ", e));
+
+    return signKey;
+  }
+
   async onSign() {
     this.setState(
       {
         encryptionState: EncryptionState.Sign,
       },
       async () => {
-        // retrieve signing key
+        // retrieve signing keys
         const sign_policy = {
           con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.sender }],
         };
 
-        const session = {
-          url: PKG_URL,
-          start: {
-            url: (o) => `${o.url}/v2/request/start`,
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(sign_policy),
-          },
-          result: {
-            url: (o, { sessionToken }) =>
-              `${o.url}/v2/request/jwt/${sessionToken}`,
-            parseResponse: (r) => {
-              return r
-                .text()
-                .then((jwt) =>
-                  fetch(`${PKG_URL}/v2/irma/sign/key`, {
-                    headers: {
-                      Authorization: `Bearer ${jwt}`,
-                    },
-                  })
-                )
-                .then((r) => r.json())
-                .then((json) => {
-                  if (json.status !== "DONE" || json.proofStatus !== "VALID")
-                    throw new Error("not done and valid");
-                  return json.key;
-                })
-                .catch((e) => console.log("error: ", e));
-            },
-          },
-        };
+        const pubSignKey = await this.retrieveSignKey(sign_policy);
 
-        const yivi = new YiviCore({
-          debugging: true, // Enable to get helpful output in the browser console
-          element: ".crypt-irma-qr", // Which DOM element to render to
-          session,
-          state: {
-            serverSentEvents: false,
-            polling: {
-              endpoint: "status",
-              interval: 500,
-              startState: "INITIALIZED",
-            },
-          },
+        if (this.state.signAttributes.length > 0) {
+        const privSignKey = await this.retrieveSignKey({
+          con: this.state.signAttributes,
         });
+        
+        this.setState({ privSignKey });
 
-        yivi.use(YiviWeb);
-        yivi.use(YiviClient);
+        }
 
-        const signKey = await yivi
-          .start()
-          .catch((e) => console.error("failed IRMA session: ", e));
-
-        this.setState({ signKey }, () => this.onEncrypt());
+        this.setState({ pubSignKey }, () => this.onEncrypt());
       }
     );
   }
@@ -450,7 +485,88 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
+  createExtras(a: "encAttributes" | "signAttributes") {
+    const parent = this;
+    const attributes = parent.state[a];
+
+    // ugly fix since TS does not allow computed properties
+    const update =
+      a === "encAttributes"
+        ? (args) => parent.setState({ encAttributes: args })
+        : (args) => parent.setState({ signAttributes: args });
+
+    function onAddField(field: AttType) {
+      update([...attributes, { t: field, v: "" }]);
+    }
+
+    function onAttributesChanged(i: number, v: string) {
+      const updated = [...attributes];
+      updated[i].v = v;
+      update(updated);
+    }
+
+    function removeExtraAttribute(i: number) {
+      const updated = attributes.filter((_, j) => i !== j);
+      update(updated);
+    }
+
+    const renderFields = () => {
+      const filtered = ATTRIBUTES.filter(
+        (att) => !attributes.some(({ t, v }) => t === att)
+      );
+      return filtered.map((x) => {
+        return (
+          <button
+            className="add-attribute-btn"
+            key={x}
+            onClick={(e) => onAddField(x)}
+          >
+            + {getTranslation(parent.props.lang)[x]}
+          </button>
+        );
+      });
+    };
+
+    const renderButtons = () => {
+      return attributes.map(({ t, v }, i) => {
+        return (
+          <div className="attribute-field">
+            <h4>
+              {
+                getTranslation(parent.props.lang)[
+                  `encryptPanel_email${
+                    a === "signAttributes" ? "Sender" : "Recipient"
+                  }AttributePrefix`
+                ]
+              }{" "}
+              {getTranslation(parent.props.lang)[t]}
+            </h4>
+            <input
+              placeholder=""
+              required
+              value={v}
+              onChange={(e) => onAttributesChanged(i, e.target.value)}
+            />
+            <button
+              className="btn-delete"
+              onClick={(e) => removeExtraAttribute(i)}
+            >
+              x
+            </button>
+          </div>
+        );
+      });
+    };
+
+    return [renderFields, renderButtons];
+  }
+
   renderUserInputs() {
+    const [renderSignFields, renderSignButtons] =
+      this.createExtras("signAttributes");
+    const [renderEncFields, renderEncButtons] =
+      this.createExtras("encAttributes");
+
     return (
       <div className="crypt-progress-container">
         <div className="crypt-select-protection-input-box">
@@ -462,6 +578,8 @@ export default class EncryptPanel extends React.Component<
             value={this.state.sender}
             onChange={(e) => this.onChangeSender(e)}
           />
+          {renderSignButtons()}
+          {renderSignFields()}
         </div>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
@@ -472,6 +590,8 @@ export default class EncryptPanel extends React.Component<
             value={this.state.recipient}
             onChange={(e) => this.onChangeRecipient(e)}
           />
+          {renderEncButtons()}
+          {renderEncFields()}
         </div>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>

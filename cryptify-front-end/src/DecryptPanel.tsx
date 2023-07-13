@@ -21,6 +21,7 @@ import YiviWeb from "@privacybydesign/yivi-web";
 import YiviClient from "@privacybydesign/yivi-client";
 
 import "@privacybydesign/yivi-css";
+import { IPolicy } from "@e4a/pg-wasm";
 
 streamSaver.mitm = `${process.env.PUBLIC_URL}/mitm.html?version=2.0.0`;
 
@@ -50,6 +51,7 @@ type DecryptState = {
   modPromise: Promise<any>;
   vkPromise: Promise<string>;
   senderPublic: string;
+  senderPrivate?: IPolicy;
 };
 
 type DecryptProps = {
@@ -169,14 +171,18 @@ export default class DecryptPanel extends React.Component<
     const recipients = unsealer.inspect_header();
     const sender = unsealer.public_identity();
 
-    // NOTE: there should be one recipient
+    // NOTE: For now, there should be one recipient.
     this.setState({ senderPublic: sender.con[0].v });
     const {
-      value: [email, { ts: timestamp }],
+      value: [email, { ts: timestamp, con }],
     } = recipients.entries().next();
 
-    const policy = {
-      con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }],
+    const kr = {
+      con: con.map(({ t, v }) => {
+        if (t === "pbdf.sidn-pbdf.email.email") return { t, v: email };
+        if (v.includes("*")) return { t };
+        return { t, v };
+      }),
     };
 
     const session = {
@@ -185,7 +191,7 @@ export default class DecryptPanel extends React.Component<
         url: (o) => `${o.url}/v2/request/start`,
         method: "POST",
         headers: { "Content-Type": "application/json", ...METRICS_HEADER },
-        body: JSON.stringify(policy),
+        body: JSON.stringify(kr),
       },
       result: {
         url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
@@ -301,6 +307,8 @@ export default class DecryptPanel extends React.Component<
         usk,
         withTransform(fileStream, progress, this.state.abort.signal)
       );
+
+      this.setState({ senderPrivate: verified.private });
     });
 
     await finished;
@@ -312,8 +320,7 @@ export default class DecryptPanel extends React.Component<
     });
   }
 
-  // TODO:
-  renderSenderPublicIdentity() {
+  renderSenderIdentity() {
     return (
       <div className="crypt-panel-header">
         <h1>You received files from: {this.state.senderPublic}</h1>
@@ -474,6 +481,7 @@ export default class DecryptPanel extends React.Component<
   renderDone() {
     return (
       <div className="crypt-progress-container">
+        <h3>{getTranslation(this.props.lang).decryptPanel_succes}</h3>
         <h3>
           <img
             className="checkmark-icon"
@@ -481,17 +489,26 @@ export default class DecryptPanel extends React.Component<
             alt="checkmark-icon"
             style={{ height: "0.85em" }}
           />
-          {getTranslation(this.props.lang).decryptPanel_succes}
+          {getTranslation(this.props.lang).decryptPanel_verifiedEmail}: {this.state.senderPublic}
         </h3>
-        <h3>
-          <img
-            className="checkmark-icon"
-            src={checkmark}
-            alt="checkmark-icon"
-            style={{ height: "0.85em" }}
-          />
-          The files are from: {this.state.senderPublic}
-        </h3>
+        {this.state.senderPrivate?.con ? (
+          <h3>
+            {getTranslation(this.props.lang).decryptPanel_verifiedExtra}:
+            <ul>
+              {this.state.senderPrivate?.con.map(({ t, v }) => (
+                <li key={t}>
+                  <img
+                    className="checkmark-icon"
+                    src={checkmark}
+                    alt="checkmark-icon"
+                    style={{ height: "0.85em" }}
+                  />
+                  {getTranslation(this.props.lang)[t]}: {v}
+                </li>
+              ))}
+            </ul>
+          </h3>
+        ) : null}
       </div>
     );
   }
@@ -516,7 +533,7 @@ export default class DecryptPanel extends React.Component<
     if (this.state.decryptionState === DecryptionState.IrmaSession) {
       return (
         <div>
-          {this.renderSenderPublicIdentity()}
+          {this.renderSenderIdentity()}
           {this.renderfilesField()}
           {this.renderIrmaSession()}
         </div>
