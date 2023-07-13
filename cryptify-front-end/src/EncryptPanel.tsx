@@ -1,3 +1,5 @@
+import "./EncryptPanel.css";
+
 import React from "react";
 import CryptFileInput from "./CryptFileInput";
 import CryptFileList from "./CryptFileList";
@@ -20,30 +22,49 @@ import {
   UPLOAD_CHUNK_SIZE,
   PKG_URL,
   SMOOTH_TIME,
-  BACKEND_URL,
   METRICS_HEADER,
 } from "./Constants";
 import Chunker from "./utils";
 import { withTransform } from "./utils";
+import type { AttributeCon, ISealOptions, ISigningKey } from "@e4a/pg-wasm";
 
-//IRMA Packages/dependencies
-const YiviCore = require("@privacybydesign/yivi-core");
-const YiviWeb = require("@privacybydesign/yivi-web");
-const YiviClient = require("@privacybydesign/yivi-client");
+import YiviCore from "@privacybydesign/yivi-core";
+import YiviWeb from "@privacybydesign/yivi-web";
+import YiviClient from "@privacybydesign/yivi-client";
+
+import "@privacybydesign/yivi-css";
+
+type AttType =
+  | "pbdf.sidn-pbdf.mobilenumber.mobilenumber"
+  | "pbdf.gemeente.personalData.fullname"
+  | "pbdf.gemeente.personalData.dateofbirth";
+
+const ATTRIBUTES: Array<AttType> = [
+  "pbdf.sidn-pbdf.mobilenumber.mobilenumber",
+  "pbdf.gemeente.personalData.fullname",
+  "pbdf.gemeente.personalData.dateofbirth",
+];
+
+async function getParameters(): Promise<String> {
+  let resp = await fetch(`${PKG_URL}/v2/parameters`, {
+    headers: METRICS_HEADER,
+  });
+  let params = await resp.json();
+  return params.publicKey;
+}
 
 enum EncryptionState {
   FileSelection = 1,
   Encrypting,
   Done,
   Error,
-  Verify,
-  Anonymous,
+  Sign,
 }
 
 type EncryptState = {
   recipient: string;
-  recipientValid: boolean;
   sender: string;
+  formValid: boolean;
   message: string;
   files: File[];
   percentages: number[];
@@ -54,25 +75,20 @@ type EncryptState = {
   encryptStartTime: number;
   modPromise: Promise<any>;
   pkPromise: Promise<any>;
-  irma_token: string;
+  pubSignKey?: ISigningKey;
+  privSignKey?: ISigningKey;
+  signAttributes: AttributeCon;
+  encAttributes: AttributeCon;
 };
 
 type EncryptProps = {
   lang: Lang;
 };
 
-async function getParameters(): Promise<String> {
-  let resp = await fetch(`${PKG_URL}/v2/parameters`, {
-    headers: METRICS_HEADER,
-  });
-  let params = await resp.json();
-  return params.publicKey;
-}
-
 const defaultEncryptState: EncryptState = {
   recipient: "",
-  recipientValid: false,
   sender: "",
+  formValid: false,
   message: "",
   files: [],
   percentages: [],
@@ -81,9 +97,10 @@ const defaultEncryptState: EncryptState = {
   abort: new AbortController(),
   selfAborted: false,
   encryptStartTime: 0,
-  modPromise: import("@e4a/irmaseal-wasm-bindings"),
+  modPromise: import("@e4a/pg-wasm"),
   pkPromise: getParameters(),
-  irma_token: "",
+  encAttributes: [],
+  signAttributes: [],
 };
 
 export default class EncryptPanel extends React.Component<
@@ -150,34 +167,22 @@ export default class EncryptPanel extends React.Component<
   onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
     // See: https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
     const regex =
-      /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
     const stripped = ev.target.value.toLowerCase().replace(/ /g, "");
     this.setState({
       recipient: stripped,
-      recipientValid: regex.test(stripped),
+      formValid: regex.test(stripped),
     });
   }
 
-  // TODO: can go?
-  onChangeSenderEvent(ev: React.ChangeEvent<HTMLInputElement>) {
+  onChangeSender(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      sender: ev.target.value.toLowerCase(),
+      sender: ev.target.value.toLowerCase().replace(/ /g, ""),
+      formValid: ev.target.form?.checkValidity() ?? false,
     });
   }
 
-  // Function when a user does not has access to the sender field.
-  onChangeSenderString(sender: string) {
-    this.setState(
-      {
-        sender: sender,
-      },
-      () => {
-        this.onEncrypt();
-      }
-    );
-  }
-
-  onChangeMessageEvent(ev: React.ChangeEvent<HTMLTextAreaElement>) {
+  onChangeMessage(ev: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       message: ev.target.value,
     });
@@ -230,15 +235,28 @@ export default class EncryptPanel extends React.Component<
 
     // make sure these are fulfilled
     const pk = await this.state.pkPromise;
-    const mod = await this.state.modPromise;
+    const { sealStream } = await this.state.modPromise;
 
     const ts = Math.round(Date.now() / 1000);
-
-    const policies = {
+    const enc_policy = {
       [this.state.recipient]: {
         ts,
-        con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient }],
+        con: [
+          { t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient },
+          ...this.state.encAttributes,
+        ],
       },
+    };
+
+    if (!this.state.pubSignKey) {
+      this.setState({ encryptionState: EncryptionState.Error });
+      return;
+    }
+
+    const options: ISealOptions = {
+      policy: enc_policy,
+      pubSignKey: this.state.pubSignKey,
+      ...(this.state.privSignKey && { privSignKey: this.state.privSignKey }),
     };
 
     const uploadChunker = new Chunker(UPLOAD_CHUNK_SIZE) as TransformStream;
@@ -271,15 +289,14 @@ export default class EncryptPanel extends React.Component<
         this.state.recipient,
         this.state.message,
         this.props.lang,
-        this.state.irma_token,
         (n, last) => this.reportProgress(resolve, n, last)
       ) as [WritableStream, string];
 
       this.setState({ sender });
 
-      mod.seal(
+      sealStream(
         pk,
-        policies,
+        options,
         readable,
         withTransform(fileStream, uploadChunker, this.state.abort.signal)
       );
@@ -323,48 +340,84 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
-  async onVerify() {
+  async retrieveSignKey(pol: any): Promise<any> {
+    const session = {
+      url: PKG_URL,
+      start: {
+        url: (o) => `${o.url}/v2/request/start`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pol),
+      },
+      result: {
+        url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
+        parseResponse: (r) => {
+          return r
+            .text()
+            .then((jwt) =>
+              fetch(`${PKG_URL}/v2/irma/sign/key`, {
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                },
+              })
+            )
+            .then((r) => r.json())
+            .then((json) => {
+              if (json.status !== "DONE" || json.proofStatus !== "VALID")
+                throw new Error("not done and valid");
+              return json.key;
+            })
+            .catch((e) => console.log("error: ", e));
+        },
+      },
+    };
+
+    const yivi = new YiviCore({
+      debugging: false,
+      element: ".crypt-irma-qr",
+      session,
+      state: {
+        serverSentEvents: false,
+        polling: {
+          endpoint: "status",
+          interval: 500,
+          startState: "INITIALIZED",
+        },
+      },
+    });
+
+    yivi.use(YiviWeb);
+    yivi.use(YiviClient);
+
+    const signKey = await yivi
+      .start()
+      .catch((e) => console.error("failed IRMA session: ", e));
+
+    return signKey;
+  }
+
+  async onSign() {
     this.setState(
       {
-        encryptionState: EncryptionState.Verify,
+        encryptionState: EncryptionState.Sign,
       },
       async () => {
-        let token = "";
-        const yivi = new YiviCore({
-          debugging: true, // Enable to get helpful output in the browser console
-          element: ".crypt-irma-qr", // Which DOM element to render to
-          state: {
-            serverSentEvents: false,
-            polling: {
-              endpoint: "status",
-              interval: 500,
-              startState: "INITIALIZED",
-            },
-          },
-          session: {
-            url: `${BACKEND_URL}/verification`,
-            start: {
-              url: (o: any) => `${o.url}/start`,
-              method: "GET",
-            },
-            mapping: {
-              sessionToken: (r) => {
-                token = r.token;
-                return r.token;
-              },
-            },
-            result: false,
-          },
-        });
+        // retrieve signing keys
+        const sign_policy = {
+          con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.sender }],
+        };
 
-        yivi.use(YiviWeb);
-        yivi.use(YiviClient);
+        const pubSignKey = await this.retrieveSignKey(sign_policy);
 
-        await yivi
-          .start()
-          .catch((e) => console.error("failed IRMA session: ", e));
+        if (this.state.signAttributes.length > 0) {
+          const privSignKey = await this.retrieveSignKey({
+            con: this.state.signAttributes,
+          });
 
-        this.setState({ irma_token: token }, () => this.onEncrypt());
+          this.setState({ privSignKey });
+        }
+
+        this.setState({ pubSignKey }, () => this.onEncrypt());
       }
     );
   }
@@ -393,7 +446,7 @@ export default class EncryptPanel extends React.Component<
     const canEncrypt =
       totalSize < MAX_UPLOAD_SIZE &&
       this.state.recipient.length > 0 &&
-      this.state.recipientValid &&
+      this.state.formValid &&
       this.state.files.length > 0;
 
     return canEncrypt;
@@ -436,9 +489,102 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
+  createExtras(a: "encAttributes" | "signAttributes") {
+    const parent = this;
+    const attributes = parent.state[a];
+
+    // ugly fix since TS does not allow computed properties
+    const update =
+      a === "encAttributes"
+        ? (args) => parent.setState({ encAttributes: args })
+        : (args) => parent.setState({ signAttributes: args });
+
+    function onAddField(field: AttType) {
+      update([...attributes, { t: field, v: "" }]);
+    }
+
+    function onAttributesChanged(i: number, v: string) {
+      const updated = [...attributes];
+      updated[i].v = v;
+      update(updated);
+    }
+
+    function removeExtraAttribute(i: number) {
+      const updated = attributes.filter((_, j) => i !== j);
+      update(updated);
+    }
+
+    const renderFields = () => {
+      const filtered = ATTRIBUTES.filter(
+        (att) => !attributes.some(({ t, v }) => t === att)
+      );
+      return filtered.map((x) => {
+        return (
+          <button
+            className="add-attribute-btn"
+            key={x}
+            onClick={(e) => onAddField(x)}
+          >
+            + {getTranslation(parent.props.lang)[x]}
+          </button>
+        );
+      });
+    };
+
+    const renderButtons = () => {
+      return attributes.map(({ t, v }, i) => {
+        return (
+          <div className="attribute-field">
+            <h4>
+              {
+                getTranslation(parent.props.lang)[
+                  `encryptPanel_email${
+                    a === "signAttributes" ? "Sender" : "Recipient"
+                  }AttributePrefix`
+                ]
+              }{" "}
+              {getTranslation(parent.props.lang)[t]}
+            </h4>
+            <input
+              placeholder=""
+              required
+              value={v}
+              onChange={(e) => onAttributesChanged(i, e.target.value)}
+            />
+            <button
+              className="btn-delete"
+              onClick={(e) => removeExtraAttribute(i)}
+            >
+              x
+            </button>
+          </div>
+        );
+      });
+    };
+
+    return [renderFields, renderButtons];
+  }
+
   renderUserInputs() {
+    const [renderSignFields, renderSignButtons] =
+      this.createExtras("signAttributes");
+    const [renderEncFields, renderEncButtons] =
+      this.createExtras("encAttributes");
+
     return (
       <div className="crypt-progress-container">
+        <div className="crypt-select-protection-input-box">
+          <h4>{getTranslation(this.props.lang).encryptPanel_emailSender}</h4>
+          <input
+            placeholder=""
+            type="email"
+            required
+            value={this.state.sender}
+            onChange={(e) => this.onChangeSender(e)}
+          />
+          {renderSignButtons()}
+          {renderSignFields()}
+        </div>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
           <input
@@ -448,6 +594,8 @@ export default class EncryptPanel extends React.Component<
             value={this.state.recipient}
             onChange={(e) => this.onChangeRecipient(e)}
           />
+          {renderEncButtons()}
+          {renderEncFields()}
         </div>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>
@@ -455,7 +603,7 @@ export default class EncryptPanel extends React.Component<
             required={false}
             rows={4}
             value={this.state.message}
-            onChange={(e) => this.onChangeMessageEvent(e)}
+            onChange={(e) => this.onChangeMessage(e)}
           />
         </div>
         <button
@@ -465,7 +613,7 @@ export default class EncryptPanel extends React.Component<
           }
           onClick={(e) => {
             if (this.canEncrypt()) {
-              this.onVerify();
+              this.onSign();
             }
           }}
         >
@@ -559,14 +707,6 @@ export default class EncryptPanel extends React.Component<
             </a>
           </div>
         </div>
-
-        <button
-          className={"crypt-btn-anonymous crypt-btn"}
-          onClick={() => this.onEncrypt()}
-          type="button"
-        >
-          {getTranslation(this.props.lang).encryptPanel_encryptSendAnonymous}
-        </button>
       </div>
     );
   }
@@ -660,7 +800,7 @@ export default class EncryptPanel extends React.Component<
   }
 
   render() {
-    if (this.state.encryptionState === EncryptionState.Verify) {
+    if (this.state.encryptionState === EncryptionState.Sign) {
       return <form>{this.renderVerification()}</form>;
     } else if (this.state.encryptionState === EncryptionState.FileSelection) {
       return (

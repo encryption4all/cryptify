@@ -1,10 +1,10 @@
 [global]
-server_url = "http://localhost:5173/?download={uuid}#filesharing"
+server_url = "http://localhost:8080/?download={uuid}#filesharing"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.local"
-smtp_url = "mailhog"
+smtp_url = "mailcrab"
 smtp_port = 1025
 # smtp_credentials = ["user", "pw"]
-irma_server = "http://irma:8088"
 allowed_origins = "^http://localhost:8080$"
+pkg_url = "https://main.postguard-pkg.ihub.ru.nl" 

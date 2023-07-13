@@ -1,62 +1,53 @@
 version: "3.4"
 services:
-    build-backend:
-        image: rust:1.61
-        volumes:
-            - "./cryptify-back-end/:/app"
-        working_dir: /app
-        environment:
-            ROCKET_PROFILE: production
-        command: "cargo build --release"
+  build-backend:
+    image: rust:1.69
+    volumes:
+      - "./cryptify-back-end/:/app"
+    working_dir: /app
+    environment:
+      ROCKET_PROFILE: production
+    command: "cargo build --release"
 
-    build-frontend:
-        image: node:17
-        volumes:
-            - "./cryptify-front-end/:/app"
-        working_dir: /app
-        environment:
-            NODE_OPTIONS: "--openssl-legacy-provider"
-        command: "bash -c 'npm install --legacy-peer-deps && npm run build'"
+  build-frontend:
+    image: node:17
+    volumes:
+      - "./cryptify-front-end/:/app"
+    working_dir: /app
+    environment:
+      NODE_OPTIONS: "--openssl-legacy-provider"
+    command: "bash -c 'npm install --legacy-peer-deps && npm run build'"
 
-    mailhog:
-        image: mailhog/mailhog:v1.0.0
-        environment:
-            MH_API_BIND_ADDR: 0.0.0.0:1080
-            MH_UI_BIND_ADDR: 0.0.0.0:1080
-            MH_SMTP_BIND_ADDR: 0.0.0.0:1025
-            TZ: Europe/Amsterdam
-        ports: ["127.0.0.1:1080:1080"]
+  mailcrab:
+    image: marlonb/mailcrab:latest
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    networks: [default]
 
-    irma:
-        image: privacybydesign/irma:edge
-        build:
-            context: https://github.com/privacybydesign/irmago.git
-        command: "server --sse -p 8088"
-   
-    backend:
-        build:
-            context: .
-            dockerfile: backend.Dockerfile
-        depends_on:
-            - build-backend
-            - mailhog
-            - irma
-        volumes:
-            - "./cryptify-back-end/:/app"
-            - "./conf/config.toml/:/app/config.toml:ro"
-        working_dir: /app
-        environment:
-            ROCKET_CONFIG: "config.toml"
-        command: "bash -c 'mkdir -p /tmp/data && ./target/release/cryptify-backend'"
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    depends_on:
+      - build-backend
+      - mailcrab
+    volumes:
+      - "./cryptify-back-end/:/app"
+      - "./conf/config.toml/:/app/config.toml:ro"
+    working_dir: /app
+    environment:
+      ROCKET_CONFIG: "config.toml"
+    command: "bash -c 'mkdir -p /tmp/data && ./target/release/cryptify-backend'"
 
-    nginx:
-        image: nginx:1.18
-        depends_on:
-            - backend
-            - build-frontend
-        volumes:
-            - "./cryptify-front-end/build/:/var/www/html/:ro"
-            - "./conf/nginx.conf:/etc/nginx/nginx.conf:ro"
-        ports:
-            - "80:80"
-            - "8088:8088"
+  nginx:
+    image: nginx:1.18
+    depends_on:
+      - backend
+      - build-frontend
+    volumes:
+      - "./cryptify-front-end/build/:/var/www/html/:ro"
+      - "./conf/nginx.conf:/etc/nginx/nginx.conf:ro"
+    ports:
+      - "80:80"
+      - "8088:8088"

@@ -76,7 +76,7 @@ fn format_file_size(size: u64) -> String {
 }
 
 fn format_date(date: i64, lang: &Language) -> String {
-    let dt = chrono::Utc.timestamp(date, 0);
+    let dt = chrono::Utc.timestamp_opt(date, 0).unwrap();
     let locale = match lang {
         Language::En => Locale::en_GB,
         Language::Nl => Locale::nl_NL,
