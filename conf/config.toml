@@ -3,8 +3,8 @@ server_url = "https://postguard.nl/?download={uuid}#filesharing"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.nl"
-# smtp_url = ""
-# smtp_port = "" 
+smtp_url = "mailcrab"
+smtp_port = 1025
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^https://postguard.(eu|nl)$"
 pkg_url = "https://main.postguard.hub.ru.nl/pkg" 

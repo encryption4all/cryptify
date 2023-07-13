@@ -18,7 +18,7 @@ const prod = process.env.NODE_ENV === "production";
 
 export const PKG_URL = "https://main.postguard.ihub.ru.nl/pkg";
 
-export const BACKEND_URL = prod ? "https://cryptify.nl/api/v2" : "";
+export const BACKEND_URL = prod ? "https://cryptify.nl/main/api/v2" : "";
 
 export const METRICS_HEADER = {
   "X-PostGuard-Client-Version": `${browserName}${
