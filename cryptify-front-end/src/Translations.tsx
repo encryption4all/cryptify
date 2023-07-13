@@ -316,5 +316,5 @@ const dutch: Translation = {
   // attribute types
   "pbdf.sidn-pbdf.mobilenumber.mobilenumber": "mobiel",
   "pbdf.gemeente.personalData.fullname": "volledige naam",
-  "pbdf.gemeente.personalData.dateofbirth": "geboorte datum",
+  "pbdf.gemeente.personalData.dateofbirth": "geboortedatum",
 };

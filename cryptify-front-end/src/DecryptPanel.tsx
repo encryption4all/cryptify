@@ -324,7 +324,16 @@ export default class DecryptPanel extends React.Component<
   renderSenderIdentity() {
     return (
       <div className="crypt-panel-header">
-        <h1>You received files from: {this.state.senderPublic}</h1>
+           <h3>
+          <img
+            className="checkmark-icon"
+            src={checkmark}
+            alt="checkmark-icon"
+            style={{ height: "0.85em" }}
+          />
+          {getTranslation(this.props.lang).decryptPanel_verifiedEmail}:{" "}
+          {this.state.senderPublic}
+        </h3>
       </div>
     );
   }
