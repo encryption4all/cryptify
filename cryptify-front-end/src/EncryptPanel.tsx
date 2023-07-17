@@ -62,9 +62,8 @@ enum EncryptionState {
 }
 
 type EncryptState = {
-  recipient: string;
+  recipients: { email: string; extra: AttributeCon }[];
   sender: string;
-  formValid: boolean;
   message: string;
   files: File[];
   percentages: number[];
@@ -77,8 +76,7 @@ type EncryptState = {
   pkPromise: Promise<any>;
   pubSignKey?: ISigningKey;
   privSignKey?: ISigningKey;
-  signAttributes: AttributeCon;
-  encAttributes: AttributeCon;
+  senderAttributes: AttributeCon;
 };
 
 type EncryptProps = {
@@ -86,9 +84,9 @@ type EncryptProps = {
 };
 
 const defaultEncryptState: EncryptState = {
-  recipient: "",
+  recipients: [{ email: "", extra: [] }],
   sender: "",
-  formValid: false,
+  senderAttributes: [],
   message: "",
   files: [],
   percentages: [],
@@ -99,8 +97,6 @@ const defaultEncryptState: EncryptState = {
   encryptStartTime: 0,
   modPromise: import("@e4a/pg-wasm"),
   pkPromise: getParameters(),
-  encAttributes: [],
-  signAttributes: [],
 };
 
 export default class EncryptPanel extends React.Component<
@@ -164,21 +160,18 @@ export default class EncryptPanel extends React.Component<
     }));
   }
 
-  onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>) {
-    // See: https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
-    const regex =
-      /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    const stripped = ev.target.value.toLowerCase().replace(/ /g, "");
+  onChangeRecipient(ev: React.ChangeEvent<HTMLInputElement>, i: number) {
+    const copy = [...this.state.recipients];
+    copy[i].email = ev.target.value.toLowerCase().replace(/ /g, "");
+
     this.setState({
-      recipient: stripped,
-      formValid: regex.test(stripped),
+      recipients: copy,
     });
   }
 
   onChangeSender(ev: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
       sender: ev.target.value.toLowerCase().replace(/ /g, ""),
-      formValid: ev.target.form?.checkValidity() ?? false,
     });
   }
 
@@ -238,15 +231,14 @@ export default class EncryptPanel extends React.Component<
     const { sealStream } = await this.state.modPromise;
 
     const ts = Math.round(Date.now() / 1000);
-    const enc_policy = {
-      [this.state.recipient]: {
+    const enc_policy = {};
+
+    this.state.recipients.forEach(({ email, extra }) => {
+      enc_policy[email] = {
         ts,
-        con: [
-          { t: "pbdf.sidn-pbdf.email.email", v: this.state.recipient },
-          ...this.state.encAttributes,
-        ],
-      },
-    };
+        con: [{ t: "pbdf.sidn-pbdf.email.email", v: email }, ...extra],
+      };
+    });
 
     if (!this.state.pubSignKey) {
       this.setState({ encryptionState: EncryptionState.Error });
@@ -286,7 +278,7 @@ export default class EncryptPanel extends React.Component<
       const [fileStream, sender] = getFileStoreStream(
         this.state.abort,
         this.state.sender,
-        this.state.recipient,
+        this.state.recipients.map(({ email }) => email).join(", "),
         this.state.message,
         this.props.lang,
         (n, last) => this.reportProgress(resolve, n, last)
@@ -409,9 +401,9 @@ export default class EncryptPanel extends React.Component<
 
         const pubSignKey = await this.retrieveSignKey(sign_policy);
 
-        if (this.state.signAttributes.length > 0) {
+        if (this.state.senderAttributes.length > 0) {
           const privSignKey = await this.retrieveSignKey({
-            con: this.state.signAttributes,
+            con: this.state.senderAttributes,
           });
 
           this.setState({ privSignKey });
@@ -443,10 +435,18 @@ export default class EncryptPanel extends React.Component<
       .map((f) => f.size)
       .reduce((a, b) => a + b, 0);
 
+    // See: https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
+    const regex =
+      /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+    const addressesValid =
+      this.state.recipients.every(({ email }) => regex.test(email)) &&
+      regex.test(this.state.sender);
+
     const canEncrypt =
       totalSize < MAX_UPLOAD_SIZE &&
-      this.state.recipient.length > 0 &&
-      this.state.formValid &&
+      this.state.recipients.length > 0 &&
+      addressesValid &&
       this.state.files.length > 0;
 
     return canEncrypt;
@@ -489,32 +489,43 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
-  createExtras(a: "encAttributes" | "signAttributes") {
+  createExtras(prop: "recipients" | "senderAttributes", i: number) {
     const parent = this;
-    const attributes = parent.state[a];
+
+    const email =
+      prop === "recipients"
+        ? this.state.recipients[i].email
+        : this.state.sender;
+    const attributes =
+      prop === "recipients" ? this.state.recipients[i].extra : this.state[prop];
 
     // ugly fix since TS does not allow computed properties
     const update =
-      a === "encAttributes"
-        ? (args) => parent.setState({ encAttributes: args })
-        : (args) => parent.setState({ signAttributes: args });
+      prop === "recipients"
+        ? (newAttrs: AttributeCon) => {
+            const copy = [...this.state.recipients];
+            copy[i].extra = newAttrs;
+            parent.setState({ recipients: copy });
+          }
+        : (newAttrs: AttributeCon) =>
+            parent.setState({ senderAttributes: newAttrs });
 
     function onAddField(field: AttType) {
       update([...attributes, { t: field, v: "" }]);
     }
 
-    function onAttributesChanged(i: number, v: string) {
+    function onAttributesChanged(j: number, v: string) {
       const updated = [...attributes];
-      updated[i].v = v;
+      updated[j].v = v;
       update(updated);
     }
 
-    function removeExtraAttribute(i: number) {
-      const updated = attributes.filter((_, j) => i !== j);
+    function removeExtraAttribute(j: number) {
+      const updated = attributes.filter((_, k) => j !== k);
       update(updated);
     }
 
-    const renderFields = () => {
+    const renderButtons = () => {
       const filtered = ATTRIBUTES.filter(
         (att) => !attributes.some(({ t, v }) => t === att)
       );
@@ -531,29 +542,27 @@ export default class EncryptPanel extends React.Component<
       });
     };
 
-    const renderButtons = () => {
-      return attributes.map(({ t, v }, i) => {
+    const renderFields = () => {
+      const prefix =
+        prop === "senderAttributes"
+          ? getTranslation(parent.props.lang)
+              .encryptPanel_emailSenderAttributePrefix
+          : `${email}${email !== "" ? "'s" : ""}`;
+      return attributes.map(({ t, v }, j) => {
         return (
           <div className="attribute-field">
             <h4>
-              {
-                getTranslation(parent.props.lang)[
-                  `encryptPanel_email${
-                    a === "signAttributes" ? "Sender" : "Recipient"
-                  }AttributePrefix`
-                ]
-              }{" "}
-              {getTranslation(parent.props.lang)[t]}
+              {prefix} {getTranslation(parent.props.lang)[t]}
             </h4>
             <input
               placeholder=""
               required
               value={v}
-              onChange={(e) => onAttributesChanged(i, e.target.value)}
+              onChange={(e) => onAttributesChanged(j, e.target.value)}
             />
             <button
               className="btn-delete"
-              onClick={(e) => removeExtraAttribute(i)}
+              onClick={(e) => removeExtraAttribute(j)}
             >
               x
             </button>
@@ -565,11 +574,56 @@ export default class EncryptPanel extends React.Component<
     return [renderFields, renderButtons];
   }
 
+  addRecipient() {
+    this.setState({
+      recipients: [...this.state.recipients, { email: "", extra: [] }],
+    });
+  }
+
+  removeRecipient(i: number) {
+    this.setState({
+      recipients: this.state.recipients.filter((_, j) => i !== j),
+    });
+  }
+
+  renderRecipients() {
+    return this.state.recipients.map((r, i) => {
+      const [renderEncFields, renderEncButtons] = this.createExtras(
+        "recipients",
+        i
+      );
+
+      return (
+        <div className="crypt-select-protection-input-box">
+          <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
+          <input
+            placeholder=""
+            type="email"
+            required
+            value={this.state.recipients[i].email}
+            onChange={(e) => this.onChangeRecipient(e, i)}
+          />
+          <button
+            className="btn-delete"
+            onClick={(e) => {
+              e.preventDefault();
+              this.removeRecipient(i);
+            }}
+          >
+            x
+          </button>
+          {renderEncFields()}
+          {renderEncButtons()}
+        </div>
+      );
+    });
+  }
+
   renderUserInputs() {
-    const [renderSignFields, renderSignButtons] =
-      this.createExtras("signAttributes");
-    const [renderEncFields, renderEncButtons] =
-      this.createExtras("encAttributes");
+    const [renderSignFields, renderSignButtons] = this.createExtras(
+      "senderAttributes",
+      -1
+    );
 
     return (
       <div className="crypt-progress-container">
@@ -582,21 +636,19 @@ export default class EncryptPanel extends React.Component<
             value={this.state.sender}
             onChange={(e) => this.onChangeSender(e)}
           />
-          {renderSignButtons()}
           {renderSignFields()}
+          {renderSignButtons()}
         </div>
-        <div className="crypt-select-protection-input-box">
-          <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
-          <input
-            placeholder=""
-            type="email"
-            required
-            value={this.state.recipient}
-            onChange={(e) => this.onChangeRecipient(e)}
-          />
-          {renderEncButtons()}
-          {renderEncFields()}
-        </div>
+        {this.renderRecipients()}
+        <button
+          className="add-recipient-btn"
+          onClick={(e) => {
+            e.preventDefault();
+            this.addRecipient();
+          }}
+        >
+          + {getTranslation(this.props.lang).encryptPanel_addRecipient}
+        </button>
         <div className="crypt-select-protection-input-box">
           <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>
           <textarea
@@ -730,12 +782,14 @@ export default class EncryptPanel extends React.Component<
       );
     }
 
+    const to = this.state.recipients.map(({ email }) => email).join(", ");
+
     return (
       <div className="crypt-progress-container">
         <h3>{getTranslation(this.props.lang).encryptPanel_encrypting}</h3>
         <p>
           {getTranslation(this.props.lang).encryptPanel_encryptingInfo}
-          <a href={`mailto:${this.state.recipient}`}>{this.state.recipient}</a>
+          <a href={`mailto:${to}`}>{to}</a>
         </p>
         <p>{timeEstimateRepr}</p>
 
@@ -751,6 +805,7 @@ export default class EncryptPanel extends React.Component<
   }
 
   renderDone() {
+    const to = this.state.recipients.map(({ email }) => email).join(", ");
     return (
       <div className="crypt-progress-container">
         <h3>
@@ -764,7 +819,7 @@ export default class EncryptPanel extends React.Component<
         </h3>
         <p>
           <span>{getTranslation(this.props.lang).encryptPanel_succesInfo}</span>
-          <a href={`mailto:${this.state.recipient}`}>{this.state.recipient}</a>
+          <a href={`mailto:${to}`}>{to}</a>
         </p>
         <button
           className={"crypt-btn-main crypt-btn"}

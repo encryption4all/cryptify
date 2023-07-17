@@ -288,8 +288,7 @@ textarea {
   resize: none;
 }
 
-.crypt-select-protection-input-box input[type="text"]:focus,
-input[type="email"]:focus,
+.crypt-select-protection-input-box input:focus,
 textarea:focus {
   outline: none;
 }

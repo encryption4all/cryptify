@@ -24,6 +24,16 @@
   cursor: pointer;
 }
 
+.add-recipient-btn {
+  border: 1px solid black;
+  border-radius: 15px;
+  background-color: black;
+  color: white;
+  font-family: Overpass;
+  cursor: pointer;
+  margin-bottom: 2em;
+}
+
 .btn-delete {
   all: unset;
   cursor: pointer;

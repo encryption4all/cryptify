@@ -1,5 +1,5 @@
 [global]
-server_url = "https://postguard.nl/?download={uuid}#filesharing"
+server_url = "https://postguard.nl/"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.nl"

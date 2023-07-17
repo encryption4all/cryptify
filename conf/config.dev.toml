@@ -1,5 +1,5 @@
 [global]
-server_url = "http://localhost:8080/?download={uuid}#filesharing"
+server_url = "http://localhost:8080/"
 address = "0.0.0.0"
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.local"

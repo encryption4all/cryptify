@@ -24,6 +24,7 @@ strum = "0.24.1"
 strum_macros = "0.24.3"
 tokio = "1.15.0"
 uuid = { version = "1.3.3", features = ["v4"] }
+url = "2.4.0" 
 
 tokio-util = { version = "0.7.4", features = ["compat"] }
 pg-core = { version = "0.3.0-rc.0", features = ["rust", "stream"] }

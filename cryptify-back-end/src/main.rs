@@ -95,7 +95,7 @@ async fn upload_init(
                     cryptify_token: init_cryptify_token.clone(),
                     uploaded: 0,
                     expires: current_time + 1_209_600,
-                    recipient,
+                    recipients: recipient,
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
                     sender: None,

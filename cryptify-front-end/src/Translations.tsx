@@ -63,7 +63,7 @@ type Translation = {
   encryptPanel_irmaInstructionHeaderMobile: string;
   encryptPanel_irmaInstructionQr: string;
   encryptPanel_irmaInstructionMobile: string;
-  encryptPanel_encryptSendAnonymous: string;
+  encryptPanel_addRecipient: string;
 
   // infoPanel
   infoPanel_help: string;
@@ -173,7 +173,7 @@ const english: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Prove your identity with Yivi",
   encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app Yivi.",
   encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the Yivi-app.",
-  encryptPanel_encryptSendAnonymous: "Or send anonymously",
+  encryptPanel_addRecipient: "recipient",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -281,7 +281,7 @@ const dutch: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Bewijs identiteit met Yivi",
   encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app Yivi.",
   encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app Yivi te gaan.",
-  encryptPanel_encryptSendAnonymous: "Of verzend anoniem",
+  encryptPanel_addRecipient: "ontvanger",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",

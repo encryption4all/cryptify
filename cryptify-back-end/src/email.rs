@@ -11,6 +11,7 @@ use lettre::{
 };
 
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Language {
@@ -114,16 +115,6 @@ pub async fn send_email(
     state: &FileState,
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    // combine URL with mail variables into template
-    let url = str::replace(config.server_url(), "{uuid}", uuid);
-    let (email, subject) = email_templates(state, &url);
-    let email = Message::builder()
-        .header(ContentType::TEXT_HTML)
-        .from(config.email_from()) // checked in config
-        .to(state.recipient.clone()) // checked in init
-        .subject(subject)
-        .body(email)?;
-
     // setup SMTP connection
     let mut mailer_builder = if cfg!(debug_assertions) {
         SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port())
@@ -137,8 +128,25 @@ pub async fn send_email(
         mailer_builder = mailer_builder.credentials(credentials);
     }
 
-    // send email
-    let mailer = mailer_builder.build();
-    mailer.send(&email)?;
+    for recipient in state.recipients.iter() {
+        // combine URL with mail variables into template
+        let mut url = Url::parse(config.server_url())?;
+        url.query_pairs_mut()
+            .append_pair("download", uuid)
+            .append_pair("recipient", &format!("{}", recipient.email));
+        url.set_fragment(Some("filesharing"));
+
+        let (email, subject) = email_templates(state, url.as_str());
+        let email = Message::builder()
+            .header(ContentType::TEXT_HTML)
+            .from(config.email_from()) // checked in config
+            .to(recipient.clone())
+            .subject(subject)
+            .body(email)?;
+
+        // send email
+        let mailer = mailer_builder.clone().build();
+        mailer.send(&email)?;
+    }
     Ok("Email successfully sent".to_owned())
 }

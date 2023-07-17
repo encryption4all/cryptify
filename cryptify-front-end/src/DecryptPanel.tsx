@@ -57,6 +57,7 @@ type DecryptState = {
 type DecryptProps = {
   lang: Lang;
   downloadUuid: string;
+  recipient: string;
 };
 
 async function getVerificationKey(): Promise<string> {
@@ -171,21 +172,18 @@ export default class DecryptPanel extends React.Component<
     const recipients = unsealer.inspect_header();
     const sender = unsealer.public_identity();
 
-    // NOTE: For now, there should be one recipient.
+    // there is always only one sender
     this.setState({ senderPublic: sender.con[0].v });
-    const {
-      value: [email, { ts: timestamp, con }],
-    } = recipients.entries().next();
+
+    const { ts: timestamp, con } = recipients.get(this.props.recipient);
 
     const kr = {
       con: con.map(({ t, v }) => {
-        if (t === "pbdf.sidn-pbdf.email.email") return { t, v: email };
+        if (t === "pbdf.sidn-pbdf.email.email") return { t, v: this.props.recipient };
         if (v.includes("*") || v === "") return { t };
         return { t, v };
       }),
     };
-
-    console.log(kr);
 
     const session = {
       url: PKG_URL,
@@ -243,7 +241,7 @@ export default class DecryptPanel extends React.Component<
       decryptInfo: {
         unsealer,
         usk,
-        id: email,
+        id: this.props.recipient,
       },
     });
   }
@@ -324,7 +322,7 @@ export default class DecryptPanel extends React.Component<
   renderSenderIdentity() {
     return (
       <div className="crypt-panel-header">
-           <h3>
+        <h3>
           <img
             className="checkmark-icon"
             src={checkmark}
@@ -528,7 +526,11 @@ export default class DecryptPanel extends React.Component<
     return (
       <div className="crypt-progress-container">
         <h3 className="crypt-progress-error">{"Error occured"}</h3>
-        <p>{getTranslation(this.props.lang).error}</p>
+        <div
+          dangerouslySetInnerHTML={{
+            __html: getTranslation(this.props.lang).error,
+          }}
+        />
         <button
           className={"crypt-btn-main crypt-btn"}
           onClick={(e) => this.onDecrypt()}
