@@ -105,6 +105,14 @@
   display: inline-block;
 }
 
+.yivi-btn-logo {
+  display: flex;
+  padding-right: 1em;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+}
+
 .get-irma-here-anchor .irma-appstore-button {
   height: 3.33em;
   display: inline-block;

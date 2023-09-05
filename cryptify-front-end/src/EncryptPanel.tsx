@@ -660,7 +660,7 @@ export default class EncryptPanel extends React.Component<
         </div>
         <button
           className={
-            "crypt-btn-main crypt-btn" +
+            "crypt-btn-main crypt-btn yivi-btn-logo" +
             (this.canEncrypt() ? "" : " crypt-btn-disabled")
           }
           onClick={(e) => {
@@ -669,6 +669,7 @@ export default class EncryptPanel extends React.Component<
             }
           }}
         >
+          <img src={yiviLogo} alt="yivi-logo" width={36} height={20} />
           {getTranslation(this.props.lang).encryptPanel_encryptSend}
         </button>
       </div>
@@ -717,7 +718,7 @@ export default class EncryptPanel extends React.Component<
         <div className="crypt-irma-qr"></div>
 
         <div className="get-irma-here-anchor">
-          <img className="irma-logo" src={yiviLogo} alt="irma-logo" />
+          <img className="irma-logo" src={yiviLogo} alt="yivi-logo" />
           <div
             className="get-irma-text"
             style={{
