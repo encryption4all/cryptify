@@ -591,7 +591,7 @@ export default class EncryptPanel extends React.Component<
       );
 
       return (
-        <div className="crypt-recipient">
+        <li className="crypt-recipient">
           <input
             placeholder={
               getTranslation(this.props.lang).encryptPanel_emailRecipient
@@ -612,7 +612,7 @@ export default class EncryptPanel extends React.Component<
           </button>
           {renderEncFields()}
           {renderEncButtons()}
-        </div>
+        </li>
       );
     });
     return (
@@ -624,7 +624,7 @@ export default class EncryptPanel extends React.Component<
           {getTranslation(this.props.lang).encryptPanel_RecipientsSubHeading}
         </h4>
         <p>{getTranslation(this.props.lang).encryptPanel_RecipientsText}</p>
-        {ret}{" "}
+        <ul className="crypt-recipient-list">{ret}</ul>
         <button
           className="add-recipient-btn"
           onClick={(e) => {
@@ -654,9 +654,7 @@ export default class EncryptPanel extends React.Component<
         </h4>
         <p>{getTranslation(this.props.lang).encryptPanel_emailSenderText}</p>
         <input
-          placeholder={
-            getTranslation(this.props.lang)
-              .encryptPanel_emailSender}
+          placeholder={getTranslation(this.props.lang).encryptPanel_emailSender}
           type="email"
           required
           value={this.state.sender}
@@ -907,7 +905,7 @@ export default class EncryptPanel extends React.Component<
 
   render() {
     return (
-      <form
+      <form className="crypt-form"
         onSubmit={(e) => {
           e.preventDefault();
           return false;
@@ -915,7 +913,7 @@ export default class EncryptPanel extends React.Component<
       >
         <div className="cols">
           <div className="column">{this.renderFilesField()}</div>
-          <div className="column">{this.renderRightCol()}</div>
+          <div className="column scroll-column">{this.renderRightCol()}</div>
         </div>
       </form>
     );
