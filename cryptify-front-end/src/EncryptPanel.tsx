@@ -32,7 +32,7 @@ import YiviCore from "@privacybydesign/yivi-core";
 import YiviWeb from "@privacybydesign/yivi-web";
 import YiviClient from "@privacybydesign/yivi-client";
 
-import "@privacybydesign/yivi-css";
+//import "@privacybydesign/yivi-css";
 
 type AttType =
   | "pbdf.sidn-pbdf.mobilenumber.mobilenumber"
