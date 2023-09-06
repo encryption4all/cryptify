@@ -2,6 +2,7 @@ import React from "react";
 import { FileDrop } from "react-file-drop";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
+import basketImg from "./resources/basket.svg";
 
 import "./CryptFileInput.css";
 
@@ -41,12 +42,16 @@ class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
                   <div className="crypt-file-box-large-text">
                     {getTranslation(this.props.lang).cryptFileInput_dropFiles}
                   </div>
-                  <div className="crypt-btn crypt-file-btn">
+                  <div className="crypt-file-box-tiny-text">
+                    {getTranslation(this.props.lang).cryptFileInput_alternative}
+                  </div>
+                   <div className="crypt-btn crypt-file-btn">
                     {getTranslation(this.props.lang).cryptFileInput_addFileBtn}
                   </div>
                   <div className="crypt-file-box-tiny-text">
                     {getTranslation(this.props.lang).cryptFileInput_sendUpto}
                   </div>
+                  <img src={basketImg} width={300} alt="basket"></img>
                 </div>
               </div>
             </label>

@@ -4,13 +4,13 @@
 
 @media only screen and (max-width: 1170px) {
   .crypt-file-upload-box {
-    height: 22.9em;
+    height: 100%;
   }
 }
 
 @media only screen and (max-width: 500px) {
   .crypt-file-upload-box {
-    height: 12.5em;
+    height: 100%;
   }
 }
 
@@ -31,7 +31,12 @@
   color: white;
   font-family: Overpass;
   cursor: pointer;
-  margin-bottom: 2em;
+  margin-bottom: 1em;
+  margin-top: 1em;
+}
+
+.crypt-recipient:not(:last-child) {
+  margin-bottom: 1.5em;
 }
 
 .btn-delete {
@@ -112,6 +117,17 @@
   justify-content: center;
   gap: 0.5em;
 }
+
+.cols {
+  display: flex;
+  gap: 3em;
+}
+
+.column {
+  flex: 50%;
+  min-width: 350px;
+}
+
 
 .get-irma-here-anchor .irma-appstore-button {
   height: 3.33em;

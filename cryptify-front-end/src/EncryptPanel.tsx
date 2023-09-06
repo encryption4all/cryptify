@@ -452,7 +452,7 @@ export default class EncryptPanel extends React.Component<
     return canEncrypt;
   }
 
-  renderfilesField() {
+  renderFilesField() {
     if (this.state.files.length === 0) {
       return (
         <div className="crypt-file-upload-box">
@@ -551,11 +551,8 @@ export default class EncryptPanel extends React.Component<
       return attributes.map(({ t, v }, j) => {
         return (
           <div className="attribute-field">
-            <h4>
-              {prefix} {getTranslation(parent.props.lang)[t]}
-            </h4>
             <input
-              placeholder=""
+              placeholder={`${prefix} ${getTranslation(parent.props.lang)[t]}`}
               required
               value={v}
               onChange={(e) => onAttributesChanged(j, e.target.value)}
@@ -587,17 +584,18 @@ export default class EncryptPanel extends React.Component<
   }
 
   renderRecipients() {
-    return this.state.recipients.map((r, i) => {
+    const ret = this.state.recipients.map((r, i) => {
       const [renderEncFields, renderEncButtons] = this.createExtras(
         "recipients",
         i
       );
 
       return (
-        <div className="crypt-select-protection-input-box">
-          <h4>{getTranslation(this.props.lang).encryptPanel_emailRecipient}</h4>
+        <div className="crypt-recipient">
           <input
-            placeholder=""
+            placeholder={
+              getTranslation(this.props.lang).encryptPanel_emailRecipient
+            }
             type="email"
             required
             value={this.state.recipients[i].email}
@@ -617,29 +615,16 @@ export default class EncryptPanel extends React.Component<
         </div>
       );
     });
-  }
-
-  renderUserInputs() {
-    const [renderSignFields, renderSignButtons] = this.createExtras(
-      "senderAttributes",
-      -1
-    );
-
     return (
-      <div className="crypt-progress-container">
-        <div className="crypt-select-protection-input-box">
-          <h4>{getTranslation(this.props.lang).encryptPanel_emailSender}</h4>
-          <input
-            placeholder=""
-            type="email"
-            required
-            value={this.state.sender}
-            onChange={(e) => this.onChangeSender(e)}
-          />
-          {renderSignFields()}
-          {renderSignButtons()}
-        </div>
-        {this.renderRecipients()}
+      <div className="crypt-select-protection-input-box">
+        <h3>
+          {getTranslation(this.props.lang).encryptPanel_RecipientsHeading}
+        </h3>{" "}
+        <h4>
+          {getTranslation(this.props.lang).encryptPanel_RecipientsSubHeading}
+        </h4>
+        <p>{getTranslation(this.props.lang).encryptPanel_RecipientsText}</p>
+        {ret}{" "}
         <button
           className="add-recipient-btn"
           onClick={(e) => {
@@ -649,30 +634,74 @@ export default class EncryptPanel extends React.Component<
         >
           + {getTranslation(this.props.lang).encryptPanel_addRecipient}
         </button>
-        <div className="crypt-select-protection-input-box">
-          <h4>{getTranslation(this.props.lang).encryptPanel_message}</h4>
-          <textarea
-            required={false}
-            rows={4}
-            value={this.state.message}
-            onChange={(e) => this.onChangeMessage(e)}
-          />
-        </div>
-        <button
-          className={
-            "crypt-btn-main crypt-btn yivi-btn-logo" +
-            (this.canEncrypt() ? "" : " crypt-btn-disabled")
-          }
-          onClick={(e) => {
-            if (this.canEncrypt()) {
-              this.onSign();
-            }
-          }}
-        >
-          <img src={yiviLogo} alt="yivi-logo" width={36} height={20} />
-          {getTranslation(this.props.lang).encryptPanel_encryptSend}
-        </button>
       </div>
+    );
+  }
+
+  renderSenderInputs() {
+    const [renderSignFields, renderSignButtons] = this.createExtras(
+      "senderAttributes",
+      -1
+    );
+
+    return (
+      <div className="crypt-select-protection-input-box">
+        <h3>
+          {getTranslation(this.props.lang).encryptPanel_emailSenderHeading}
+        </h3>
+        <h4>
+          {getTranslation(this.props.lang).encryptPanel_emailSenderSubHeading}
+        </h4>
+        <p>{getTranslation(this.props.lang).encryptPanel_emailSenderText}</p>
+        <input
+          placeholder={
+            getTranslation(this.props.lang)
+              .encryptPanel_emailSender}
+          type="email"
+          required
+          value={this.state.sender}
+          onChange={(e) => this.onChangeSender(e)}
+        />
+        {renderSignFields()}
+        {renderSignButtons()}
+      </div>
+    );
+  }
+
+  renderMessageInput() {
+    return (
+      <div className="crypt-select-protection-input-box">
+        <h3>{getTranslation(this.props.lang).encryptPanel_messageHeading}</h3>
+        <p>{getTranslation(this.props.lang).encryptPanel_messageText}</p>
+        <textarea
+          placeholder={
+            getTranslation(this.props.lang).encryptPanel_messagePlaceholder
+          }
+          required={false}
+          rows={4}
+          value={this.state.message}
+          onChange={(e) => this.onChangeMessage(e)}
+        />
+      </div>
+    );
+  }
+
+  renderSendButton() {
+    return (
+      <button
+        className={
+          "crypt-btn-main crypt-btn yivi-btn-logo" +
+          (this.canEncrypt() ? "" : " crypt-btn-disabled")
+        }
+        onClick={(e) => {
+          if (this.canEncrypt()) {
+            this.onSign();
+          }
+        }}
+      >
+        <img src={yiviLogo} alt="yivi-logo" width={36} height={20} />
+        {getTranslation(this.props.lang).encryptPanel_encryptSend}
+      </button>
     );
   }
 
@@ -855,43 +884,40 @@ export default class EncryptPanel extends React.Component<
     );
   }
 
-  render() {
+  renderRightCol() {
     if (this.state.encryptionState === EncryptionState.Sign) {
-      return <form>{this.renderVerification()}</form>;
+      return this.renderVerification();
     } else if (this.state.encryptionState === EncryptionState.FileSelection) {
       return (
-        <form
-          onSubmit={(e) => {
-            // preven submit redirection
-            e.preventDefault();
-            return false;
-          }}
-        >
-          {this.renderfilesField()}
-          {this.renderUserInputs()}
-        </form>
+        <div className="crypt-progress-container">
+          {this.renderRecipients()}
+          {this.renderMessageInput()}
+          {this.renderSenderInputs()}
+          {this.renderSendButton()}
+        </div>
       );
     } else if (this.state.encryptionState === EncryptionState.Encrypting) {
-      return (
-        <form>
-          {this.renderfilesField()}
-          {this.renderProgress()}
-        </form>
-      );
+      return this.renderProgress();
     } else if (this.state.encryptionState === EncryptionState.Error) {
-      return (
-        <form>
-          {this.renderfilesField()}
-          {this.renderError()}
-        </form>
-      );
+      return this.renderError();
     } else if (this.state.encryptionState === EncryptionState.Done) {
-      return (
-        <form>
-          {this.renderfilesField()}
-          {this.renderDone()}
-        </form>
-      );
+      return this.renderDone();
     }
+  }
+
+  render() {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          return false;
+        }}
+      >
+        <div className="cols">
+          <div className="column">{this.renderFilesField()}</div>
+          <div className="column">{this.renderRightCol()}</div>
+        </div>
+      </form>
+    );
   }
 }
