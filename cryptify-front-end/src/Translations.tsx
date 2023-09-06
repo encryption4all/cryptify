@@ -23,6 +23,7 @@ type Translation = {
   cryptFileInput_dropFiles: string;
   cryptFileInput_clickFiles: string;
   cryptFileInput_sendUpto: string;
+  cryptFileInput_alternative: string;
   cryptFileInput_addFileBtn: string;
 
   // cryptFileList
@@ -48,10 +49,18 @@ type Translation = {
   // encryptPanel
   encryptPanel_header: string,
   encryptPanel_emailRecipient: string;
+  encryptPanel_RecipientsHeading: string;
+  encryptPanel_RecipientsSubHeading: string;
+  encryptPanel_RecipientsText: string;
   encryptPanel_emailSender: string;
+  encryptPanel_emailSenderHeading: string;
+  encryptPanel_emailSenderSubHeading: string;
+  encryptPanel_emailSenderText: string;
   encryptPanel_emailSenderAttributePrefix: string,
   encryptPanel_emailRecipientAttributePrefix: string,
-  encryptPanel_message: string;
+  encryptPanel_messageHeading: string;
+  encryptPanel_messageText: string;
+  encryptPanel_messagePlaceholder: string;
   encryptPanel_messageAnonymous: string;
   encryptPanel_encryptSend: string;
   encryptPanel_encrypting: string;
@@ -133,6 +142,7 @@ const english: Translation = {
   cryptFileInput_dropFiles: "Drag & drop files",
   cryptFileInput_clickFiles: "Or click the button below",
   cryptFileInput_sendUpto: "2GB maximum",
+  cryptFileInput_alternative: "or",
   cryptFileInput_addFileBtn: "Upload files",
 
   // cryptFileList
@@ -158,12 +168,20 @@ const english: Translation = {
   // encryptPanel
   encryptPanel_header: "ENCRYPT & UPLOAD",
   encryptPanel_emailRecipient: "Recipient's email",
-  encryptPanel_emailSender: "Your email",
+  encryptPanel_RecipientsHeading: "To",
+  encryptPanel_RecipientsSubHeading: "Who may receive and decrypt the files?",
+  encryptPanel_RecipientsText: "The recipient(s) will need to prove their email address with the Yivi app, as well as any other data you specify. Data about a recipient is only visible to the recipient themselves.",
+  encryptPanel_emailSender: "Your email address",
+  encryptPanel_emailSenderHeading: "From",
+  encryptPanel_emailSenderSubHeading: "Let the recipient(s) know these files are yours.",
+  encryptPanel_emailSenderText: "Before sending, you must sign the files by proving your email address and any other personal data with the Yivi app.",
   encryptPanel_emailSenderAttributePrefix: "Your",
   encryptPanel_emailRecipientAttributePrefix: "Recipient's",
-  encryptPanel_message: "Message",
+  encryptPanel_messageHeading: "Message",
+  encryptPanel_messageText: "This (optional) message will not be encrypted. It is included in the email with a link to the encrypted files.",
+  encryptPanel_messagePlaceholder: "Optional message",
   encryptPanel_messageAnonymous: "Attention! This message is sent anonymously so please be careful when downloading and opening the files.",
-  encryptPanel_encryptSend: "Encrypt & send",
+  encryptPanel_encryptSend: "Sign & send",
   encryptPanel_encrypting: "Encrypting & uploading...",
   encryptPanel_encryptingInfo: "Your files are being encrypted first and afterwards are sent to: ",
   encryptPanel_succes: "Successfully encrypted and uploaded",
@@ -189,7 +207,7 @@ const english: Translation = {
   infoPanel_helpShareStep2: "Enter the email address of the recipient",
   infoPanel_helpShareStep3: "Enter your own email address.",
   infoPanel_helpShareStep4: "Optionally enter an explanation message for the recipient.",
-  infoPanel_helpShareStep5: "Click \"Encrypt & send\" and wait for the process to complete; and a confirmation is then displayed.",
+  infoPanel_helpShareStep5: "Click \"Sign & send\" and wait for the process to complete; and a confirmation is then displayed.",
   infoPanel_helpShareOutro: "The recipient will receive an email informing them that you have shared a file with them; the email also contains instructions on how to proceed. If you have provided a message, it will be included in the email. By using Cryptify you assume that the receiver already uses the Yivi app, or is willing to install the app and use it for the purpose of receiving your files.",
   infoPanel_helpReceivedHeader: "A file has been shared with me",
   infoPanel_helpReceivedInstallIrmaIntro: "To download and decrypt the file, you need the Yivi app. With the Yivi app, you can prove that you are the intended recipient and decrypt the files:",
@@ -241,6 +259,7 @@ const dutch: Translation = {
   cryptFileInput_dropFiles: "Drag & drop bestanden",
   cryptFileInput_clickFiles: "Of klik op de knop hieronder",
   cryptFileInput_sendUpto: "maximaal 2GB",
+  cryptFileInput_alternative: "of",
   cryptFileInput_addFileBtn: "Bestanden toevoegen",
   
   // cryptFileList
@@ -266,13 +285,21 @@ const dutch: Translation = {
   // encryptPanel
   encryptPanel_header: "VERSLEUTEL & VERZEND",
   encryptPanel_emailRecipient: "E-mailadres ontvanger",
-  encryptPanel_emailSender: "Jouw e-mailadres",
+  encryptPanel_RecipientsHeading: "Naar",
+  encryptPanel_RecipientsSubHeading: "Wie mogen de bestanden ontvangen en ontsleutelen?",
+  encryptPanel_RecipientsText: "De ontvanger(s) moeten zowel hun email adres als aanvullende gegevens die jij hier specificeert aantonen. Deze data zijn niet zichtbaar aan anderen.",
+  encryptPanel_emailSender: "Jouw emailadres",
+  encryptPanel_emailSenderHeading: "Van",
+  encryptPanel_emailSenderSubHeading: "Laat de ontvanger(s) weten dat deze bestanden van jou afkomstig zijn.",
+  encryptPanel_emailSenderText: "Voordat je de bestanden kan sturen moet je aantonen dat je deze gegevens bezit.",
   encryptPanel_emailSenderAttributePrefix: "Jouw",
   encryptPanel_emailRecipientAttributePrefix: "Ontvanger's",
-  encryptPanel_message: "Bericht",
+  encryptPanel_messageHeading: "Bericht",
+  encryptPanel_messageText: "Dit (optionele) bericht wordt niet versleuteld. Het bericht staat in de email waar ook de link naar de bestanden zit.",
+  encryptPanel_messagePlaceholder: "Optioneel bericht",
   encryptPanel_messageAnonymous: "Let op! Dit bericht is anoniem verzonden dus kijk goed uit bij het downloaden en openen van de bestanden.",
-  encryptPanel_encryptSend: "Versleutel & verzend",
-  encryptPanel_encrypting: "Versleutelen & verzenden...",
+  encryptPanel_encryptSend: "Onderteken & verzend",
+  encryptPanel_encrypting: "Ondertekenen & verzenden...",
   encryptPanel_encryptingInfo: "Jouw bestanden worden versleuteld en daarna verzonden naar: ",
   encryptPanel_succes: "Succesvol versleuteld en verzonden",
   encryptPanel_succesInfo: "Jouw bestanden zijn versleuteld en verzonden. Een e-mail met een download link is verstuurd naar: ",
@@ -297,7 +324,7 @@ const dutch: Translation = {
   infoPanel_helpShareStep2: "Voer het e-mailadres van de ontvanger in.",
   infoPanel_helpShareStep3: "Voer uw eigen e-mailadres in.",
   infoPanel_helpShareStep4: "Voeg optioneel een bericht met toelichting voor de ontvanger toe.",
-  infoPanel_helpShareStep5: "Klik op \"Versleutelen & verzenden\" en wacht to het proces is voltooid en een bevestiging wordt getoond.",
+  infoPanel_helpShareStep5: "Klik op \"Ondertekenen & verzenden\" en wacht to het proces is voltooid en een bevestiging wordt getoond.",
   infoPanel_helpShareOutro: "De ontvanger ontvangt een e-mail met de melding dat u een bestand met hem/haar hebt gedeeld. Als u een bericht heeft toegevoegd, zal dit in de e-mail worden opgenomen. Door Cryptify te gebruiken gaat u er van uit dat de ontvanger de Yivi app heeft, of de app will installeren en gebruiken om uw files te ontvangen.",
   infoPanel_helpReceivedHeader: "Er is een bestand met mij gedeeld",
   infoPanel_helpReceivedInstallIrmaIntro: "Om het bestand te downloaden en te ontsleutelen, heb je de Yivi app nodig. Met de Yivi-app kan je bewijzen dat jij de bedoelde ontvanger bent en de bestanden ontsleutelen:",

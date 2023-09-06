@@ -1,17 +1,10 @@
 .crypt-file-upload-box {
-  height: 22.9em;
+  height: 100%;
+  max-height: 600px;
 }
 
-@media only screen and (max-width: 1170px) {
-  .crypt-file-upload-box {
-    height: 22.9em;
-  }
-}
-
-@media only screen and (max-width: 500px) {
-  .crypt-file-upload-box {
-    height: 12.5em;
-  }
+.crypt-form {
+  height: 100%;
 }
 
 .add-attribute-btn {
@@ -31,7 +24,12 @@
   color: white;
   font-family: Overpass;
   cursor: pointer;
-  margin-bottom: 2em;
+  margin-bottom: 1em;
+  margin-top: 1em;
+}
+
+.crypt-recipient:not(:last-child) {
+  margin-bottom: 1.5em;
 }
 
 .btn-delete {
@@ -104,6 +102,31 @@
   height: 3.75em;
   display: inline-block;
 }
+
+.yivi-btn-logo {
+  display: flex;
+  padding-right: 1em;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+  gap: 3em;
+}
+
+.column {
+  min-width: 350px;
+  height: 100%
+}
+
+.scroll-column {
+  overflow-y: scroll;
+}
+
 
 .get-irma-here-anchor .irma-appstore-button {
   height: 3.33em;

@@ -151,18 +151,11 @@ table {
   --cryptify-header-text-color: #ffffff;
 }
 
-:root,
-body,
-#root,
-.App,
-.info-panel {
-  min-height: 100vh;
-}
-
 .App {
   font-size: 10pt;
   font-family: "Overpass";
   width: 100%;
+  height: 100%;
 }
 
 .cookie-text {
@@ -172,12 +165,11 @@ body,
 }
 
 .content-panel {
-  width: 29.6em;
   float: left;
   margin-left: 2.6em;
   margin-right: 2.6em;
-  min-height: 100vh;
   position: relative;
+  height: 100%;
 }
 
 @media only screen and (max-width: 1170px) {
@@ -247,7 +239,7 @@ body,
   background-color: white;
   padding-left: 1em;
   margin-bottom: 2.4em;
-  border-left:  2px solid black;
+  border-left: 2px solid black;
 }
 
 @media only screen and (max-width: 500px) {
@@ -257,7 +249,7 @@ body,
 }
 
 .crypt-select-protection-input-box:last-child {
-  margin-bottom: 0em;
+  margin-bottom: 1em;
 }
 
 .crypt-container {
@@ -271,15 +263,15 @@ body,
 }
 
 .crypt-select-protection-input-box h4 {
-  margin-left: 0.4em;
+  font-size: 11pt;
   text-align: left;
   color: #424242;
-  font-weight: normal;
+  font-weight: bold;
   margin-bottom: 0;
   padding-bottom: 0;
 }
 
-.crypt-select-protection-input-box input, 
+.crypt-select-protection-input-box input,
 textarea {
   font-size: 1.1em;
   border: 0;
@@ -302,8 +294,7 @@ textarea:focus {
   font-weight: bold;
   font-size: 1.15em;
   line-height: 1.6em;
-  padding-top: 0.4em;
-  padding-bottom: 0.4em;
+  padding: 0.25em 0;
   text-align: center;
 }
 
@@ -374,6 +365,7 @@ textarea:focus {
 
 .crypt-btn-main {
   display: block;
+  padding-left: 0.25em;
   margin-left: auto;
   margin-right: auto;
   width: 15em;
@@ -423,7 +415,6 @@ form {
 }
 
 .crypt-progress-container {
-  margin-top: 4.5em;
   font-size: 1.15em;
 }
 
@@ -450,4 +441,10 @@ form {
   font-style: normal;
   font-weight: bold;
   line-height: 1.25em;
+  font-size: 13pt;
+}
+
+.crypt-progress-container p {
+  margin-bottom: 0.5em;
+  color: #808080;
 }

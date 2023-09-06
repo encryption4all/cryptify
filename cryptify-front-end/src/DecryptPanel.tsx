@@ -20,7 +20,7 @@ import YiviCore from "@privacybydesign/yivi-core";
 import YiviWeb from "@privacybydesign/yivi-web";
 import YiviClient from "@privacybydesign/yivi-client";
 
-import "@privacybydesign/yivi-css";
+//import "@privacybydesign/yivi-css";
 import { IPolicy } from "@e4a/pg-wasm";
 
 streamSaver.mitm = `${process.env.PUBLIC_URL}/mitm.html?version=2.0.0`;
