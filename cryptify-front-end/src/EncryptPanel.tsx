@@ -376,6 +376,7 @@ export default class EncryptPanel extends React.Component<
           startState: "INITIALIZED",
         },
       },
+      language: (this.props.lang as string).toLowerCase(),
     });
 
     yivi.use(YiviWeb);
