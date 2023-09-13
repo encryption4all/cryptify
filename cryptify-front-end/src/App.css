@@ -151,6 +151,10 @@ table {
   --cryptify-header-text-color: #ffffff;
 }
 
+body > #root > div {
+  height: 100vh;
+}
+
 .App {
   font-size: 10pt;
   font-family: "Overpass";
