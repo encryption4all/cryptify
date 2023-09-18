@@ -580,7 +580,10 @@ export default class EncryptPanel extends React.Component<
 
   removeRecipient(i: number) {
     this.setState({
-      recipients: this.state.recipients.filter((_, j) => i !== j),
+      recipients:
+        this.state.recipients.length === 1
+          ? [{ email: "", extra: [] }]
+          : this.state.recipients.filter((_, j) => i !== j),
     });
   }
 
@@ -906,7 +909,8 @@ export default class EncryptPanel extends React.Component<
 
   render() {
     return (
-      <form className="crypt-form"
+      <form
+        className="crypt-form"
         onSubmit={(e) => {
           e.preventDefault();
           return false;
