@@ -467,7 +467,7 @@ export default class EncryptPanel extends React.Component<
       );
     } else {
       return (
-        <div>
+        <div className="crypt-file-upload-box">
           <CryptFileList
             lang={this.props.lang}
             onAddFiles={

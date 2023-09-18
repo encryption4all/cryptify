@@ -1,7 +1,5 @@
 .crypt-file-box > .file-drop > .file-drop-target {
   /* require px border radius here due to the custom outline*/
-  border: 1px dashed black;
-  border-radius: 8px;
   color: black;
   position: relative;
 }

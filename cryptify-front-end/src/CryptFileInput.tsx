@@ -51,7 +51,6 @@ class CryptFileInput extends React.Component<CryptFileInputProps, {}> {
                   <div className="crypt-file-box-tiny-text">
                     {getTranslation(this.props.lang).cryptFileInput_sendUpto}
                   </div>
-                  <img src={basketImg} width={300} alt="basket"></img>
                 </div>
               </div>
             </label>

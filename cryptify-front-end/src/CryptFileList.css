@@ -36,7 +36,7 @@
 .encrypt-panel .crypt-file-list {
   padding-right: 0.5em;
   max-height: 20em;
-  overflow-y: auto
+  overflow-y: auto;
 }
 
 .decrypt-panel .crypt-file-list {
