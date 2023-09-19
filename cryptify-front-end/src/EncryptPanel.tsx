@@ -240,6 +240,11 @@ export default class EncryptPanel extends React.Component<
       };
     });
 
+    // also encrypt for the sender
+    enc_policy[this.state.sender] = {
+      ts, con: [{t: "pbdf.sidn-pbdf.email.email", v: this.state.sender}, ...this.state.senderAttributes]
+    }
+
     if (!this.state.pubSignKey) {
       this.setState({ encryptionState: EncryptionState.Error });
       return;

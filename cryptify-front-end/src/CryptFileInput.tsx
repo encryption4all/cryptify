@@ -2,7 +2,6 @@ import React from "react";
 import { FileDrop } from "react-file-drop";
 import Lang from "./Lang";
 import getTranslation from "./Translations";
-import basketImg from "./resources/basket.svg";
 
 import "./CryptFileInput.css";
 
