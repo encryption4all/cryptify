@@ -73,6 +73,7 @@ type Translation = {
   encryptPanel_irmaInstructionQr: string;
   encryptPanel_irmaInstructionMobile: string;
   encryptPanel_addRecipient: string;
+  encryptPanel_emailSenderConfirm: string;
 
   // infoPanel
   infoPanel_help: string;
@@ -192,6 +193,7 @@ const english: Translation = {
   encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app Yivi.",
   encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the Yivi-app.",
   encryptPanel_addRecipient: "recipient",
+  encryptPanel_emailSenderConfirm: "Send me a confirmation",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -309,6 +311,7 @@ const dutch: Translation = {
   encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app Yivi.",
   encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app Yivi te gaan.",
   encryptPanel_addRecipient: "ontvanger",
+  encryptPanel_emailSenderConfirm: "Stuur mij een bevestiging",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",

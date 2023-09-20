@@ -27,6 +27,9 @@ struct MailStrings<'a> {
     expires_str: &'a str,
     download_str: &'a str,
     link_str: &'a str,
+    header_confirm: &'a str,
+    subject_confirm: &'a str,
+    confirm: &'a str,
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
@@ -35,6 +38,9 @@ const NL_STRINGS: MailStrings = MailStrings {
     expires_str: "Verloopt op",
     download_str: "Download jouw bestanden",
     link_str: "Download link",
+    header_confirm: "Je hebt het volgende gestuurd aan",
+    subject_confirm: "Je bestanden zijn verstuurd via PostGuard",
+    confirm: "Je kunt nog steeds bij je bestanden",
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
@@ -43,6 +49,9 @@ const EN_STRINGS: MailStrings = MailStrings {
     expires_str: "Expires on",
     download_str: "Download your files",
     link_str: "Download link",
+    header_confirm: "You sent files to",
+    subject_confirm: "Your files have been sent via PostGuard",
+    confirm: "You can still access your files",
 };
 
 #[derive(Template)]
@@ -55,15 +64,16 @@ struct SubjectTemplate<'a> {
 #[derive(Template)]
 #[template(path = "email/email.html")]
 struct EmailTemplate<'a> {
-    sender_str: &'a str,
+    header: &'a str,
+    subheader: &'a str,
     expires_str: &'a str,
     download_str: &'a str,
     link_str: &'a str,
-    sender: &'a str,
     file_size: &'a str,
     expiry_date: &'a str,
     html_content: &'a str,
     url: &'a str,
+    confirm: &'a str,
 }
 
 fn format_file_size(size: u64) -> String {
@@ -93,20 +103,48 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
 
     let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
     let email = EmailTemplate {
-        sender_str: strings.sender_str,
+        header: &sender_str,
+        subheader: strings.sender_str,
         expires_str: strings.expires_str,
         download_str: strings.download_str,
         link_str: strings.link_str,
-        sender: &sender_str,
         file_size: &format_file_size(state.uploaded),
         expiry_date: &format_date(state.expires, &state.mail_lang),
         html_content: &state.mail_content,
+        confirm: "",
         url,
     };
     let subject = SubjectTemplate {
         subject_str: strings.subject_str,
         sender: &sender_str,
     };
+    (email.to_string(), subject.to_string())
+}
+
+fn email_confirm(state: &FileState, url: &str) -> (String, String) {
+    let strings = match state.mail_lang {
+        Language::En => EN_STRINGS,
+        Language::Nl => NL_STRINGS,
+    };
+
+    let email = EmailTemplate {
+        header: strings.header_confirm,
+        subheader: &state.recipients.to_string(),
+        expires_str: strings.expires_str,
+        link_str: strings.link_str,
+        file_size: &format_file_size(state.uploaded),
+        expiry_date: &format_date(state.expires, &state.mail_lang),
+        html_content: &state.mail_content,
+        download_str: strings.download_str,
+        confirm: strings.confirm,
+        url,
+    };
+
+    let subject = SubjectTemplate {
+        subject_str: strings.subject_confirm,
+        sender: "",
+    };
+
     (email.to_string(), subject.to_string())
 }
 
@@ -148,5 +186,26 @@ pub async fn send_email(
         let mailer = mailer_builder.clone().build();
         mailer.send(&email)?;
     }
+
+    if state.confirm {
+        // also send confirmation email to sender
+        let mut url = Url::parse(config.server_url())?;
+        url.query_pairs_mut()
+            .append_pair("download", uuid)
+            .append_pair("recipient", &state.sender.clone().unwrap());
+        url.set_fragment(Some("filesharing"));
+
+        let (email, subject) = email_confirm(state, url.as_str());
+        let email = Message::builder()
+            .header(ContentType::TEXT_HTML)
+            .from(config.email_from())
+            .to(state.sender.clone().unwrap().parse()?)
+            .subject(subject)
+            .body(email)?;
+
+        let mailer = mailer_builder.build();
+        mailer.send(&email)?;
+    }
+
     Ok("Email successfully sent".to_owned())
 }
