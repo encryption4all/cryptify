@@ -77,6 +77,7 @@ type EncryptState = {
   pubSignKey?: ISigningKey;
   privSignKey?: ISigningKey;
   senderAttributes: AttributeCon;
+  senderConfirm: boolean;
 };
 
 type EncryptProps = {
@@ -97,6 +98,7 @@ const defaultEncryptState: EncryptState = {
   encryptStartTime: 0,
   modPromise: import("@e4a/pg-wasm"),
   pkPromise: getParameters(),
+  senderConfirm: true,
 };
 
 export default class EncryptPanel extends React.Component<
@@ -181,6 +183,12 @@ export default class EncryptPanel extends React.Component<
     });
   }
 
+  onChangeCheckbox() {
+    this.setState({
+      senderConfirm: !this.state.senderConfirm,
+    });
+  }
+
   reportProgress(resolve: () => void, uploaded: number, done: boolean) {
     let offset = 0;
     let percentages = this.state.percentages.map((p) => p);
@@ -241,9 +249,14 @@ export default class EncryptPanel extends React.Component<
     });
 
     // also encrypt for the sender
-    enc_policy[this.state.sender] = {
-      ts, con: [{t: "pbdf.sidn-pbdf.email.email", v: this.state.sender}, ...this.state.senderAttributes]
-    }
+    if (this.state.senderConfirm)
+      enc_policy[this.state.sender] = {
+        ts,
+        con: [
+          { t: "pbdf.sidn-pbdf.email.email", v: this.state.sender },
+          ...this.state.senderAttributes,
+        ],
+      };
 
     if (!this.state.pubSignKey) {
       this.setState({ encryptionState: EncryptionState.Error });
@@ -283,6 +296,7 @@ export default class EncryptPanel extends React.Component<
       const [fileStream, sender] = getFileStoreStream(
         this.state.abort,
         this.state.sender,
+        this.state.senderConfirm,
         this.state.recipients.map(({ email }) => email).join(", "),
         this.state.message,
         this.props.lang,
@@ -671,6 +685,17 @@ export default class EncryptPanel extends React.Component<
         />
         {renderSignFields()}
         {renderSignButtons()}
+        <div className="crypt-sender-receipt">
+          <input
+            type="checkbox"
+            id="receipt"
+            onChange={() => this.onChangeCheckbox()}
+            checked={this.state.senderConfirm}
+          />
+          <label htmlFor="receipt">
+            {getTranslation(this.props.lang).encryptPanel_emailSenderConfirm}
+          </label>
+        </div>
       </div>
     );
   }

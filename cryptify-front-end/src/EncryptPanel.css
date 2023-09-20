@@ -21,6 +21,11 @@
   cursor: pointer;
 }
 
+.crypt-sender-receipt > input {
+  margin: 0.75em 0.5em 0 0;
+  width: unset;
+}
+
 .add-recipient-btn {
   border: 1px solid black;
   border-radius: 15px;

@@ -35,6 +35,7 @@ export function createFileReadable(file: File): ReadableStream {
 async function initFile(
   abortSignal: AbortSignal,
   sender: string,
+  senderConfirm: boolean,
   recipient: string,
   mailContent: string | null,
   lang: Lang,
@@ -47,6 +48,7 @@ async function initFile(
     },
     body: JSON.stringify({
       sender: sender,
+      confirm: senderConfirm,
       recipient: recipient,
       mailContent: mailContent,
       mailLang: lang,
@@ -156,6 +158,7 @@ export async function getFileLoadStream(
 export function getFileStoreStream(
   abortController: AbortController,
   sender: string,
+  senderConfirm: boolean,
   recipient: string,
   mailContent: string | null,
   lang: Lang,
@@ -174,6 +177,7 @@ export function getFileStoreStream(
       [state, sender] = await initFile(
         abortController.signal,
         sender,
+        senderConfirm,
         recipient,
         mailContent,
         lang,

@@ -187,23 +187,25 @@ pub async fn send_email(
         mailer.send(&email)?;
     }
 
-    let mut url = Url::parse(config.server_url())?;
-    url.query_pairs_mut()
-        .append_pair("download", uuid)
-        .append_pair("recipient", &state.sender.clone().unwrap());
-    url.set_fragment(Some("filesharing"));
+    if state.confirm {
+        // also send confirmation email to sender
+        let mut url = Url::parse(config.server_url())?;
+        url.query_pairs_mut()
+            .append_pair("download", uuid)
+            .append_pair("recipient", &state.sender.clone().unwrap());
+        url.set_fragment(Some("filesharing"));
 
-    // also send confirmation email to sender
-    let (email, subject) = email_confirm(state, url.as_str());
-    let email = Message::builder()
-        .header(ContentType::TEXT_HTML)
-        .from(config.email_from())
-        .to(state.sender.clone().unwrap().parse()?)
-        .subject(subject)
-        .body(email)?;
+        let (email, subject) = email_confirm(state, url.as_str());
+        let email = Message::builder()
+            .header(ContentType::TEXT_HTML)
+            .from(config.email_from())
+            .to(state.sender.clone().unwrap().parse()?)
+            .subject(subject)
+            .body(email)?;
 
-    let mailer = mailer_builder.build();
-    mailer.send(&email)?;
+        let mailer = mailer_builder.build();
+        mailer.send(&email)?;
+    }
 
     Ok("Email successfully sent".to_owned())
 }

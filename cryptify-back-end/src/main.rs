@@ -46,6 +46,7 @@ struct InitBody {
     mail_content: String,
     #[serde(rename = "mailLang")]
     mail_lang: email::Language,
+    confirm: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -99,6 +100,7 @@ async fn upload_init(
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
                     sender: None,
+                    confirm: request.confirm,
                 },
             );
 

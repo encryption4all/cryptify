@@ -16,6 +16,7 @@ pub struct FileState {
     pub mail_content: String,
     pub mail_lang: email::Language,
     pub sender: Option<String>,
+    pub confirm: bool,
 }
 
 struct StoreState {
