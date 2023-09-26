@@ -351,14 +351,14 @@ export default class EncryptPanel extends React.Component<
     }
   }
 
-  async retrieveSignKey(pol: any): Promise<any> {
+  async retrieveSignKeys(pub: AttributeCon, priv?: AttributeCon): Promise<any> {
     const session = {
       url: PKG_URL,
       start: {
         url: (o) => `${o.url}/v2/request/start`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pol),
+        body: JSON.stringify({ con: [...pub, ...(priv ? priv : [])] }),
       },
       result: {
         url: (o, { sessionToken }) => `${o.url}/v2/request/jwt/${sessionToken}`,
@@ -367,16 +367,27 @@ export default class EncryptPanel extends React.Component<
             .text()
             .then((jwt) =>
               fetch(`${PKG_URL}/v2/irma/sign/key`, {
+                method: "POST",
                 headers: {
                   Authorization: `Bearer ${jwt}`,
+                  "Content-Type": "application/json",
                 },
+                body: JSON.stringify({
+                  pubSignId: pub,
+                  ...(priv && { privSignId: priv }),
+                }),
               })
             )
             .then((r) => r.json())
             .then((json) => {
               if (json.status !== "DONE" || json.proofStatus !== "VALID")
                 throw new Error("not done and valid");
-              return json.key;
+              return {
+                pubSignKey: json.pubSignKey,
+                ...(priv && {
+                  privSignKey: json.privSignKey,
+                }),
+              };
             })
             .catch((e) => console.log("error: ", e));
         },
@@ -414,22 +425,17 @@ export default class EncryptPanel extends React.Component<
         encryptionState: EncryptionState.Sign,
       },
       async () => {
-        // retrieve signing keys
-        const sign_policy = {
-          con: [{ t: "pbdf.sidn-pbdf.email.email", v: this.state.sender }],
-        };
+        const pubSignId = [
+          { t: "pbdf.sidn-pbdf.email.email", v: this.state.sender },
+        ];
+        const keys = await this.retrieveSignKeys(
+          pubSignId,
+          this.state.senderAttributes
+        );
 
-        const pubSignKey = await this.retrieveSignKey(sign_policy);
+        if (keys.privSignKey) this.setState({ privSignKey: keys.privSignKey });
 
-        if (this.state.senderAttributes.length > 0) {
-          const privSignKey = await this.retrieveSignKey({
-            con: this.state.senderAttributes,
-          });
-
-          this.setState({ privSignKey });
-        }
-
-        this.setState({ pubSignKey }, () => this.onEncrypt());
+        this.setState({ pubSignKey: keys.pubSignKey }, () => this.onEncrypt());
       }
     );
   }
