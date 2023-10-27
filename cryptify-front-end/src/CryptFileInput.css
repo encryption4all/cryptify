@@ -1,149 +1,151 @@
 .crypt-file-box > .file-drop > .file-drop-target {
-    /* require px border radius here due to the custom outline*/
-    border: 1px dashed black;
-    border-radius: 8px;
-    color: black;
-    position: relative;
-    height: 150px;
+  /* require px border radius here due to the custom outline*/
+  color: black;
+  position: relative;
 }
 
 .file-drop > .file-drop-target.file-drop-dragging-over-target {
-    background-color: var(--cryptify-bg-highlight-color);
+  background-color: var(--cryptify-bg-highlight-color);
 }
 
 .crypt-file-box {
-    height: 100%;
+  height: 100%;
 }
 
 .crypt-file-box .file-drop,
 .crypt-file-box .file-drop-target {
-    margin-top: 32pt;
-    height: 100%;
+  height: 100%;
 }
 
 @media only screen and (max-width: 500px) {
-    .crypt-file-box .file-drop,
-    .crypt-file-box .file-drop-target {
-        margin-top: 16pt;
-    }
+  .crypt-file-box .file-drop,
+  .crypt-file-box .file-drop-target {
+    margin-top: 16pt;
+  }
+}
+
+.crypt-panel-header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
 }
 
 .crypt-file-box-content,
 .crypt-file-box-overlay {
-    text-align: center;
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
-    padding-bottom: 2em;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding-bottom: 2em;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .swallow-ptr_evs {
-    pointer-events: none;
-    width: 100%;
-    height: 100%;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
 }
 
 .crypt-file-name-box {
-    background-color: black;
-    color: white;
-    max-width: 80%;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    position: absolute;
-    padding-top: 0.5em;
-    padding-bottom: 0.5em;
-    padding-left: 0.75em;
-    padding-right: 0.75em;
-    font-size: 1.25em;
-    border-radius: 0.62em;
-    top: 50%;
-    left: 50%;
-    -moz-transform: translateX(-50%) translateY(-50%);
-    -webkit-transform: translateX(-50%) translateY(-50%);
-    transform: translateX(-50%) translateY(-50%);
+  background-color: black;
+  color: white;
+  max-width: 80%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: absolute;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  padding-left: 0.75em;
+  padding-right: 0.75em;
+  font-size: 1.25em;
+  border-radius: 0.62em;
+  top: 50%;
+  left: 50%;
+  -moz-transform: translateX(-50%) translateY(-50%);
+  -webkit-transform: translateX(-50%) translateY(-50%);
+  transform: translateX(-50%) translateY(-50%);
 }
 
 .crypt-file-input-label {
-    cursor: pointer;
+  cursor: pointer;
 }
 
 .crypt-logo-large {
-    width: calc(100% - 6em - 6em);
-    padding-left: 6em;
-    padding-right: 6em;
+  width: calc(100% - 6em - 6em);
+  padding-left: 6em;
+  padding-right: 6em;
 }
 
 .crypt-file-box-large-text {
-    margin-top: 2.5em;
-    font-weight: bold;
-    font-size: 2em;
-    line-height: 1.2em;
-    text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+  margin-top: 1.5em;
+  font-weight: bold;
+  font-size: 2em;
+  line-height: 1.2em;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .crypt-file-box-small-text {
-    margin-top: 0.85em;
-    font-size: 1.3em;
-    text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+  margin-top: 0.85em;
+  font-size: 1.3em;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .crypt-file-box-tiny-text {
-    margin-top: 0.85em;
-    font-size: 1.16em;
-    text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+  margin-top: 0.85em;
+  font-size: 1.16em;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .crypt-file-btn {
-    width: 140px;
-    margin: auto;
+  width: 140px;
 }
 
 @media only screen and (max-width: 1170px) {
 }
 
 @media only screen and (max-width: 500px) {
-    .crypt-file-box-large-text {
-        margin-top: 0.77em;
-        font-size: 1.5em;
-        line-height: 1.11em;
-    }
+  .crypt-file-box-large-text {
+    margin-top: 0.77em;
+    font-size: 1.5em;
+    line-height: 1.11em;
+  }
 
-    .crypt-file-box-small-text {
-        margin-top: 0.5em;
-        font-size: 1em;
-    }
+  .crypt-file-box-small-text {
+    margin-top: 0.5em;
+    font-size: 1em;
+  }
 
-    .crypt-file-box-tiny-text {
-        margin-top: 0.55em;
-        font-size: 0.91em;
-    }
+  .crypt-file-box-tiny-text {
+    margin-top: 0.55em;
+    font-size: 0.91em;
+  }
 }
 
 .crypt-file-btn:disabled,
 .crypt-file-btn[disabled] {
-    background: #b5b6b7;
+  background: #b5b6b7;
 }
 
 #crypt-file-input {
-    height: 100%;
-    width: 100%;
-    border: none;
-    overflow: hidden;
-    opacity: 0;
-    z-index: -9999;
+  height: 100%;
+  width: 100%;
+  border: none;
+  overflow: hidden;
+  opacity: 0;
+  z-index: -9999;
 }

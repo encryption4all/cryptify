@@ -11,6 +11,7 @@ type AppState = {
 
 type AppProps = {
   downloadUuid: string | null;
+  recipient: string | null;
 };
 
 const langKey = "preferredLanguage";
@@ -61,11 +62,12 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   contentPanel() {
-    if (this.props.downloadUuid) {
+    if (this.props.downloadUuid && this.props.recipient) {
       return (
         <DecryptPanel
           lang={this.state.lang}
           downloadUuid={this.props.downloadUuid}
+          recipient={this.props.recipient}
         />
       );
     } else {

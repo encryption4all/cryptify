@@ -45,13 +45,13 @@
     }
   },
   "dependencies": {
-    "@e4a/irmaseal-wasm-bindings": "^0.2.2",
+    "@e4a/pg-wasm": "^0.3.0",
     "@privacybydesign/yivi-client": "^0.1.2",
     "@privacybydesign/yivi-core": "^0.1.2",
+    "@privacybydesign/yivi-css": "^0.1.2",
     "@privacybydesign/yivi-popup": "^0.1.2",
-    "@privacybydesign/yivi-web": "^0.1.2",
-    "node-polyfill-webpack-plugin": "^2.0.1",
     "@transcend-io/conflux": "^3.2.0",
+    "node-polyfill-webpack-plugin": "^2.0.1",
     "react": "^18.1.0",
     "react-circular-progressbar": "^2.0.3",
     "react-device-detect": "^2.2.2",

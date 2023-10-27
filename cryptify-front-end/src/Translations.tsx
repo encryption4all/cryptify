@@ -23,6 +23,7 @@ type Translation = {
   cryptFileInput_dropFiles: string;
   cryptFileInput_clickFiles: string;
   cryptFileInput_sendUpto: string;
+  cryptFileInput_alternative: string;
   cryptFileInput_addFileBtn: string;
 
   // cryptFileList
@@ -42,12 +43,24 @@ type Translation = {
   decryptPanel_succes: string;
   decryptPanel_askDownload: string;
   decryptPanel_askDownloadText: string;
+  decryptPanel_verifiedEmail: string;
+  decryptPanel_verifiedExtra: string;
 
   // encryptPanel
   encryptPanel_header: string,
   encryptPanel_emailRecipient: string;
+  encryptPanel_RecipientsHeading: string;
+  encryptPanel_RecipientsSubHeading: string;
+  encryptPanel_RecipientsText: string;
   encryptPanel_emailSender: string;
-  encryptPanel_message: string;
+  encryptPanel_emailSenderHeading: string;
+  encryptPanel_emailSenderSubHeading: string;
+  encryptPanel_emailSenderText: string;
+  encryptPanel_emailSenderAttributePrefix: string,
+  encryptPanel_emailRecipientAttributePrefix: string,
+  encryptPanel_messageHeading: string;
+  encryptPanel_messageText: string;
+  encryptPanel_messagePlaceholder: string;
   encryptPanel_messageAnonymous: string;
   encryptPanel_encryptSend: string;
   encryptPanel_encrypting: string;
@@ -59,7 +72,8 @@ type Translation = {
   encryptPanel_irmaInstructionHeaderMobile: string;
   encryptPanel_irmaInstructionQr: string;
   encryptPanel_irmaInstructionMobile: string;
-  encryptPanel_encryptSendAnonymous: string;
+  encryptPanel_addRecipient: string;
+  encryptPanel_emailSenderConfirm: string;
 
   // infoPanel
   infoPanel_help: string;
@@ -90,6 +104,11 @@ type Translation = {
   infoPanel_helpReceivedUseStep5: string;
   infoPanel_privacyPolicyHeader: string;
   infoPanel_privacyPolicyContent: string;
+
+  // attribute types
+  "pbdf.sidn-pbdf.mobilenumber.mobilenumber": string;
+  "pbdf.gemeente.personalData.fullname": string;
+  "pbdf.gemeente.personalData.dateofbirth": string;
 }
 
 
@@ -124,6 +143,7 @@ const english: Translation = {
   cryptFileInput_dropFiles: "Drag & drop files",
   cryptFileInput_clickFiles: "Or click the button below",
   cryptFileInput_sendUpto: "2GB maximum",
+  cryptFileInput_alternative: "or",
   cryptFileInput_addFileBtn: "Upload files",
 
   // cryptFileList
@@ -143,14 +163,26 @@ const english: Translation = {
   decryptPanel_succes: "Successfully downloaded and decrypted",
   decryptPanel_askDownload: "Download",
   decryptPanel_askDownloadText: "Press the button below to start decrypting and downloading your files",
+  decryptPanel_verifiedEmail: "The files are from",
+  decryptPanel_verifiedExtra: "The files were signed using",
 
   // encryptPanel
   encryptPanel_header: "ENCRYPT & UPLOAD",
-  encryptPanel_emailRecipient: "Email recipient",
-  encryptPanel_emailSender: "Your email",
-  encryptPanel_message: "Message",
+  encryptPanel_emailRecipient: "Recipient's email",
+  encryptPanel_RecipientsHeading: "To",
+  encryptPanel_RecipientsSubHeading: "Who may receive and decrypt the files?",
+  encryptPanel_RecipientsText: "The recipient(s) will need to prove their email address with the Yivi app, as well as any other data you specify. Data about a recipient is only visible to the recipient themselves.",
+  encryptPanel_emailSender: "Your email address",
+  encryptPanel_emailSenderHeading: "From",
+  encryptPanel_emailSenderSubHeading: "Let the recipient(s) know these files are yours.",
+  encryptPanel_emailSenderText: "Before sending, you must sign the files by proving your email address and any other personal data with the Yivi app.",
+  encryptPanel_emailSenderAttributePrefix: "Your",
+  encryptPanel_emailRecipientAttributePrefix: "Recipient's",
+  encryptPanel_messageHeading: "Message",
+  encryptPanel_messageText: "This (optional) message will not be encrypted. It is included in the email with a link to the encrypted files.",
+  encryptPanel_messagePlaceholder: "Optional message",
   encryptPanel_messageAnonymous: "Attention! This message is sent anonymously so please be careful when downloading and opening the files.",
-  encryptPanel_encryptSend: "Encrypt & send",
+  encryptPanel_encryptSend: "Sign & send",
   encryptPanel_encrypting: "Encrypting & uploading...",
   encryptPanel_encryptingInfo: "Your files are being encrypted first and afterwards are sent to: ",
   encryptPanel_succes: "Successfully encrypted and uploaded",
@@ -160,7 +192,8 @@ const english: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Prove your identity with Yivi",
   encryptPanel_irmaInstructionQr: "Encrypt the files by verifying your e-mail address. Please scan the QR-code below with the identification app Yivi.",
   encryptPanel_irmaInstructionMobile: "Encrypt the files by verifying your e-mail address. Please click the button below to open the Yivi-app.",
-  encryptPanel_encryptSendAnonymous: "Or send anonymously",
+  encryptPanel_addRecipient: "recipient",
+  encryptPanel_emailSenderConfirm: "Send me a confirmation",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -176,7 +209,7 @@ const english: Translation = {
   infoPanel_helpShareStep2: "Enter the email address of the recipient",
   infoPanel_helpShareStep3: "Enter your own email address.",
   infoPanel_helpShareStep4: "Optionally enter an explanation message for the recipient.",
-  infoPanel_helpShareStep5: "Click \"Encrypt & send\" and wait for the process to complete; and a confirmation is then displayed.",
+  infoPanel_helpShareStep5: "Click \"Sign & send\" and wait for the process to complete; and a confirmation is then displayed.",
   infoPanel_helpShareOutro: "The recipient will receive an email informing them that you have shared a file with them; the email also contains instructions on how to proceed. If you have provided a message, it will be included in the email. By using Cryptify you assume that the receiver already uses the Yivi app, or is willing to install the app and use it for the purpose of receiving your files.",
   infoPanel_helpReceivedHeader: "A file has been shared with me",
   infoPanel_helpReceivedInstallIrmaIntro: "To download and decrypt the file, you need the Yivi app. With the Yivi app, you can prove that you are the intended recipient and decrypt the files:",
@@ -191,6 +224,11 @@ const english: Translation = {
   infoPanel_helpReceivedUseStep5: "You can find the decrypted file in the download folder of your browser.",
   infoPanel_privacyPolicyHeader: "Privacy policy",
   infoPanel_privacyPolicyContent: "<p>Cryptify is a platform for sharing (large) files securely and easily between two users. Files shared via Cryptify are encrypted. Users must first use the Yivi app (yivi.app) to prove that they are the intended recipient before they can decrypt the files. This is the essence of Cryptify. Cryptify is offered for free, as a social service, to make encrypted file sharing easy for everyone. Cryptify was developed with support from <a href=\"https://www.sidnfonds.nl/\">SIDN fonds</a>.</p><p>The Cryptify service is offered in collaboration between the company <a href=\"https://www.procolix.com/\">ProcoliX</a> and the <a href=\"https://privacybydesign.foundation/\">Privacy by Design Foundation</a>. ProcoliX and the foundation are jointly responsible for data processing. ProcoliX and the Privacy by Design Foundation are both data controllers, and each processes part of the data, as described in more detail below. Only data that is necessary for the Cryptify service is processed.</p><p>ProcoliX temporarily stores the encrypted files provided by users. ProcoliX cannot see the contents of these files because they are encrypted. Each file is accompanied by the email address of the intended recipient. The email address of the recipient and the encrypted files are kept for a maximum of 2 weeks and then are automatically deleted. ProcoliX processes email addresses to notify recipients by email about the files that have been uploaded for them. Both the sender's email address and the recipient's email address are used for this notification. Sent emails and email addresses are not stored by ProcoliX. Other technical personal data, such as IP addresses, are stored and deleted according to <a href=\"https://www.procolix.com/wp-content/uploads/2021/06/Algemene-voorwaarden-ProcoliX-v2.2.pdf\">ProcoliX's general policy</a>. When everything is running normally, this data is deleted after two days.</p><p>The Privacy by Design Foundation only processes the email addresses of recipients. These are needed to enable encryption and decryption via Cryptify. The processing of email addresses is done before the decryption. To decrypt files, a recipient must reveal his/her email address with the Yivi app, thus proving that he/she is the intended recipient. The server to which the visitor reveals his/her email address is managed by the Privacy by Design Foundation. When a user reveals his/her email address with Yivi, a private key associated with the email address is supplied by the server. That key is used to decrypt the files in the user's web browser. The visitor's email address is then immediately deleted by the server at the foundation. In particular, the foundation does not keep a log of email addresses. Other technical personal data, such as IP addresses, are also not stored.</p><p>ProcoliX temporarily stores the encrypted files but does not have access to the cryptographic keys (private keys) required for decryption. The Privacy by Design Foundation generates the private keys but does not have access to the encrypted files. ProcoliX and the foundation do not conspire to jointly decrypt files behind the backs of users.</p><p>Technical changes to the Cryptify system, or any new services, may result in modification of this privacy policy. ProcoliX and the Privacy by Design Foundation reserve the right to make such changes and will announce the new privacy policy as soon as possible via this page.</p><p>For any questions, comments, or complaints about this processing by ProcoliX and the Privacy by Design Foundation for Cryptify, please contactthe Cryptify team at <a href=\"mailto:info@cryptify.nl\">info@cryptify.nl</a>. or complaints about the processingof data by ProcoliX, the Authority for the Protection of Personal Data can also be contacted.</p>",
+
+  // attribute types
+  "pbdf.sidn-pbdf.mobilenumber.mobilenumber": "mobile number",
+  "pbdf.gemeente.personalData.fullname": "full name",
+  "pbdf.gemeente.personalData.dateofbirth": "date of birth",
 };
 
 const dutch: Translation = {
@@ -223,6 +261,7 @@ const dutch: Translation = {
   cryptFileInput_dropFiles: "Drag & drop bestanden",
   cryptFileInput_clickFiles: "Of klik op de knop hieronder",
   cryptFileInput_sendUpto: "maximaal 2GB",
+  cryptFileInput_alternative: "of",
   cryptFileInput_addFileBtn: "Bestanden toevoegen",
   
   // cryptFileList
@@ -242,15 +281,27 @@ const dutch: Translation = {
   decryptPanel_succes: "Succesvol gedownload en ontsleuteld",
   decryptPanel_askDownload: "Download",
   decryptPanel_askDownloadText: "Druk op onderstaande knop om de bestanden te ontsleutelen en downloaden.",
+  decryptPanel_verifiedEmail: "De bestanden zijn afkomstig van",
+  decryptPanel_verifiedExtra: "De bestanden zijn ondertekend met",
 
   // encryptPanel
   encryptPanel_header: "VERSLEUTEL & VERZEND",
   encryptPanel_emailRecipient: "E-mailadres ontvanger",
-  encryptPanel_emailSender: "Jouw e-mailadres",
-  encryptPanel_message: "Bericht",
+  encryptPanel_RecipientsHeading: "Naar",
+  encryptPanel_RecipientsSubHeading: "Wie mogen de bestanden ontvangen en ontsleutelen?",
+  encryptPanel_RecipientsText: "De ontvanger(s) moeten zowel hun email adres als aanvullende gegevens die jij hier specificeert aantonen. Deze data zijn niet zichtbaar aan anderen.",
+  encryptPanel_emailSender: "Jouw emailadres",
+  encryptPanel_emailSenderHeading: "Van",
+  encryptPanel_emailSenderSubHeading: "Laat de ontvanger(s) weten dat deze bestanden van jou afkomstig zijn.",
+  encryptPanel_emailSenderText: "Voordat je de bestanden kan sturen moet je aantonen dat je deze gegevens bezit.",
+  encryptPanel_emailSenderAttributePrefix: "Jouw",
+  encryptPanel_emailRecipientAttributePrefix: "Ontvanger's",
+  encryptPanel_messageHeading: "Bericht",
+  encryptPanel_messageText: "Dit (optionele) bericht wordt niet versleuteld. Het bericht staat in de email waar ook de link naar de bestanden zit.",
+  encryptPanel_messagePlaceholder: "Optioneel bericht",
   encryptPanel_messageAnonymous: "Let op! Dit bericht is anoniem verzonden dus kijk goed uit bij het downloaden en openen van de bestanden.",
-  encryptPanel_encryptSend: "Versleutel & verzend",
-  encryptPanel_encrypting: "Versleutelen & verzenden...",
+  encryptPanel_encryptSend: "Onderteken & verzend",
+  encryptPanel_encrypting: "Ondertekenen & verzenden...",
   encryptPanel_encryptingInfo: "Jouw bestanden worden versleuteld en daarna verzonden naar: ",
   encryptPanel_succes: "Succesvol versleuteld en verzonden",
   encryptPanel_succesInfo: "Jouw bestanden zijn versleuteld en verzonden. Een e-mail met een download link is verstuurd naar: ",
@@ -259,7 +310,8 @@ const dutch: Translation = {
   encryptPanel_irmaInstructionHeaderMobile: "Bewijs identiteit met Yivi",
   encryptPanel_irmaInstructionQr: "Versleutel de bestanden door je e-mailadres te verifieren. Scan daarvoor de onderstaande QR-code met de identificatie app Yivi.",
   encryptPanel_irmaInstructionMobile: "Versleutel de bestanden door je e-mailadres te verifieren. Click daarvoor op de onderstaande knop om naar de identificatie app Yivi te gaan.",
-  encryptPanel_encryptSendAnonymous: "Of verzend anoniem",
+  encryptPanel_addRecipient: "ontvanger",
+  encryptPanel_emailSenderConfirm: "Stuur mij een bevestiging",
 
   // infoPanel
   infoPanel_about: "CRYPTIFY",
@@ -275,7 +327,7 @@ const dutch: Translation = {
   infoPanel_helpShareStep2: "Voer het e-mailadres van de ontvanger in.",
   infoPanel_helpShareStep3: "Voer uw eigen e-mailadres in.",
   infoPanel_helpShareStep4: "Voeg optioneel een bericht met toelichting voor de ontvanger toe.",
-  infoPanel_helpShareStep5: "Klik op \"Versleutelen & verzenden\" en wacht to het proces is voltooid en een bevestiging wordt getoond.",
+  infoPanel_helpShareStep5: "Klik op \"Ondertekenen & verzenden\" en wacht to het proces is voltooid en een bevestiging wordt getoond.",
   infoPanel_helpShareOutro: "De ontvanger ontvangt een e-mail met de melding dat u een bestand met hem/haar hebt gedeeld. Als u een bericht heeft toegevoegd, zal dit in de e-mail worden opgenomen. Door Cryptify te gebruiken gaat u er van uit dat de ontvanger de Yivi app heeft, of de app will installeren en gebruiken om uw files te ontvangen.",
   infoPanel_helpReceivedHeader: "Er is een bestand met mij gedeeld",
   infoPanel_helpReceivedInstallIrmaIntro: "Om het bestand te downloaden en te ontsleutelen, heb je de Yivi app nodig. Met de Yivi-app kan je bewijzen dat jij de bedoelde ontvanger bent en de bestanden ontsleutelen:",
@@ -290,4 +342,9 @@ const dutch: Translation = {
   infoPanel_helpReceivedUseStep5: "U vindt uwhet nieuwe bestand in de downloadmap van uw browser.",
   infoPanel_privacyPolicyHeader: "Privacybeleid",
   infoPanel_privacyPolicyContent: "<p>Cryptify is een platform om (grote) bestanden op een veilige en makkelijke manier te delen tussen twee gebruikers. Bestanden die via Cryptify gedeeld worden zijn versleuteld. Gebruikers moeten met de app Yivi (yivi.app) eerst aantonen dat ze de beoogde ontvanger zijn om daarna pas de bestanden te kunnen ontsleutelen. Dit is de essentie van Cryptify. Cryptify wordt gratis aangeboden, als maatschappelijke dienstverlening, om het versleuteld delen vanbestanden voor iedereen makkelijk mogelijk te maken. Cryptify is ontwikkeld met steun van <a href=\"https://www.sidnfonds.nl/\">SIDN fonds</a>.</p> <p>De Cryptify dienst wordt in samenwerking tussen het bedrijf <a href=\"https://www.procolix.com/\">ProcoliX</a> en de <a href=\"https://privacybydesign.foundation/\">stichting Privacy by Design</a> aangeboden. ProcoliX en de stichting zijn gezamenlijkverantwoordelijk voor de gegevensverwerking. De ProcoliX en de stichting zijn allebei verwerkingsverantwoordelijken en verwerken samen ieder een deel van de gegevens, zoals hieronder in meer detail beschreven wordt. Alleen gegevens die voor de Cryptify dienst noodzakelijk zijn worden verwerkt.</p> <p>ProcoliX slaat versleutelde bestanden die door gebruikers aangeleverd worden tijdelijk op. ProcoliX kan de inhoud van deze bestanden niet zien, omdat ze versleuteld zijn. Aan ieder bestand is het e-mailadres van de beoogde ontvanger gekoppeld. Het e-mailadres van de ontvanger en de versleutelde bestanden worden maximaal 2 weken bewaard en dan automatisch verwijderd. ProcoliX verwerkt e-mailaddressen om ontvangers via e-mail te informeren over de bestanden die voor hen zijn geüpload. Voor dit bericht wordt zowel het e-mailadres van de verzender als ook het e-mailadres van de ontvanger gebruikt. Verstuurde e-mails en e-mailadressen worden door ProcoliX niet bewaard. Andere, technische persoonsgegevens, zoals IP-adressen worden opgeslagen en verwijderd volgens het <a href=\"https://www.procolix.com/wp-content/uploads/2021/06/Algemene-voorwaarden-ProcoliX-v2.2.pdf\">Algemene beleid van ProcoliX</a>. Wanneer alles normaal verloopt worden deze gegevens na 2 dagen verwijderd.</p> <p>De stichting Privacy by Design verwerkt enkel e-mailadressen van ontvangers. Die zijn nodig om de versleuteling en ontsleuteling via Cryptify mogelijk te maken. Het verwerken van e-mailadressen gebeurt voorafgaand aan het ontsleutelen. Om bestanden te kunnen ontsleutelen moet een ontvanger met Yivi zijn/haar e-mailadres onthullen, via de Yivi app, en zo aantonen dat hij/zij de beoogde ontvanger is. De server waaraan de bezoeker zijn/haar e-mailadres onthult wordt beheerd door de stichting Privacy by Design. Als een gebruiker zijn/haar e-mailadres onthult met Yivi, wordt door de server een private key die bij het email-adres hoort aangeleverd. Met die sleutel worden de bestanden in de webbrowser van de gebruiker ontsleuteld. Het e-mailadres van de bezoeker wordt dan direct verwijderd door de server bij de stichting. In het bijzonder houdt de stichting geen log bij van e-mailadressen. Andere, technische persoonsgegevens, zoals IP-adressen worden ook niet opgeslagen.</p> <p>Procolix slaat de versleutelde bestanden tijdelijk op, maar heeft geen toegang tot de cryptografische sleutels (private keys) die nodig zijn voor ontsleuteling. De stichting Privacy by Design genereert de private keys, maar heeft geen toegang tot de versleutelde bestanden. ProcoliX en de stichting spannen niet samen om gezamenlijk, buiten gebruikers om, bestanden te ontsleutelen.</p> <p>Technische veranderingen in het Cryptify systeem, of eventuele nieuwe diensten, kunnen leiden tot een aanpassing van deze privacy policy. ProcoliX en de stichting Privacy by Design behouden zich het recht voor om dergelijke wijzigingen door te voeren en zullen de nieuwe privacy policy zo snel mogelijk via deze pagina bekend maken.</p> <p>Voor eventuele vragen, opmerkingen, of klachten over deze verwerkingen door ProcoliX en de stichting Privacy by Design ten behoeve van Cryptify kan contact opgenomen worden met het Cryptify team op <a href=\"mailto:info@cryptify.nl\">info@cryptify.nl</a>. Voor klachten over de verwerking van gegevens door ProcoliX kan ook contact opgenomen worden met de Autoriteit Persoonsgegevens.</p>",
+
+  // attribute types
+  "pbdf.sidn-pbdf.mobilenumber.mobilenumber": "mobiel",
+  "pbdf.gemeente.personalData.fullname": "volledige naam",
+  "pbdf.gemeente.personalData.dateofbirth": "geboortedatum",
 };

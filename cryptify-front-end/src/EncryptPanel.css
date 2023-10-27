@@ -1,17 +1,53 @@
 .crypt-file-upload-box {
-  height: 22.9em;
+  height: 100%;
+  max-height: 600px;
+  border: 1px dashed black;
+  border-radius: 8px;
+  padding: 20px;
+  background: no-repeat bottom 20px center/80% url("./resources/basket.svg");
 }
 
-@media only screen and (max-width: 1170px) {
-  .crypt-file-upload-box {
-    height: 22.9em;
-  }
+.crypt-form {
+  height: 100%;
 }
 
-@media only screen and (max-width: 500px) {
-  .crypt-file-upload-box {
-    height: 12.5em;
-  }
+.add-attribute-btn {
+  border: 1px solid black;
+  border-radius: 15px;
+  background-color: white;
+  margin-right: 0.5em;
+  font-family: Overpass;
+  margin-top: 1em;
+  cursor: pointer;
+}
+
+.crypt-sender-receipt > input {
+  margin: 0.75em 0.5em 0 0;
+  width: unset;
+}
+
+.add-recipient-btn {
+  border: 1px solid black;
+  border-radius: 15px;
+  background-color: black;
+  color: white;
+  font-family: Overpass;
+  cursor: pointer;
+  margin-bottom: 1em;
+  margin-top: 1em;
+}
+
+.crypt-recipient:not(:last-child) {
+  margin-bottom: 1.5em;
+}
+
+.btn-delete {
+  all: unset;
+  cursor: pointer;
+}
+
+.attribute-field {
+  margin-top: 1em;
 }
 
 .crypt-select-protection-input-box textarea {
@@ -29,7 +65,7 @@
 }
 
 .crypt-irma-qr {
-  padding-top: 2.5em;
+  width: 100%;
 }
 
 .irma-web-form {
@@ -74,6 +110,31 @@
 .get-irma-here-anchor .irma-logo {
   height: 3.75em;
   display: inline-block;
+}
+
+.yivi-btn-logo {
+  display: flex;
+  padding-right: 1em;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+  gap: 3em;
+}
+
+.column {
+  min-width: 350px;
+  height: 100%;
+}
+
+.scroll-column {
+  overflow-y: scroll;
+  height: 100%;
 }
 
 .get-irma-here-anchor .irma-appstore-button {
