@@ -341,6 +341,7 @@ dependencies = [
  "irma",
  "lettre",
  "log",
+ "minreq",
  "pg-core",
  "qrcode",
  "rand",
@@ -1167,6 +1168,18 @@ name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
+name = "minreq"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb3371dfc7b772c540da1380123674a8e20583aca99907087d990ca58cf44203"
+dependencies = [
+ "log",
+ "native-tls",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "mio"
