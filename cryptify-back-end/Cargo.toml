@@ -28,3 +28,4 @@ url = "2.4.0"
 
 tokio-util = { version = "0.7.4", features = ["compat"] }
 pg-core = { version = "0.3.0-rc.0", features = ["rust", "stream"] }
+minreq = { version = "2.11.0", features = ["json-using-serde", "https-native"]}
