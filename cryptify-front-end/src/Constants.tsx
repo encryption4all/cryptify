@@ -12,7 +12,7 @@ export const SMOOTH_TIME: number = 2;
 
 const prod = process.env.NODE_ENV === "production";
 
-export const PKG_URL = "https://postguard.eu/pkg"
+export const PKG_URL = " https://main.postguard.ihub.ru.nl/pkg"
 
 export const BACKEND_URL = prod ? "https://cryptify.nl/api/v2" : "";
 
