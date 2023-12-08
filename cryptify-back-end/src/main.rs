@@ -409,13 +409,11 @@ async fn rocket() -> _ {
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
-    let vk = reqwest::get(format!("{}/v2/sign/parameters", config.pkg_url()))
-        .await
+    let response = minreq::get(format!("{}/v2/sign/parameters", config.pkg_url())).send();
+
+    let vk = response
         .expect("could not get global verification key")
-        .error_for_status()
-        .expect("wrong response for global verification key")
         .json::<Parameters<VerifyingKey>>()
-        .await
         .expect("no verification key");
 
     let cors = CorsOptions::default()
