@@ -12,11 +12,11 @@ export const SMOOTH_TIME: number = 2;
 
 const prod = process.env.NODE_ENV === "production";
 
-export const PKG_URL = "https://main.postguard.ihub.ru.nl/pkg";
+export const PKG_URL = prod ? "https://stable-postguard.cs.ru.nl" : "https://main.postguard.ihub.ru.nl/pkg";
 
 // Stable: https://cryptify.nl/api/v2
 // Main: https://cryptify.nl/main/api/v2
-export const BACKEND_URL = "https://cryptify.nl/main/api/v2";
+export const BACKEND_URL = prod ? "https://cryptify.nl/api/v2" : "https://cryptify.nl/main/api/v2";
 
 export const METRICS_HEADER = {
   "X-PostGuard-Client-Version": `${browserName}${
