@@ -426,7 +426,7 @@ export default class EncryptPanel extends React.Component<
       },
       async () => {
         const pubSignId = [
-          { t: "pbdf.sidn-pbdf.email.email", v: this.state.sender },
+          { t: "pbdf.sidn-pbdf.email.email" },
         ];
         const keys = await this.retrieveSignKeys(
           pubSignId,
@@ -466,8 +466,7 @@ export default class EncryptPanel extends React.Component<
       /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
     const addressesValid =
-      this.state.recipients.every(({ email }) => regex.test(email)) &&
-      regex.test(this.state.sender);
+      this.state.recipients.every(({ email }) => regex.test(email));
 
     const canEncrypt =
       totalSize < MAX_UPLOAD_SIZE &&
@@ -537,7 +536,7 @@ export default class EncryptPanel extends React.Component<
             parent.setState({ senderAttributes: newAttrs });
 
     function onAddField(field: AttType) {
-      update([...attributes, { t: field, v: "" }]);
+      update([...attributes, { t: field }]);
     }
 
     function onAttributesChanged(j: number, v: string) {
@@ -568,12 +567,9 @@ export default class EncryptPanel extends React.Component<
       });
     };
 
-    const renderFields = () => {
+    const renderRecipientFields = () => {
       const prefix =
-        prop === "senderAttributes"
-          ? getTranslation(parent.props.lang)
-              .encryptPanel_emailSenderAttributePrefix
-          : `${email}${email !== "" ? "'s" : ""}`;
+         `${email}${email !== "" ? "'s" : ""}`;
       return attributes.map(({ t, v }, j) => {
         return (
           <div className="attribute-field">
@@ -594,7 +590,28 @@ export default class EncryptPanel extends React.Component<
       });
     };
 
-    return [renderFields, renderButtons];
+    
+    const renderSenderFields = () => {
+      const prefix =
+          getTranslation(parent.props.lang)
+              .encryptPanel_emailSenderAttributePrefix;
+      
+      return attributes.map(({ t, v }, j) => {
+        return (
+          <div className="attribute-field">
+            <p style={{display:`inline`}}>{`${prefix} ${getTranslation(parent.props.lang)[t]}`}</p>&nbsp;&nbsp;
+            <button
+              className="btn-delete"
+              onClick={(_e) => removeExtraAttribute(j)}
+            >
+              x
+            </button>
+          </div>
+        );
+      });
+    };
+
+    return prop === "recipients" ? [renderRecipientFields, renderButtons] : [renderSenderFields, renderButtons];
   }
 
   addRecipient() {
@@ -682,13 +699,6 @@ export default class EncryptPanel extends React.Component<
           {getTranslation(this.props.lang).encryptPanel_emailSenderSubHeading}
         </h4>
         <p>{getTranslation(this.props.lang).encryptPanel_emailSenderText}</p>
-        <input
-          placeholder={getTranslation(this.props.lang).encryptPanel_emailSender}
-          type="email"
-          required
-          value={this.state.sender}
-          onChange={(e) => this.onChangeSender(e)}
-        />
         {renderSignFields()}
         {renderSignButtons()}
         <div className="crypt-sender-receipt">
