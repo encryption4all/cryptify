@@ -10,13 +10,13 @@ export const UPLOAD_CHUNK_SIZE: number = 1024 * 1024;
 // progress bar smooth time in seconds.
 export const SMOOTH_TIME: number = 2;
 
-const prod = process.env.NODE_ENV === "production";
+const isProd = process.env.REACT_APP_ENV === "production";
 
-export const PKG_URL = prod ? "https://stable-postguard.cs.ru.nl" : "https://main.postguard.ihub.ru.nl/pkg";
+export const PKG_URL = isProd ? "https://stable-postguard.cs.ru.nl" : "https://main.postguard.ihub.ru.nl/pkg";
 
 // Stable: https://cryptify.nl/api/v2
 // Main: https://cryptify.nl/main/api/v2
-export const BACKEND_URL = prod ? "https://cryptify.nl/api/v2" : "https://cryptify.nl/main/api/v2";
+export const BACKEND_URL = isProd ? "https://cryptify.nl/api/v2" : "https://cryptify.nl/main/api/v2";
 
 export const METRICS_HEADER = {
   "X-PostGuard-Client-Version": `${browserName}${

@@ -10,10 +10,7 @@
   ],
   "build": {
     "appId": "cryptify",
-    "files": [
-      "dist/**/*",
-      "./build/*"
-    ],
+    "files": ["dist/**/*", "./build/*"],
     "dmg": {
       "contents": [
         {
@@ -29,10 +26,7 @@
       ]
     },
     "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ]
+      "target": ["AppImage", "deb"]
     },
     "win": {
       "category": "Security"
@@ -64,7 +58,7 @@
   },
   "scripts": {
     "start": "PORT=8080 craco start",
-    "build-stable": "NODE_ENV=production craco build",
+    "build-stable": "REACT_APP_ENV=production craco build",
     "build-main": "craco build",
     "dist-electron": "electron-builder",
     "test": "craco test",
@@ -74,11 +68,7 @@
     "extends": "react-app"
   },
   "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
+    "production": [">0.2%", "not dead", "not op_mini all"],
     "development": [
       "last 1 chrome version",
       "last 1 firefox version",
@@ -86,7 +76,7 @@
     ]
   },
   "devDependencies": {
-    "@craco/craco": "6.4.3",
+    "@craco/craco": "^6.4.5",
     "@testing-library/jest-dom": "^4.2.4",
     "@testing-library/react": "^9.3.2",
     "@testing-library/user-event": "^7.1.2",
