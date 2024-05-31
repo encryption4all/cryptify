@@ -1,94 +1,94 @@
 {
-  "name": "pg-filesharing",
-  "version": "0.1.0",
-  "private": true,
-  "main": "./public/electron.js",
-  "homepage": "/filesharing/",
-  "authors": [
-    "Rowan Goemans <rowan.goemans@bdtnl.com>",
-    "L. Botros <l.botros@cs.ru.nl>"
-  ],
-  "build": {
-    "appId": "cryptify",
-    "files": ["dist/**/*", "./build/*"],
-    "dmg": {
-      "contents": [
-        {
-          "x": 110,
-          "y": 150
+    "name": "pg-filesharing",
+    "version": "0.1.0",
+    "private": true,
+    "main": "./public/electron.js",
+    "homepage": "/filesharing/",
+    "authors": [
+        "Rowan Goemans <rowan.goemans@bdtnl.com>",
+        "L. Botros <l.botros@cs.ru.nl>"
+    ],
+    "build": {
+        "appId": "cryptify",
+        "files": ["dist/**/*", "./build/*"],
+        "dmg": {
+            "contents": [
+                {
+                    "x": 110,
+                    "y": 150
+                },
+                {
+                    "x": 240,
+                    "y": 150,
+                    "type": "link",
+                    "path": "/Applications"
+                }
+            ]
         },
-        {
-          "x": 240,
-          "y": 150,
-          "type": "link",
-          "path": "/Applications"
+        "linux": {
+            "target": ["AppImage", "deb"]
+        },
+        "win": {
+            "category": "Security"
+        },
+        "directories": {
+            "buildResources": "assets"
+        },
+        "mac": {
+            "category": "Utilities"
         }
-      ]
     },
-    "linux": {
-      "target": ["AppImage", "deb"]
+    "dependencies": {
+        "@e4a/pg-wasm": "^0.3.2",
+        "@privacybydesign/yivi-client": "^0.1.2",
+        "@privacybydesign/yivi-core": "^0.1.2",
+        "@privacybydesign/yivi-css": "^0.1.2",
+        "@privacybydesign/yivi-popup": "^0.1.2",
+        "@transcend-io/conflux": "^3.2.0",
+        "craco": "0.0.3",
+        "node-polyfill-webpack-plugin": "^2.0.1",
+        "react": "^18.1.0",
+        "react-circular-progressbar": "^2.0.3",
+        "react-device-detect": "^2.2.2",
+        "react-dom": "^18.1.0",
+        "react-file-drop": "^3.1.5",
+        "react-scripts": "^5.0.1",
+        "streamsaver": "^2.0.5",
+        "web-streams-polyfill": "^3.0.3"
     },
-    "win": {
-      "category": "Security"
+    "scripts": {
+        "start": "PORT=8080 craco start",
+        "build-stable": "REACT_APP_ENV=stable craco build",
+        "build-main": "REACT_APP_ENV=main craco build",
+        "dist-electron": "electron-builder",
+        "test": "craco test",
+        "eject": "craco eject"
     },
-    "directories": {
-      "buildResources": "assets"
+    "eslintConfig": {
+        "extends": "react-app"
     },
-    "mac": {
-      "category": "Utilities"
+    "browserslist": {
+        "production": [">0.2%", "not dead", "not op_mini all"],
+        "development": [
+            "last 1 chrome version",
+            "last 1 firefox version",
+            "last 1 safari version"
+        ]
+    },
+    "devDependencies": {
+        "@craco/craco": "^6.4.5",
+        "@testing-library/jest-dom": "^4.2.4",
+        "@testing-library/react": "^9.3.2",
+        "@testing-library/user-event": "^7.1.2",
+        "@types/jest": "^24.0.0",
+        "@types/node": "^12.12.39",
+        "@types/react": "^18.0.9",
+        "@types/react-dom": "^18.0.4",
+        "@types/streamsaver": "^2.0.0",
+        "electron": "^8.2.5",
+        "electron-builder": "^22.6.0",
+        "electron-reload": "^1.5.0",
+        "nodemon": "^2.0.3",
+        "typescript": "^3.9.6"
     }
-  },
-  "dependencies": {
-    "@e4a/pg-wasm": "^0.3.2",
-    "@privacybydesign/yivi-client": "^0.1.2",
-    "@privacybydesign/yivi-core": "^0.1.2",
-    "@privacybydesign/yivi-css": "^0.1.2",
-    "@privacybydesign/yivi-popup": "^0.1.2",
-    "@transcend-io/conflux": "^3.2.0",
-    "craco": "0.0.3",
-    "node-polyfill-webpack-plugin": "^2.0.1",
-    "react": "^18.1.0",
-    "react-circular-progressbar": "^2.0.3",
-    "react-device-detect": "^2.2.2",
-    "react-dom": "^18.1.0",
-    "react-file-drop": "^3.1.5",
-    "react-scripts": "^5.0.1",
-    "streamsaver": "^2.0.5",
-    "web-streams-polyfill": "^3.0.3"
-  },
-  "scripts": {
-    "start": "PORT=8080 craco start",
-    "build-stable": "REACT_APP_ENV=production craco build",
-    "build-main": "craco build",
-    "dist-electron": "electron-builder",
-    "test": "craco test",
-    "eject": "craco eject"
-  },
-  "eslintConfig": {
-    "extends": "react-app"
-  },
-  "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  },
-  "devDependencies": {
-    "@craco/craco": "^6.4.5",
-    "@testing-library/jest-dom": "^4.2.4",
-    "@testing-library/react": "^9.3.2",
-    "@testing-library/user-event": "^7.1.2",
-    "@types/jest": "^24.0.0",
-    "@types/node": "^12.12.39",
-    "@types/react": "^18.0.9",
-    "@types/react-dom": "^18.0.4",
-    "@types/streamsaver": "^2.0.0",
-    "electron": "^8.2.5",
-    "electron-builder": "^22.6.0",
-    "electron-reload": "^1.5.0",
-    "nodemon": "^2.0.3",
-    "typescript": "^3.9.6"
-  }
 }
