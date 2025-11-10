@@ -2,3 +2,6 @@ dist/
 data/
 irma/
 target/
+
+.idea
+.vscode
