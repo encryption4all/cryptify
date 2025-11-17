@@ -33,4 +33,6 @@ USER nonroot
 
 RUN mkdir -p /tmp/data
 
+EXPOSE 8000
+
 CMD ["/bin/sh", "-c", "/usr/local/bin/cryptify-backend"]
