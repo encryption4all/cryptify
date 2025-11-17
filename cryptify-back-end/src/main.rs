@@ -86,7 +86,7 @@ async fn upload_init(
         }
     };
 
-    let init_cryptify_token = bytes_to_hex(&rand::thread_rng().gen::<[u8; 32]>());
+    let init_cryptify_token = bytes_to_hex(&rand::rng().random::<[u8; 32]>());
 
     match request.recipient.parse() {
         Ok(recipient) => {
@@ -190,7 +190,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
         let cryptify_token = match request.headers().get_one("CryptifyToken") {
             Some(cryptify_token) => cryptify_token,
             None => {
-                return rocket::request::Outcome::Failure((
+                return rocket::request::Outcome::Error((
                     rocket::http::Status::BadRequest,
                     "Missing Cryptify Token header".into(),
                 ))
@@ -200,7 +200,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
         let content_range = match request.headers().get_one("Content-Range") {
             Some(content_range) => content_range,
             None => {
-                return rocket::request::Outcome::Failure((
+                return rocket::request::Outcome::Error((
                     rocket::http::Status::BadRequest,
                     "Missing content range".into(),
                 ))
@@ -210,7 +210,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
         let content_range = match content_range {
             Ok(v) => v,
             Err(e) => {
-                return rocket::request::Outcome::Failure((rocket::http::Status::BadRequest, e))
+                return rocket::request::Outcome::Error((rocket::http::Status::BadRequest, e))
             }
         };
 
@@ -339,7 +339,7 @@ impl<'r> FromRequest<'r> for FinalizeHeaders {
         let content_range = match request.headers().get_one("Content-Range") {
             Some(content_range) => content_range,
             None => {
-                return rocket::request::Outcome::Failure((
+                return rocket::request::Outcome::Error((
                     rocket::http::Status::BadRequest,
                     "Missing content range".into(),
                 ))
@@ -349,7 +349,7 @@ impl<'r> FromRequest<'r> for FinalizeHeaders {
         let content_range = match content_range.parse::<ContentRange>() {
             Ok(v) => v,
             Err(e) => {
-                return rocket::request::Outcome::Failure((rocket::http::Status::BadRequest, e))
+                return rocket::request::Outcome::Error((rocket::http::Status::BadRequest, e))
             }
         };
         rocket::request::Outcome::Success(FinalizeHeaders { content_range })
