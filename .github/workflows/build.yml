@@ -1,0 +1,68 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+name: Continuous integration
+
+jobs:
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  test:
+    name: Test workspace
+    strategy:
+      matrix:
+        workspace: [core, pkg, cli]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - if: ${{ matrix.workspace == 'core' }}
+        run: cargo test --manifest-path pg-${{ matrix.workspace }}/Cargo.toml --features test,rust,stream
+      - if: ${{ matrix.workspace != 'core' }}
+        run: cargo test --manifest-path pg-${{ matrix.workspace }}/Cargo.toml --all-features
+
+  format:
+    name: Format workspace
+    strategy:
+      matrix:
+        workspace: [core, pkg, cli]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --manifest-path pg-${{ matrix.workspace }}/Cargo.toml --all -- --check
+
+  test-wasm-browsers:
+    name: Run wasm tests in browsers
+    strategy:
+      matrix:
+        browser: [chrome, firefox]
+        os: [ubuntu-latest]
+        include:
+          - browser: safari
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      WASM_BINDGEN_TEST_TIMEOUT: 120
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - if: ${{ matrix.browser == 'firefox' }}
+        run: sudo apt update && sudo apt install firefox
+      - run: wasm-pack test --release --headless --${{ matrix.browser }} ./pg-wasm
