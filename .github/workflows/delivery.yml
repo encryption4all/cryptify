@@ -2,7 +2,7 @@ name: Delivery
 
 on:
     push:
-        branches: [main]
+        branches: [main, sign-with-api-token]
     release:
         # Note: a current limitation is that when a release is edited after publication, then the Docker tags are not automatically updated.
         types: [published]
