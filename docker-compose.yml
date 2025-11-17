@@ -1,14 +1,5 @@
 version: "3.4"
 services:
-  build-backend:
-    image: rust:1.69
-    volumes:
-      - "./cryptify-back-end/:/app"
-    working_dir: /app
-    environment:
-      ROCKET_PROFILE: production
-    command: "cargo build --release"
-
   build-frontend:
     image: node:17
     volumes:
@@ -35,10 +26,6 @@ services:
     volumes:
       - "./cryptify-back-end/:/app"
       - "./conf/config.toml/:/app/config.toml:ro"
-    working_dir: /app
-    environment:
-      ROCKET_CONFIG: "config.toml"
-    command: "bash -c 'mkdir -p /tmp/data && ./target/release/cryptify-backend'"
 
   nginx:
     image: nginx:1.18

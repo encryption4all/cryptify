@@ -60,7 +60,7 @@ jobs:
                   cache-to: type=gha,mode=max
 
             - name: Scan Image
-              uses: anchore/scan-action@v3
+              uses: anchore/scan-action@v4
               id: scan
               with:
                   image: local/postguard-backend:scan
@@ -82,5 +82,5 @@ jobs:
                   context: .
                   file: backend.Dockerfile
                   push: true
-                  tags: ${{ steps.meta.outputs.tags }}
+                  tags: ${{ steps.meta.outputs.tags || 'edge' }}
                   labels: ${{ steps.meta.outputs.labels }}
