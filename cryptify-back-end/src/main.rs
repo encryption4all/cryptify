@@ -69,6 +69,10 @@ struct InitResponder {
     cryptify_token: CryptifyToken,
 }
 
+#[get("/health")]
+fn health() -> &'static str {
+    "OK"
+}
 #[post("/fileupload/init", data = "<request>")]
 async fn upload_init(
     config: &State<CryptifyConfig>,
@@ -431,7 +435,7 @@ async fn rocket() -> _ {
 
     rocket
         .attach(cors)
-        .mount("/", routes![upload_init, upload_chunk, upload_finalize,])
+        .mount("/", routes![health,upload_init, upload_chunk, upload_finalize,])
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
