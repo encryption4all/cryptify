@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "main": "./public/electron.js",
-    "homepage": "/filesharing/",
+    "homepage": "/",
     "authors": [
         "Rowan Goemans <rowan.goemans@bdtnl.com>",
         "L. Botros <l.botros@cs.ru.nl>"
