@@ -27,7 +27,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, http::Header, launch, post, put, request::FromRequest,
+    data::ToByteUnit, fairing::AdHoc, http::Header, launch, get, post, put, request::FromRequest,
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
