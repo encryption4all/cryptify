@@ -71,7 +71,7 @@ jobs:
 
             -   name: Scan Backend Image
                 uses: anchore/scan-action@v4
-                id: scan
+                id: scan-be
                 with:
                     image: local/postguard-backend:scan
                     only-fixed: true
@@ -81,7 +81,7 @@ jobs:
 
             -   name: Scan Frontend Image
                 uses: anchore/scan-action@v4
-                id: scan
+                id: scan-fe
                 with:
                     image: local/postguard-frontend:scan
                     only-fixed: true
