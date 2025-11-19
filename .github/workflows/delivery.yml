@@ -29,11 +29,21 @@ jobs:
                 run: git rev-parse HEAD | grep -x ${{ github.sha }}
                 shell: bash
 
-            -   name: Docker meta
-                id: meta
+            -   name: Docker backend meta
+                id: meta-be
                 uses: docker/metadata-action@v5
                 with:
-                    images: ghcr.io/${{ github.repository }}
+                    images: ghcr.io/${{ github.repository }} - backend
+                    tags: |
+                        type=semver,pattern={{major}}.{{minor}}.{{patch}}
+                        type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
+                        type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
+
+            -   name: Docker frontend meta
+                id: meta-fe
+                uses: docker/metadata-action@v5
+                with:
+                    images: ghcr.io/${{ github.repository }} - frontend
                     tags: |
                         type=semver,pattern={{major}}.{{minor}}.{{patch}}
                         type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
@@ -111,8 +121,8 @@ jobs:
                     context: .
                     file: backend.Dockerfile
                     push: true
-                    tags: ${{ steps.meta.outputs.tags || 'edge' }}
-                    labels: ${{ steps.meta.outputs.labels }}-backend
+                    tags: ${{ steps.meta-be.outputs.tags || 'edge' }}
+                    labels: ${{ steps.meta-be.outputs.labels }}
             -   name: Push frontend image to GitHub Container Registry
                 uses: docker/build-push-action@v5
                 if: ${{ github.event_name == 'release' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
@@ -120,5 +130,5 @@ jobs:
                     context: .
                     file: frontend.Dockerfile
                     push: true
-                    tags: ${{ steps.meta.outputs.tags || 'edge' }}
-                    labels: ${{ steps.meta.outputs.labels }}-frontend
+                    tags: ${{ steps.meta-fe.outputs.tags || 'edge' }}
+                    labels: ${{ steps.meta-fe.outputs.labels }}
