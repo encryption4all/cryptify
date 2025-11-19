@@ -33,7 +33,7 @@ jobs:
                 id: meta-be
                 uses: docker/metadata-action@v5
                 with:
-                    images: ghcr.io/${{ github.repository }} - backend
+                    images: ghcr.io/${{ github.repository }}-backend
                     tags: |
                         type=semver,pattern={{major}}.{{minor}}.{{patch}}
                         type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
@@ -43,7 +43,7 @@ jobs:
                 id: meta-fe
                 uses: docker/metadata-action@v5
                 with:
-                    images: ghcr.io/${{ github.repository }} - frontend
+                    images: ghcr.io/${{ github.repository }}-frontend
                     tags: |
                         type=semver,pattern={{major}}.{{minor}}.{{patch}}
                         type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
