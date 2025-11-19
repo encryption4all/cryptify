@@ -16,6 +16,7 @@ RUN npm install --legacy-peer-deps
 RUN npm run build-stable
 
 FROM nginx:alpine
+
 COPY --from=builder /app/build /var/www/html
 COPY --from=builder /app/nginx.conf /etc/nginx/nginx.conf
 
