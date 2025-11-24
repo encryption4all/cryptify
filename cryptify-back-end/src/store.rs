@@ -1,5 +1,6 @@
 use crate::email;
-
+use aws_config;
+use aws_sdk_s3;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -7,6 +8,7 @@ use std::{
 };
 
 use rocket::tokio::{sync::Notify, time::Instant};
+use crate::config::CryptifyConfig;
 
 pub struct FileState {
     pub uploaded: u64,
@@ -35,6 +37,11 @@ pub struct Store {
     shared: Arc<SharedState>,
 }
 
+pub struct S3Client {
+    pub client: aws_sdk_s3::Client,
+    pub bucket_name: String,
+}
+
 impl Store {
     pub fn new() -> Self {
         let result = Store {
@@ -51,6 +58,51 @@ impl Store {
 
         rocket::tokio::spawn(purge_task(result.shared.clone()));
         result
+    }
+
+    pub async fn new_s3(config: CryptifyConfig) -> Result<S3Client, Box<dyn std::error::Error + Send + Sync>> {
+        let endpoint = config.s3_endpoint().map(|s| s.to_string());
+        let access_key = config.s3_access_key().map(|s| s.to_string());
+        let secret_key = config.s3_secret_key().map(|s| s.to_string());
+        let region = config.s3_region().map(|s| s.to_string());
+        let bucket_name = config.s3_bucket().map(|s| s.to_string());
+
+
+        // exit if no S3 configuration is provided, assume local storage will be used
+        if endpoint.is_none() && access_key.is_none() && secret_key.is_none() && region.is_none() && bucket_name.is_none() {
+            log::info!("No S3 configuration provided, using local storage.");
+            return Err("No S3 configuration provided".into());
+        }
+
+        // build the AWS S3 client configuration
+        let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        if let Some(endpoint) = endpoint {
+            builder = builder.endpoint_url(endpoint);
+        }
+        if let Some(access_key) = access_key {
+            if let Some(secret_key) = secret_key {
+                use aws_sdk_s3::config::Credentials;
+                builder = builder.credentials_provider(Credentials::new(
+                    &access_key,
+                    &secret_key,
+                    None,
+                    None,
+                    "cryptify",
+                ));
+            }
+        }
+        if let Some(region) = region {
+            use aws_config::Region;
+            builder = builder.region(Region::new(region));
+        }
+        let s3config = builder.load().await;
+        let client = aws_sdk_s3::Client::new(&s3config);
+
+        // format to the s3_client struct
+        Ok(S3Client {
+            client,
+            bucket_name: bucket_name.unwrap_or_else(|| "cryptify-default-bucket".to_string()),
+        })
     }
 
     pub fn create(&self, id: String, filestate: FileState) {

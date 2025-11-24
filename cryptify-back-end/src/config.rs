@@ -10,9 +10,14 @@ pub struct RawCryptifyConfig {
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
     pkg_url: String,
+    s3_endpoint: Option<String>,
+    s3_access_key: Option<String>,
+    s3_secret_key: Option<String>,
+    s3_bucket: Option<String>,
+    s3_region: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(from = "RawCryptifyConfig")]
 pub struct CryptifyConfig {
     server_url: String,
@@ -23,6 +28,12 @@ pub struct CryptifyConfig {
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
     pkg_url: String,
+
+    s3_endpoint: Option<String>,
+    s3_access_key: Option<String>,
+    s3_secret_key: Option<String>,
+    s3_bucket: Option<String>,
+    s3_region: Option<String>,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -39,6 +50,11 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_credentials: config.smtp_credentials,
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
+            s3_endpoint: config.s3_endpoint,
+            s3_access_key: config.s3_access_key,
+            s3_secret_key: config.s3_secret_key,
+            s3_bucket: config.s3_bucket,
+            s3_region: config.s3_region,
         }
     }
 }
@@ -74,5 +90,24 @@ impl CryptifyConfig {
 
     pub fn pkg_url(&self) -> &str {
         &self.pkg_url
+    }
+
+    pub fn s3_endpoint(&self) -> Option<&str> {
+        self.s3_endpoint.as_deref()
+    }
+
+    pub fn s3_access_key(&self) -> Option<&str> {
+        self.s3_access_key.as_deref()
+    }
+
+    pub fn s3_secret_key(&self) -> Option<&str> {
+        self.s3_secret_key.as_deref()
+    }
+
+    pub fn s3_bucket(&self) -> Option<&str> {
+        self.s3_bucket.as_deref()
+    }
+    pub fn s3_region(&self) -> Option<&str> {
+        self.s3_region.as_deref()
     }
 }

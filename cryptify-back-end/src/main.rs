@@ -77,10 +77,27 @@ fn health() -> &'static str {
 async fn upload_init(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
+    s3_client: &State<Option<store::S3Client>>,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().hyphenated().to_string();
+
+    if s3_client.is_some() {
+        let client = s3_client.as_ref().unwrap().client.clone();
+        // Just a text file with "hello world" to create the object in S3
+        let body = Some(aws_sdk_s3::primitives::ByteStream::from_static(b"hello world"));
+        client.put_object()
+            .bucket(&s3_client.as_ref().unwrap().bucket_name)
+            .key(&uuid)
+            .body(body.unwrap())
+            .send()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                Error::InternalServerError(None)
+            })?;
+    } else {}
 
     match File::create(Path::new(config.data_dir()).join(&uuid)).await {
         Ok(v) => v,
@@ -200,7 +217,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
                 ))
             }
         }
-        .to_string();
+            .to_string();
         let content_range = match request.headers().get_one("Content-Range") {
             Some(content_range) => content_range,
             None => {
@@ -210,7 +227,7 @@ impl<'r> FromRequest<'r> for UploadHeaders {
                 ))
             }
         }
-        .parse::<ContentRange>();
+            .parse::<ContentRange>();
         let content_range = match content_range {
             Ok(v) => v,
             Err(e) => {
@@ -433,6 +450,8 @@ async fn rocket() -> _ {
         .to_cors()
         .expect("unable to configure CORS");
 
+    let s3_client = Store::new_s3(config.clone()).await.ok();
+
     rocket
         .attach(cors)
         .mount("/", routes![health,upload_init, upload_chunk, upload_finalize,])
@@ -440,4 +459,5 @@ async fn rocket() -> _ {
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
         .manage(vk)
+        .manage(s3_client)
 }
