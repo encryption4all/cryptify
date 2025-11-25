@@ -31,3 +31,4 @@ aws-sdk-s3 = "1.115.0"
 tokio-util = { version = "0.7.17", features = ["compat"] }
 pg-core = { version = "0.3.0-rc.0", features = ["rust", "stream"] }
 minreq = { version = "2.14.1", features = ["json-using-serde", "https-native"]}
+bytes = "1.10.1"

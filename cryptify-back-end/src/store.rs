@@ -13,6 +13,8 @@ use crate::config::CryptifyConfig;
 pub struct FileState {
     pub uploaded: u64,
     pub cryptify_token: String,
+    pub s3_upload_id: String,
+    pub s3_parts: Vec<aws_sdk_s3::types::CompletedPart>,
     pub expires: i64,
     pub recipients: lettre::message::Mailboxes,
     pub mail_content: String,
@@ -37,6 +39,7 @@ pub struct Store {
     shared: Arc<SharedState>,
 }
 
+#[derive(Clone)]
 pub struct S3Client {
     pub client: aws_sdk_s3::Client,
     pub bucket_name: String,

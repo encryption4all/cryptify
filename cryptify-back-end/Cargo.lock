@@ -908,6 +908,7 @@ dependencies = [
  "askama",
  "aws-config",
  "aws-sdk-s3",
+ "bytes",
  "chrono",
  "irma",
  "lettre",

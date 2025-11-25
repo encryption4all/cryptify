@@ -3,6 +3,7 @@ mod email;
 mod error;
 mod store;
 
+use bytes::Bytes;
 use crate::config::CryptifyConfig;
 use crate::email::send_email;
 use crate::error::Error;
@@ -83,29 +84,30 @@ async fn upload_init(
     let current_time = chrono::offset::Utc::now().timestamp();
     let uuid = uuid::Uuid::new_v4().hyphenated().to_string();
 
+    let mut s3_upload_id = String::new();
+
     if s3_client.is_some() {
         let client = s3_client.as_ref().unwrap().client.clone();
-        // Just a text file with "hello world" to create the object in S3
-        let body = Some(aws_sdk_s3::primitives::ByteStream::from_static(b"hello world"));
-        client.put_object()
-            .bucket(&s3_client.as_ref().unwrap().bucket_name)
+        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
+        let multipart_upload_res = client
+            .create_multipart_upload()
+            .bucket(bucket_name)
             .key(&uuid)
-            .body(body.unwrap())
             .send()
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                Error::InternalServerError(None)
-            })?;
-    } else {}
+            .await;
 
-    match File::create(Path::new(config.data_dir()).join(&uuid)).await {
-        Ok(v) => v,
-        Err(e) => {
-            log::error!("{}", e);
-            return Err(Error::InternalServerError(None));
-        }
-    };
+        let multipart_upload_res = multipart_upload_res.expect("Could not create S3 multipart upload");
+
+        s3_upload_id = multipart_upload_res.upload_id().ok_or(Error::InternalServerError(None))?.to_string();
+    } else {
+        match File::create(Path::new(config.data_dir()).join(&uuid)).await {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("{}", e);
+                return Err(Error::InternalServerError(None));
+            }
+        };
+    }
 
     let init_cryptify_token = bytes_to_hex(&rand::rng().random::<[u8; 32]>());
 
@@ -115,6 +117,8 @@ async fn upload_init(
                 uuid.clone(),
                 FileState {
                     cryptify_token: init_cryptify_token.clone(),
+                    s3_upload_id: s3_upload_id,
+                    s3_parts: Vec::new(),
                     uploaded: 0,
                     expires: current_time + 1_209_600,
                     recipients: recipient,
@@ -269,6 +273,7 @@ async fn upload_chunk(
     store: &State<Store>,
     uuid: &str,
     headers: UploadHeaders,
+    s3_client: &State<Option<store::S3Client>>,
     data: Data<'_>,
 ) -> Result<Option<UploadResponder>, Error> {
     let state = match store.get(uuid) {
@@ -308,19 +313,6 @@ async fn upload_chunk(
         )));
     }
 
-    let mut file = match OpenOptions::new()
-        .write(true)
-        .open(Path::new(config.data_dir()).join(uuid))
-        .await
-    {
-        Ok(v) => v,
-        Err(_) => return Ok(None),
-    };
-
-    file.seek(std::io::SeekFrom::Start(start))
-        .await
-        .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
-
     let data = data
         .open((end - start).bytes())
         .into_bytes()
@@ -329,20 +321,63 @@ async fn upload_chunk(
     if !data.is_complete() || data.len() as u64 != end - start {
         return Err(Error::BadRequest(Some("Data not complete".to_owned())));
     }
+    let sha_sum: String;
 
-    let data = data.into_inner();
-    file.write_all(&data)
-        .await
-        .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+    if s3_client.is_some() {
+        let client = s3_client.as_ref().unwrap().client.clone();
+        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
 
-    let shasum = compute_hash(&headers.cryptify_token.into_bytes(), &data);
-    state.cryptify_token = shasum.clone();
+        let byte_stream = data.into_inner();
 
+        let part_number = (start / CHUNK_SIZE + 1) as i32;
+        let upload_part_res = client
+            .upload_part()
+            .bucket(bucket_name)
+            .key(uuid)
+            .upload_id(&state.s3_upload_id)
+            .part_number(part_number)
+            .body(byte_stream.into())
+            .send()
+            .await;
+
+        let upload_part_res = upload_part_res.map_err(|_| Error::InternalServerError(Some("Could not upload part to S3".to_owned())))?;
+
+        // push the etag to the state for finalization later
+        state.s3_parts.push(
+            aws_sdk_s3::types::CompletedPart::builder()
+                .set_e_tag(upload_part_res.e_tag().map(|s| s.to_string()))
+                .part_number(part_number)
+                .build(),
+        );
+
+        sha_sum = compute_hash(&headers.cryptify_token.into_bytes(), &upload_part_res.e_tag().unwrap_or_default().as_bytes());
+    } else {
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .open(Path::new(config.data_dir()).join(uuid))
+            .await
+        {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        };
+
+        file.seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+
+        let data = data.into_inner();
+        file.write_all(&data)
+            .await
+            .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+
+        sha_sum = compute_hash(&headers.cryptify_token.into_bytes(), &data);
+    }
+
+    state.cryptify_token = sha_sum.clone();
     state.uploaded += end - start;
-
     Ok(Some(UploadResponder {
         body: (),
-        cryptify_token: CryptifyToken(shasum),
+        cryptify_token: CryptifyToken(sha_sum),
     }))
 }
 
@@ -383,6 +418,7 @@ async fn upload_finalize(
     store: &State<Store>,
     vk: &State<Parameters<VerifyingKey>>,
     headers: FinalizeHeaders,
+    s3_client: &State<Option<store::S3Client>>,
     uuid: &str,
 ) -> Result<Option<()>, Error> {
     let state = match store.get(uuid) {
@@ -395,10 +431,46 @@ async fn upload_finalize(
         return Err(Error::UnprocessableEntity(None));
     }
 
-    let mut file = File::open(Path::new(config.data_dir()).join(uuid))
-        .await
-        .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
-        .compat();
+    let mut file;
+
+    if s3_client.is_some() {
+        let client = s3_client.as_ref().unwrap().client.clone();
+        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
+
+        let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
+            .set_parts(Some(state.s3_parts.clone()))
+            .build();
+
+        let complete_multipart_upload_res = client
+            .complete_multipart_upload()
+            .bucket(&bucket_name)
+            .key(uuid)
+            .upload_id(&state.s3_upload_id)
+            .multipart_upload(completed_upload)
+            .send()
+            .await;
+
+        complete_multipart_upload_res.map_err(|_| Error::InternalServerError(Some("Could not complete S3 multipart upload".to_owned())))?;
+
+        // open the file to get the sender
+        file = client
+            .get_object()
+            .bucket(&bucket_name)
+            .key(uuid)
+            .send()
+            .await
+            .map_err(|_| Error::InternalServerError(Some("could not open file from S3".to_string())))?
+            .body
+            .into_async_read()
+            .compat();
+    } else {
+        // read with the s3 client so it's the same type as above but still works for local files
+        file = aws_sdk_s3::primitives::ByteStream::from_path(Path::new(config.data_dir()).join(uuid))
+            .await
+            .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
+            .into_async_read()
+            .compat();
+    }
 
     let sender = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
         .await
@@ -422,10 +494,45 @@ async fn upload_finalize(
     Ok(Some(()))
 }
 
+#[get("/<uuid>")]
+async fn s3fileServer(
+    _config: &State<CryptifyConfig>,
+    _store: &State<Store>,
+    s3_client: &State<Option<store::S3Client>>,
+    uuid: &str,
+) -> Option<rocket::response::stream::ByteStream![Bytes]> {
+    // If there is no S3 configuration, we don't serve anything here.
+    let s3_client = match &**s3_client {
+        Some(c) => c,
+        None => return None,
+    };
+
+    let bucket = &s3_client.bucket_name;
+    let resp = s3_client
+        .client
+        .get_object()
+        .bucket(bucket)
+        .key(uuid)
+        .send()
+        .await
+        .ok()?;
+
+    let mut body = resp.body;
+
+    Some(rocket::response::stream::ByteStream! {
+        while let Some(bytes_res) = body.next().await {
+            match bytes_res {
+                Ok(bytes) => yield bytes,
+                Err(_) => break,
+            }
+        }
+    })
+}
+
 #[launch]
 async fn rocket() -> _ {
-    let rocket = rocket::build();
-    let config = rocket
+    let rocket_base = rocket::build();
+    let config = rocket_base
         .figment()
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
@@ -452,12 +559,21 @@ async fn rocket() -> _ {
 
     let s3_client = Store::new_s3(config.clone()).await.ok();
 
-    rocket
+    // build rocket in one expression and assign it back
+    let mut rocket = rocket_base
         .attach(cors)
-        .mount("/", routes![health,upload_init, upload_chunk, upload_finalize,])
-        .mount("/filedownload", FileServer::from(config.data_dir()))
+        .mount("/", routes![health, upload_init, upload_chunk, upload_finalize])
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
         .manage(vk)
-        .manage(s3_client)
+        .manage(s3_client.clone());
+
+    // conditionally mount the file download routes
+    if s3_client.is_some() {
+        rocket = rocket.mount("/filedownload", routes![s3fileServer]);
+    } else {
+        rocket = rocket.mount("/filedownload", FileServer::from(config.data_dir()));
+    }
+
+    rocket
 }
