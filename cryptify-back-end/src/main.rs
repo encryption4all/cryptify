@@ -355,7 +355,9 @@ async fn upload_chunk(
             );
         }
 
-        sha_sum = compute_hash(&headers.cryptify_token.into_bytes(), &upload_part_res.e_tag().unwrap_or_default().as_bytes());
+        let etag = upload_part_res.e_tag()
+            .ok_or(Error::InternalServerError(Some("Missing ETag from S3 upload part response".to_owned())))?;
+        sha_sum = compute_hash(&headers.cryptify_token.into_bytes(), etag.as_bytes());
     } else {
         let mut file = match OpenOptions::new()
             .write(true)
