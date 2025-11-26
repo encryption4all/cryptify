@@ -305,7 +305,7 @@ async fn upload_chunk(
 
     if end - start > config.chunk_size() {
         return Err(Error::BadRequest(Some(
-            "File chunk too large; the maximum is 1 MB".to_owned(),
+            format!("File chunk too large; the maximum is {} bytes", config.chunk_size()),
         )));
     }
 
