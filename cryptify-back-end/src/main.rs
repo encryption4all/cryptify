@@ -85,8 +85,8 @@ async fn upload_init(
     let mut s3_upload_id = String::new();
 
     if s3_client.is_some() {
-        let client = s3_client.as_ref().unwrap().client.clone();
-        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
+        let client = &s3_client.as_ref().unwrap().client;
+        let bucket_name = &s3_client.as_ref().unwrap().bucket_name;
         let multipart_upload_res = client
             .create_multipart_upload()
             .bucket(bucket_name)
