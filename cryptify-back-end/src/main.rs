@@ -94,7 +94,11 @@ async fn upload_init(
             .send()
             .await;
 
-        let multipart_upload_res = multipart_upload_res.expect("Could not create S3 multipart upload");
+        let multipart_upload_res = multipart_upload_res
+            .map_err(|e| {
+                log::error!("Failed to create S3 multipart upload: {:?}", e);
+                Error::InternalServerError(Some("Could not create S3 multipart upload".to_owned()))
+            })?;
 
         s3_upload_id = multipart_upload_res.upload_id().ok_or(Error::InternalServerError(None))?.to_string();
     } else {
