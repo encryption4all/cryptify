@@ -38,8 +38,6 @@ use rocket_cors::{AllowedOrigins, CorsOptions};
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-const CHUNK_SIZE: u64 = (1024 * 1024)*5; // 5 MB
-
 #[derive(Serialize, Deserialize)]
 struct InitBody {
     recipient: String,
@@ -301,7 +299,7 @@ async fn upload_chunk(
         )));
     }
 
-    if end - start > CHUNK_SIZE {
+    if end - start > config.chunk_size() {
         return Err(Error::BadRequest(Some(
             "File chunk too large; the maximum is 1 MB".to_owned(),
         )));
@@ -329,7 +327,7 @@ async fn upload_chunk(
 
         let byte_stream = data.into_inner();
 
-        let part_number = (start / CHUNK_SIZE + 1) as i32;
+        let part_number = (start / config.chunk_size() + 1) as i32;
         let upload_part_res = client
             .upload_part()
             .bucket(bucket_name)
@@ -469,7 +467,7 @@ async fn upload_finalize(
             .into_async_read()
             .compat();
     } else {
-        // read with the s3 client so it's the same type as above but still works for local files
+        // read with the s3 client, so it's the same type as above but still works for local files
         file = aws_sdk_s3::primitives::ByteStream::from_path(Path::new(config.data_dir()).join(uuid))
             .await
             .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
@@ -500,7 +498,7 @@ async fn upload_finalize(
 }
 
 #[get("/<uuid>")]
-async fn s3fileServer(
+async fn s3_file_server(
     _config: &State<CryptifyConfig>,
     _store: &State<Store>,
     s3_client: &State<Option<store::S3Client>>,
@@ -575,8 +573,8 @@ async fn rocket() -> _ {
 
     // conditionally mount the file download routes
     if s3_client.is_some() {
-        rocket = rocket.mount("/filedownload", routes![s3fileServer]);
-        if CHUNK_SIZE < 5 * 1024 * 1024 {
+        rocket = rocket.mount("/filedownload", routes![s3_file_server]);
+        if config.chunk_size() < 5 * 1024 * 1024 { // 5 MB is the usual minimum for S3 multipart uploads
             log::warn!("S3 storage is enabled, but CHUNK_SIZE is less than 5 MB. This may lead to failing uploads.");
         }
     } else {
