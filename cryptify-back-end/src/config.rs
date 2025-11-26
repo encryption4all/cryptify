@@ -10,9 +10,29 @@ pub struct RawCryptifyConfig {
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
     pkg_url: String,
+    chunk_size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RawS3Config {
+    pub s3_endpoint: Option<String>,
+    pub s3_access_key: Option<String>,
+    pub s3_secret_key: Option<String>,
+    pub s3_bucket: Option<String>,
+    pub s3_region: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawS3Config")]
+pub struct S3Config {
+    pub endpoint: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub bucket:  Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(from = "RawCryptifyConfig")]
 pub struct CryptifyConfig {
     server_url: String,
@@ -23,10 +43,14 @@ pub struct CryptifyConfig {
     smtp_credentials: Option<(String, String)>,
     allowed_origins: String,
     pkg_url: String,
+    chunk_size: u64,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
-    fn from(config: RawCryptifyConfig) -> Self {
+    fn from(mut config: RawCryptifyConfig) -> Self {
+        // deoption chunk_size to default value if not set
+        let chunk_size = config.chunk_size.take().unwrap_or(1024 * 1024); // 1 MB default for backward compatibility with older configs and front-ends
+        
         CryptifyConfig {
             server_url: config.server_url,
             data_dir: config.data_dir,
@@ -39,6 +63,19 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_credentials: config.smtp_credentials,
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
+            chunk_size,
+        }
+    }
+}
+
+impl From<RawS3Config> for S3Config {
+    fn from(config: RawS3Config) -> Self {
+        S3Config {
+            endpoint: config.s3_endpoint,
+            access_key: config.s3_access_key,
+            secret_key: config.s3_secret_key,
+            bucket: config.s3_bucket,
+            region: config.s3_region,
         }
     }
 }
@@ -74,5 +111,9 @@ impl CryptifyConfig {
 
     pub fn pkg_url(&self) -> &str {
         &self.pkg_url
+    }
+    
+    pub fn chunk_size(&self) -> u64 {
+        self.chunk_size
     }
 }
