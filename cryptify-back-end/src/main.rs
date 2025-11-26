@@ -579,7 +579,7 @@ async fn rocket() -> _ {
         .manage(s3_client.clone());
 
     // conditionally mount the file download routes
-    if let Some(_client) = &s3_client {
+    if s3_client.is_some() {
         rocket = rocket.mount("/filedownload", routes![s3_file_server]);
         if config.chunk_size() < 5 * 1024 * 1024 { // 5 MB is the usual minimum for S3 multipart uploads
             log::warn!("S3 storage is enabled, but CHUNK_SIZE is less than 5 MB. This may lead to failing uploads.");

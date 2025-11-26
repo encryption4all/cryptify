@@ -66,15 +66,16 @@ impl Store {
     }
 
     pub async fn new_s3(config: S3Config) -> Result<S3Client, Box<dyn std::error::Error + Send + Sync>> {
-        let endpoint = config.endpoint;
-        let access_key = config.access_key;
-        let secret_key = config.secret_key;
-        let region = config.region;
-        let bucket_name = config.bucket;
-
+        let S3Config {
+            endpoint,
+            access_key,
+            secret_key,
+            region,
+            bucket
+        } = config;
 
         // exit if no S3 configuration is provided, assume local storage will be used
-        if endpoint.is_none() && access_key.is_none() && secret_key.is_none() && region.is_none() && bucket_name.is_none() {
+        if endpoint.is_none() && access_key.is_none() && secret_key.is_none() && region.is_none() && bucket.is_none() {
             log::info!("No S3 configuration provided, using local storage.");
             return Err("No S3 configuration provided".into());
         }
@@ -104,7 +105,7 @@ impl Store {
         // format to the s3_client struct
         Ok(S3Client {
             client,
-            bucket_name: bucket_name.unwrap_or_else(|| "cryptify-default-bucket".to_string()),
+            bucket_name: bucket.unwrap_or_else(|| "cryptify-default-bucket".to_string()),
         })
     }
 
