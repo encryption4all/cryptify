@@ -5,6 +5,7 @@ mod store;
 
 use bytes::Bytes;
 use crate::config::CryptifyConfig;
+use crate::config::S3Config;
 use crate::email::send_email;
 use crate::error::Error;
 
@@ -84,9 +85,10 @@ async fn upload_init(
 
     let mut s3_upload_id = String::new();
 
-    if s3_client.is_some() {
-        let client = &s3_client.as_ref().unwrap().client;
-        let bucket_name = &s3_client.as_ref().unwrap().bucket_name;
+    if let Some(s3) = &**s3_client {
+        let client = s3.client.clone();
+        let bucket_name = s3.bucket_name.clone();
+        
         let multipart_upload_res = client
             .create_multipart_upload()
             .bucket(bucket_name)
@@ -325,11 +327,10 @@ async fn upload_chunk(
     }
     let sha_sum: String;
 
-    if s3_client.is_some() {
-        let client = s3_client.as_ref().unwrap().client.clone();
-        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
-
+    if let Some(s3) = &**s3_client {
         let byte_stream = data.into_inner();
+        let client = s3.client.clone();
+        let bucket_name = s3.bucket_name.clone();
 
         let part_number = (start / config.chunk_size() + 1) as i32;
         let upload_part_res = client
@@ -435,11 +436,9 @@ async fn upload_finalize(
         return Err(Error::UnprocessableEntity(None));
     }
 
-    let mut file;
-
-    if s3_client.is_some() {
-        let client = s3_client.as_ref().unwrap().client.clone();
-        let bucket_name = s3_client.as_ref().unwrap().bucket_name.clone();
+    let mut file = if let Some(s3) = &**s3_client {
+        let client = s3.client.clone();
+        let bucket_name = s3.bucket_name.clone();
 
         let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
             .set_parts(Some(state.s3_parts.clone()))
@@ -462,7 +461,7 @@ async fn upload_finalize(
             })?;
 
         // open the file to get the sender
-        file = client
+        client
             .get_object()
             .bucket(&bucket_name)
             .key(uuid)
@@ -471,15 +470,15 @@ async fn upload_finalize(
             .map_err(|_| Error::InternalServerError(Some("could not open file from S3".to_string())))?
             .body
             .into_async_read()
-            .compat();
+            .compat()
     } else {
         // read with the s3 client, so it's the same type as above but still works for local files
-        file = aws_sdk_s3::primitives::ByteStream::from_path(Path::new(config.data_dir()).join(uuid))
+        aws_sdk_s3::primitives::ByteStream::from_path(Path::new(config.data_dir()).join(uuid))
             .await
             .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
             .into_async_read()
-            .compat();
-    }
+            .compat()
+    };
 
     let sender = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
         .await
@@ -511,10 +510,7 @@ async fn s3_file_server(
     uuid: &str,
 ) -> Option<rocket::response::stream::ByteStream![Bytes]> {
     // If there is no S3 configuration, we don't serve anything here.
-    let s3_client = match &**s3_client {
-        Some(c) => c,
-        None => return None,
-    };
+    let s3_client = (&**s3_client).as_ref()?;
 
     let bucket = &s3_client.bucket_name;
     let resp = s3_client
@@ -545,6 +541,11 @@ async fn rocket() -> _ {
         .figment()
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
+    
+    let s3_config = rocket_base
+        .figment()
+        .extract::<S3Config>()
+        .expect("Missing S3 configuration");
 
     let response = minreq::get(format!("{}/v2/sign/parameters", config.pkg_url())).send();
 
@@ -566,7 +567,7 @@ async fn rocket() -> _ {
         .to_cors()
         .expect("unable to configure CORS");
 
-    let s3_client = Store::new_s3(config.clone()).await.ok();
+    let s3_client = Store::new_s3(s3_config.clone()).await.ok();
 
     // build rocket in one expression and assign it back
     let mut rocket = rocket_base
@@ -578,7 +579,7 @@ async fn rocket() -> _ {
         .manage(s3_client.clone());
 
     // conditionally mount the file download routes
-    if s3_client.is_some() {
+    if let Some(_client) = &s3_client {
         rocket = rocket.mount("/filedownload", routes![s3_file_server]);
         if config.chunk_size() < 5 * 1024 * 1024 { // 5 MB is the usual minimum for S3 multipart uploads
             log::warn!("S3 storage is enabled, but CHUNK_SIZE is less than 5 MB. This may lead to failing uploads.");

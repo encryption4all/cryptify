@@ -11,11 +11,25 @@ pub struct RawCryptifyConfig {
     allowed_origins: String,
     pkg_url: String,
     chunk_size: Option<u64>,
-    s3_endpoint: Option<String>,
-    s3_access_key: Option<String>,
-    s3_secret_key: Option<String>,
-    s3_bucket: Option<String>,
-    s3_region: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawS3Config {
+    pub s3_endpoint: Option<String>,
+    pub s3_access_key: Option<String>,
+    pub s3_secret_key: Option<String>,
+    pub s3_bucket: Option<String>,
+    pub s3_region: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawS3Config")]
+pub struct S3Config {
+    pub endpoint: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub bucket:  Option<String>,
+    pub region: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,12 +44,6 @@ pub struct CryptifyConfig {
     allowed_origins: String,
     pkg_url: String,
     chunk_size: u64,
-
-    s3_endpoint: Option<String>,
-    s3_access_key: Option<String>,
-    s3_secret_key: Option<String>,
-    s3_bucket: Option<String>,
-    s3_region: Option<String>,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -56,11 +64,18 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
             chunk_size,
-            s3_endpoint: config.s3_endpoint,
-            s3_access_key: config.s3_access_key,
-            s3_secret_key: config.s3_secret_key,
-            s3_bucket: config.s3_bucket,
-            s3_region: config.s3_region,
+        }
+    }
+}
+
+impl From<RawS3Config> for S3Config {
+    fn from(config: RawS3Config) -> Self {
+        S3Config {
+            endpoint: config.s3_endpoint,
+            access_key: config.s3_access_key,
+            secret_key: config.s3_secret_key,
+            bucket: config.s3_bucket,
+            region: config.s3_region,
         }
     }
 }
@@ -100,24 +115,5 @@ impl CryptifyConfig {
     
     pub fn chunk_size(&self) -> u64 {
         self.chunk_size
-    }
-
-    pub fn s3_endpoint(&self) -> Option<&str> {
-        self.s3_endpoint.as_deref()
-    }
-
-    pub fn s3_access_key(&self) -> Option<&str> {
-        self.s3_access_key.as_deref()
-    }
-
-    pub fn s3_secret_key(&self) -> Option<&str> {
-        self.s3_secret_key.as_deref()
-    }
-
-    pub fn s3_bucket(&self) -> Option<&str> {
-        self.s3_bucket.as_deref()
-    }
-    pub fn s3_region(&self) -> Option<&str> {
-        self.s3_region.as_deref()
     }
 }

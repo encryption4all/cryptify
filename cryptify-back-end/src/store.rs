@@ -1,6 +1,7 @@
 use crate::email;
 use aws_config;
 use aws_sdk_s3;
+use aws_sdk_s3::config::Credentials;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -8,7 +9,7 @@ use std::{
 };
 
 use rocket::tokio::{sync::Notify, time::Instant};
-use crate::config::CryptifyConfig;
+use crate::config::S3Config;
 
 pub struct FileState {
     pub uploaded: u64,
@@ -63,12 +64,12 @@ impl Store {
         result
     }
 
-    pub async fn new_s3(config: CryptifyConfig) -> Result<S3Client, Box<dyn std::error::Error + Send + Sync>> {
-        let endpoint = config.s3_endpoint().map(|s| s.to_string());
-        let access_key = config.s3_access_key().map(|s| s.to_string());
-        let secret_key = config.s3_secret_key().map(|s| s.to_string());
-        let region = config.s3_region().map(|s| s.to_string());
-        let bucket_name = config.s3_bucket().map(|s| s.to_string());
+    pub async fn new_s3(config: S3Config) -> Result<S3Client, Box<dyn std::error::Error + Send + Sync>> {
+        let endpoint = config.endpoint.map(|s| s.to_string());
+        let access_key = config.access_key.map(|s| s.to_string());
+        let secret_key = config.secret_key.map(|s| s.to_string());
+        let region = config.region.map(|s| s.to_string());
+        let bucket_name = config.bucket.map(|s| s.to_string());
 
 
         // exit if no S3 configuration is provided, assume local storage will be used
@@ -84,7 +85,6 @@ impl Store {
         }
         if let Some(access_key) = access_key {
             if let Some(secret_key) = secret_key {
-                use aws_sdk_s3::config::Credentials;
                 builder = builder.credentials_provider(Credentials::new(
                     &access_key,
                     &secret_key,
