@@ -345,15 +345,12 @@ async fn upload_chunk(
         let upload_part_res = upload_part_res.map_err(|_| Error::InternalServerError(Some("Could not upload part to S3".to_owned())))?;
 
         // push the etag to the state for finalization later
-        {
-            let mut s3_parts = state.s3_parts.lock().unwrap();
-            s3_parts.push(
-                aws_sdk_s3::types::CompletedPart::builder()
-                    .set_e_tag(upload_part_res.e_tag().map(|s| s.to_string()))
-                    .part_number(part_number)
-                    .build(),
-            );
-        }
+        state.s3_parts.push(
+            aws_sdk_s3::types::CompletedPart::builder()
+                .set_e_tag(upload_part_res.e_tag().map(|s| s.to_string()))
+                .part_number(part_number)
+                .build(),
+        );
 
         let etag = upload_part_res.e_tag()
             .ok_or(Error::InternalServerError(Some("Missing ETag from S3 upload part response".to_owned())))?;
