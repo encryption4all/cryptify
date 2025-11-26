@@ -86,8 +86,8 @@ async fn upload_init(
     let mut s3_upload_id = String::new();
 
     if let Some(s3) = &**s3_client {
-        let client = s3.client.clone();
-        let bucket_name = s3.bucket_name.clone();
+        let client = &s3.client;
+        let bucket_name = &s3.bucket_name;
         
         let multipart_upload_res = client
             .create_multipart_upload()
@@ -329,8 +329,8 @@ async fn upload_chunk(
 
     if let Some(s3) = &**s3_client {
         let byte_stream = data.into_inner();
-        let client = s3.client.clone();
-        let bucket_name = s3.bucket_name.clone();
+        let client = &s3.client;
+        let bucket_name = &s3.bucket_name;
 
         let part_number = (start / config.chunk_size() + 1) as i32;
         let upload_part_res = client
@@ -437,8 +437,8 @@ async fn upload_finalize(
     }
 
     let mut file = if let Some(s3) = &**s3_client {
-        let client = s3.client.clone();
-        let bucket_name = s3.bucket_name.clone();
+        let client = &s3.client;
+        let bucket_name = &s3.bucket_name;
 
         let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
             .set_parts(Some(state.s3_parts.clone()))
@@ -446,7 +446,7 @@ async fn upload_finalize(
 
         client
             .complete_multipart_upload()
-            .bucket(&bucket_name)
+            .bucket(bucket_name)
             .key(uuid)
             .upload_id(&state.s3_upload_id)
             .multipart_upload(completed_upload)
@@ -463,7 +463,7 @@ async fn upload_finalize(
         // open the file to get the sender
         client
             .get_object()
-            .bucket(&bucket_name)
+            .bucket(bucket_name)
             .key(uuid)
             .send()
             .await
@@ -567,7 +567,7 @@ async fn rocket() -> _ {
         .to_cors()
         .expect("unable to configure CORS");
 
-    let s3_client = Store::new_s3(s3_config.clone()).await.ok();
+    let s3_client = Store::new_s3(s3_config).await.ok();
 
     // build rocket in one expression and assign it back
     let mut rocket = rocket_base
