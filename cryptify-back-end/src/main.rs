@@ -341,12 +341,15 @@ async fn upload_chunk(
         let upload_part_res = upload_part_res.map_err(|_| Error::InternalServerError(Some("Could not upload part to S3".to_owned())))?;
 
         // push the etag to the state for finalization later
-        state.s3_parts.push(
-            aws_sdk_s3::types::CompletedPart::builder()
-                .set_e_tag(upload_part_res.e_tag().map(|s| s.to_string()))
-                .part_number(part_number)
-                .build(),
-        );
+        {
+            let mut s3_parts = state.s3_parts.lock().unwrap();
+            s3_parts.push(
+                aws_sdk_s3::types::CompletedPart::builder()
+                    .set_e_tag(upload_part_res.e_tag().map(|s| s.to_string()))
+                    .part_number(part_number)
+                    .build(),
+            );
+        }
 
         sha_sum = compute_hash(&headers.cryptify_token.into_bytes(), &upload_part_res.e_tag().unwrap_or_default().as_bytes());
     } else {
