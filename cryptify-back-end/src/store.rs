@@ -2,6 +2,7 @@ use crate::email;
 use aws_config;
 use aws_sdk_s3;
 use aws_sdk_s3::config::Credentials;
+use aws_config::Region;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -65,11 +66,11 @@ impl Store {
     }
 
     pub async fn new_s3(config: S3Config) -> Result<S3Client, Box<dyn std::error::Error + Send + Sync>> {
-        let endpoint = config.endpoint.map(|s| s.to_string());
-        let access_key = config.access_key.map(|s| s.to_string());
-        let secret_key = config.secret_key.map(|s| s.to_string());
-        let region = config.region.map(|s| s.to_string());
-        let bucket_name = config.bucket.map(|s| s.to_string());
+        let endpoint = config.endpoint;
+        let access_key = config.access_key;
+        let secret_key = config.secret_key;
+        let region = config.region;
+        let bucket_name = config.bucket;
 
 
         // exit if no S3 configuration is provided, assume local storage will be used
@@ -95,7 +96,6 @@ impl Store {
             }
         }
         if let Some(region) = region {
-            use aws_config::Region;
             builder = builder.region(Region::new(region));
         }
         let s3config = builder.load().await;
