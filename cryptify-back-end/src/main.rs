@@ -38,7 +38,7 @@ use rocket_cors::{AllowedOrigins, CorsOptions};
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MB
+const CHUNK_SIZE: u64 = (1024 * 1024)*5; // 5 MB
 
 #[derive(Serialize, Deserialize)]
 struct InitBody {
@@ -441,16 +441,21 @@ async fn upload_finalize(
             .set_parts(Some(state.s3_parts.clone()))
             .build();
 
-        let complete_multipart_upload_res = client
+        client
             .complete_multipart_upload()
             .bucket(&bucket_name)
             .key(uuid)
             .upload_id(&state.s3_upload_id)
             .multipart_upload(completed_upload)
             .send()
-            .await;
-
-        complete_multipart_upload_res.map_err(|_| Error::InternalServerError(Some("Could not complete S3 multipart upload".to_owned())))?;
+            .await
+            .map_err(|e| {
+                log::error!("S3 complete_multipart_upload failed: {:?}", e);
+                Error::InternalServerError(Some(format!(
+                    "Could not complete S3 multipart upload: {:?}",
+                    e
+                )))
+            })?;
 
         // open the file to get the sender
         file = client
@@ -571,6 +576,9 @@ async fn rocket() -> _ {
     // conditionally mount the file download routes
     if s3_client.is_some() {
         rocket = rocket.mount("/filedownload", routes![s3fileServer]);
+        if CHUNK_SIZE < 5 * 1024 * 1024 {
+            log::warn!("S3 storage is enabled, but CHUNK_SIZE is less than 5 MB. This may lead to failing uploads.");
+        }
     } else {
         rocket = rocket.mount("/filedownload", FileServer::from(config.data_dir()));
     }
