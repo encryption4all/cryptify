@@ -1,134 +1,108 @@
 name: Delivery
 
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+  
 on:
-    push:
-        branches: [ main ]
-    release:
-        # Note: a current limitation is that when a release is edited after publication, then the Docker tags are not automatically updated.
-        types: [ published ]
-    schedule:
-        # Run every monday on 9:00 in the morning (UTC).
-        -   cron: '0 9 * * 0'
-    workflow_dispatch:
+  push:
+    branches: [ main ]
+  release:
+    # Note: a current limitation is that when a release is edited after publication, then the Docker tags are not automatically updated.
+    types: [ published ]
+  schedule:
+    # Run every monday on 9:00 in the morning (UTC).
+    - cron: '0 9 * * 0'
+  workflow_dispatch:
 
 permissions:
-    contents: write
-    packages: write
-    security-events: write
+  contents: read
+  packages: write
+  security-events: write
 
 jobs:
-    publish-docker-image:
-        runs-on: ubuntu-latest
-        steps:
-            -   name: Checkout
-                uses: actions/checkout@v4
+  publish-docker-image:
+    runs-on: ubuntu-latest
 
-            -   name: Check whether this event is the HEAD of main
-                continue-on-error: true
-                id: is-head-main
-                run: git rev-parse HEAD | grep -x ${{ github.sha }}
-                shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+        include:
+          - component: backend
+            dockerfile: backend.Dockerfile
+            image_suffix: "-backend"
+            local_tag: local/postguard-backend:scan
+            sarif_category: backend
+          - component: frontend
+            dockerfile: frontend.Dockerfile
+            image_suffix: "-frontend"
+            local_tag: local/postguard-frontend:scan
+            sarif_category: frontend
 
-            -   name: Docker backend meta
-                id: meta-be
-                uses: docker/metadata-action@v5
-                with:
-                    images: ghcr.io/${{ github.repository }}-backend
-                    tags: |
-                        type=semver,pattern={{major}}.{{minor}}.{{patch}}
-                        type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
-                        type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-            -   name: Docker frontend meta
-                id: meta-fe
-                uses: docker/metadata-action@v5
-                with:
-                    images: ghcr.io/${{ github.repository }}-frontend
-                    tags: |
-                        type=semver,pattern={{major}}.{{minor}}.{{patch}}
-                        type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
-                        type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
+      - name: Check whether this event is the HEAD of main
+        continue-on-error: true
+        id: is-head-main
+        run: git rev-parse HEAD | grep -x ${{ github.sha }}
+        shell: bash
 
-            -   name: Set up Docker Buildx
-                uses: docker/setup-buildx-action@v3
+      - name: Docker ${{ matrix.component }} meta
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ghcr.io/${{ github.repository }}${{ matrix.image_suffix }}
+          tags: |
+            type=semver,pattern={{major}}.{{minor}}.{{patch}}
+            type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
+            type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
 
-            -   name: Login to GitHub Container Registry
-                uses: docker/login-action@v3
-                with:
-                    registry: ghcr.io
-                    username: ${{ github.actor }}
-                    password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            -   name: Build Backend container and export to local Docker
-                uses: docker/build-push-action@v5
-                with:
-                    context: .
-                    file: backend.Dockerfile
-                    load: true
-                    tags: local/postguard-backend:scan
-                    cache-from: type=gha
-                    cache-to: type=gha,mode=max
-            -   name: Build Frontend container and export to local Docker
-                uses: docker/build-push-action@v5
-                with:
-                    context: .
-                    file: frontend.Dockerfile
-                    load: true
-                    tags: local/postguard-frontend:scan
-                    cache-from: type=gha
-                    cache-to: type=gha,mode=max
+      - name: Build ${{ matrix.component }} container and export to local Docker
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: ${{ matrix.local_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+      - name: Scan ${{ matrix.component }} Image
+        uses: anchore/scan-action@40a61b52209e9d50e87917c5b901783d546b12d0 # v7.2.1
+        id: scan
+        with:
+          image: ${{ matrix.local_tag }}
+          only-fixed: true
+          fail-build: true
+          severity-cutoff: critical
+          output-format: sarif
 
-            -   name: Scan Backend Image
-                uses: anchore/scan-action@v4
-                id: scan-be
-                with:
-                    image: local/postguard-backend:scan
-                    only-fixed: true
-                    fail-build: true
-                    severity-cutoff: critical
-                    output-format: sarif
-            -   name: Scan Frontend Image
-                uses: anchore/scan-action@v4
-                id: scan-fe
-                with:
-                    image: local/postguard-frontend:scan
-                    only-fixed: true
-                    fail-build: true
-                    severity-cutoff: critical
-                    output-format: sarif
+      - name: Upload ${{ matrix.component }} Anchore scan SARIF report
+        uses: github/codeql-action/upload-sarif@v4
+        if: ${{ !cancelled() }}
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: ${{ matrix.sarif_category }}
 
-
-            -   name: Upload Backend Anchore scan SARIF report
-                uses: github/codeql-action/upload-sarif@v4
-                if: ${{ !cancelled() }}
-                with:
-                    sarif_file: ${{ steps.scan-be.outputs.sarif }}
-                    category: backend
-            -   name: Upload Frontend Anchore scan SARIF report
-                uses: github/codeql-action/upload-sarif@v4
-                if: ${{ !cancelled() }}
-                with:
-                    sarif_file: ${{ steps.scan-fe.outputs.sarif }}
-                    category: frontend
-
-
-            -   name: Push backend image to GitHub Container Registry
-                uses: docker/build-push-action@v5
-                if: ${{ github.event_name == 'release' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-                with:
-                    context: .
-                    file: backend.Dockerfile
-                    push: true
-                    tags: ${{ steps.meta-be.outputs.tags || 'edge' }}
-                    labels: ${{ steps.meta-be.outputs.labels }}
-            -   name: Push frontend image to GitHub Container Registry
-                uses: docker/build-push-action@v5
-                if: ${{ github.event_name == 'release' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-                with:
-                    context: .
-                    file: frontend.Dockerfile
-                    push: true
-                    tags: ${{ steps.meta-fe.outputs.tags || 'edge' }}
-                    labels: ${{ steps.meta-fe.outputs.labels }}
+      - name: Push ${{ matrix.component }} image to GitHub Container Registry
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags || 'edge' }}
+          labels: ${{ steps.meta.outputs.labels }}
