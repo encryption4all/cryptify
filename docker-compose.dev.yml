@@ -1,0 +1,53 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-dev
+    ports:
+      - "80:80"
+    volumes:
+      - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
+    depends_on:
+      - backend
+      - frontend
+    networks: [default]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.dev.Dockerfile
+    container_name: frontend-dev
+    environment:
+      - REACT_APP_ENV=development
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./cryptify-front-end/src:/app/src"
+      - "./cryptify-front-end/public:/app/public"
+    networks: [default]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend.dev.Dockerfile
+    container_name: backend-dev
+    depends_on:
+      - mailcrab
+    volumes:
+      - "./cryptify-back-end/src:/app/src"
+      - "./cryptify-back-end/templates:/app/templates"
+      - "./conf/config.dev.toml:/app/config.toml:ro"
+    ports:
+      - "8000:8000"
+    environment:
+      - ROCKET_CONFIG=config.toml
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    networks: [default]
+
+  mailcrab:
+    image: marlonb/mailcrab:latest
+    container_name: mailcrab-dev
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    networks: [default]
