@@ -1,8 +1,0 @@
-{
-  "production": true,
-  "no_auth": true,
-  "url": "https://cryptify.nl/irma",
-  "disclose_perms": ["pbdf.sidn-pbdf.email.email"],
-  "email": "",
-  "issue_perms": []
-}

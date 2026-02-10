@@ -7,6 +7,8 @@ concurrency:
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   release:
     # Note: a current limitation is that when a release is edited after publication, then the Docker tags are not automatically updated.
     types: [ published ]
@@ -27,18 +29,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [backend, frontend]
+        component: [backend]
         include:
           - component: backend
             dockerfile: backend.Dockerfile
             image_suffix: "-backend"
             local_tag: local/postguard-backend:scan
             sarif_category: backend
-          - component: frontend
-            dockerfile: frontend.Dockerfile
-            image_suffix: "-frontend"
-            local_tag: local/postguard-frontend:scan
-            sarif_category: frontend
 
     steps:
       - name: Checkout

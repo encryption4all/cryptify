@@ -1,14 +1,4 @@
 services:
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend.Dockerfile
-    container_name: build-frontend
-    environment:
-      - REACT_APP_ENV=development
-    ports:
-      - "80:80"
-
   mailcrab:
     image: marlonb/mailcrab:latest
     ports:
