@@ -9,5 +9,5 @@ smtp_port = 1025
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?$"
 pkg_url = "https://postguard-main.cs.ru.nl/pkg"
-# pkg_url = "https://postguard.staging.yivi.app"
+# pkg_url = "https://pkg.staging.yivi.app"
 # pkg_url = "https://localhost:8087"
