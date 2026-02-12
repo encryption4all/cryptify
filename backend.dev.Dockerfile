@@ -1,4 +1,4 @@
-FROM rust:latest-slim AS chef
+FROM rust:latest AS chef
 
 # Install cargo-chef for dependency caching
 RUN cargo install cargo-chef cargo-watch

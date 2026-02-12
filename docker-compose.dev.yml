@@ -25,3 +25,14 @@ services:
       - "1080:1080"
       - "1025:1025"
     networks: [default]
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: swagger-ui-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./api-description.yaml:/openapi.yaml:ro"
+    environment:
+      - SWAGGER_JSON=/openapi.yaml
+    networks: [default]
