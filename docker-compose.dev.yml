@@ -1,30 +1,4 @@
 services:
-  nginx:
-    image: nginx:alpine
-    container_name: nginx-dev
-    ports:
-      - "80:80"
-    volumes:
-      - "./conf/nginx.dev.conf:/etc/nginx/nginx.conf:ro"
-    depends_on:
-      - backend
-      - frontend
-    networks: [default]
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend.dev.Dockerfile
-    container_name: frontend-dev
-    environment:
-      - REACT_APP_ENV=development
-    ports:
-      - "8080:8080"
-    volumes:
-      - "./cryptify-front-end/src:/app/src"
-      - "./cryptify-front-end/public:/app/public"
-    networks: [default]
-
   backend:
     build:
       context: .
@@ -50,4 +24,15 @@ services:
     ports:
       - "1080:1080"
       - "1025:1025"
+    networks: [default]
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: swagger-ui-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./api-description.yaml:/openapi.yaml:ro"
+    environment:
+      - SWAGGER_JSON=/openapi.yaml
     networks: [default]

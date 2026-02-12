@@ -1,4 +1,4 @@
-FROM rust:1.91.0-slim-trixie AS chef
+FROM rust:latest AS chef
 
 # Install cargo-chef for dependency caching
 RUN cargo install cargo-chef cargo-watch

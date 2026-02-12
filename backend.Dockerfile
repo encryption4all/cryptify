@@ -1,4 +1,4 @@
-FROM rust:1.91.0-slim-trixie AS builder
+FROM rust:1.93.0-slim-trixie AS builder
 
 ENV ROCKET_PROFILE=release
 

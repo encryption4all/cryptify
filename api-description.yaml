@@ -3,12 +3,31 @@ info:
   title: "Cryptify API"
   description: "This is the cryptify server that manages encrypted files."
   version: "1.0.0"
+servers:
+  - url: http://localhost:8000
+    description: Development server
 tags:
+- name: "Health"
+  description: "Health check"
 - name: "File upload"
   description: "Upload files"
 - name: "File download"
   description: "Download files"
 paths:
+  /health:
+    get:
+      tags:
+        - "Health"
+      summary: "Health check endpoint"
+      operationId: "health"
+      responses:
+        "200":
+          description: "Service is healthy"
+          content:
+            text/plain:
+              schema:
+                type: "string"
+                example: "OK"
   /fileupload/init:
     post:
         tags:
@@ -20,19 +39,30 @@ paths:
             application/json:
               schema:
                 type: "object"
+                required:
+                  - recipient
+                  - mailContent
+                  - mailLang
+                  - confirm
                 properties:
-                  sender:
-                    type: "string"
-                    format: "email"
                   recipient:
                     type: "string"
                     format: "email"
-                  fileSize:
-                    type: "number"
+                    example: "recipient@example.com"
+                    description: "Email address of the recipient"
                   mailContent:
                     type: "string"
+                    example: "Here is your encrypted file"
+                    description: "Content to include in the email"
                   mailLang:
                     type: "string"
+                    enum: ["EN", "NL"]
+                    example: "EN"
+                    description: "Email language (EN or NL)"
+                  confirm:
+                    type: "boolean"
+                    example: true
+                    description: "Whether to send a confirmation email to the sender"
         responses:
           "200":
             description: "Successful operation"
@@ -47,9 +77,10 @@ paths:
                 schema:
                   type: "object"
                   properties:
-                    id:
+                    uuid:
                       type: "string"
                       format: "uuid"
+                      description: "Unique identifier for the file upload"
   /fileupload/{uuid}:
     put:
       tags:
@@ -121,13 +152,6 @@ paths:
       summary: "Finalize multipart file upload and send mail to recipient"
       operationId: "finalizeFileUpload"
       parameters:
-      - in: "header"
-        name: "cryptifytoken"
-        description:
-          "Identifies the version of the upload file parts. Part of the header from the last fileupload response."
-        schema:
-          type: "string"
-        required: true
       - in: "header"
         name: "Content-Range"
         description:
