@@ -7,8 +7,8 @@ services:
     depends_on:
       - mailcrab
     volumes:
-      - "./cryptify-back-end/src:/app/src"
-      - "./cryptify-back-end/templates:/app/templates"
+      - "./cryptify/src:/app/src"
+      - "./cryptify/templates:/app/templates"
       - "./conf/config.dev.toml:/app/config.toml:ro"
     ports:
       - "8000:8000"

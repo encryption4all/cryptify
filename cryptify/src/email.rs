@@ -154,10 +154,10 @@ pub async fn send_email(
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // setup SMTP connection
-    let mut mailer_builder = if cfg!(debug_assertions) {
-        SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port())
-    } else {
+    let mut mailer_builder = if config.smtp_tls() {
         SmtpTransport::starttls_relay(config.smtp_url())?.port(config.smtp_port())
+    } else {
+        SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port())
     };
 
     // add credentials, if present

@@ -1,13 +1,14 @@
 [default]
 address = "0.0.0.0"
 port = 8000
-server_url = "http://localhost:8080/"
+server_url = "http://localhost:8080/" # Postguard frontend (via nginx)
 data_dir = "/tmp/data"
 email_from = "noreply@postguard.local"
 smtp_url = "mailcrab"
 smtp_port = 1025
+smtp_tls = false
 # smtp_credentials = ["user", "pw"]
 allowed_origins = "^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?$"
-pkg_url = "https://postguard-main.cs.ru.nl/pkg"
+# pkg_url = "https://postguard-main.cs.ru.nl/pkg"
 # pkg_url = "https://pkg.staging.yivi.app"
-# pkg_url = "https://localhost:8087"
+pkg_url = "http://postguard-pkg:8087"

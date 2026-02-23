@@ -7,9 +7,9 @@ WORKDIR /app
 
 FROM chef AS planner
 # Copy source to create recipe
-COPY cryptify-back-end/Cargo.toml .
-COPY cryptify-back-end/Cargo.lock .
-COPY cryptify-back-end/src ./src
+COPY cryptify/Cargo.toml .
+COPY cryptify/Cargo.lock .
+COPY cryptify/src ./src
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
@@ -26,8 +26,8 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --recipe-path recipe.json
 
 # Copy lockfile and manifest
-COPY cryptify-back-end/Cargo.toml .
-COPY cryptify-back-end/Cargo.lock .
+COPY cryptify/Cargo.toml .
+COPY cryptify/Cargo.lock .
 
 # Create data directory
 RUN mkdir -p /tmp/data
