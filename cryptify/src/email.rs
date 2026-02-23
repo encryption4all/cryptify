@@ -168,11 +168,11 @@ pub async fn send_email(
 
     for recipient in state.recipients.iter() {
         // combine URL with mail variables into template
-        let mut url = Url::parse(config.server_url())?;
+        let base = Url::parse(config.server_url())?;
+        let mut url = base.join("/download")?;
         url.query_pairs_mut()
-            .append_pair("download", uuid)
+            .append_pair("uuid", uuid)
             .append_pair("recipient", &format!("{}", recipient.email));
-        url.set_fragment(Some("filesharing"));
 
         let (email, subject) = email_templates(state, url.as_str());
         let email = Message::builder()
