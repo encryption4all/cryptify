@@ -204,11 +204,12 @@ pub async fn send_email(
     if state.confirm {
         // also send confirmation email to sender
         let sender = state.sender.clone().unwrap();
-        let mut url = Url::parse(config.server_url())?;
+        
+        let base = Url::parse(config.server_url())?;
+        let mut url = base.join("/download")?;
         url.query_pairs_mut()
-            .append_pair("download", uuid)
-            .append_pair("recipient", &sender);
-        url.set_fragment(Some("filesharing"));
+            .append_pair("uuid", uuid)
+            .append_pair("recipient", &format!("{}", &sender));
 
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
