@@ -154,11 +154,20 @@ pub async fn send_email(
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // setup SMTP connection
+    log::info!(
+        "Setting up SMTP: host={}, port={}, tls={}, credentials={}",
+        config.smtp_url(),
+        config.smtp_port(),
+        config.smtp_tls(),
+        config.smtp_credentials().is_some()
+    );
     let mut mailer_builder = if config.smtp_tls() {
         SmtpTransport::starttls_relay(config.smtp_url())?.port(config.smtp_port())
     } else {
         SmtpTransport::builder_dangerous(config.smtp_url()).port(config.smtp_port())
     };
+
+    mailer_builder = mailer_builder.timeout(Some(std::time::Duration::from_secs(10)));
 
     // add credentials, if present
     if let Some((username, password)) = config.smtp_credentials() {
@@ -183,28 +192,39 @@ pub async fn send_email(
             .body(email)?;
 
         // send email
+        log::info!("Sending email to {}", recipient.email);
         let mailer = mailer_builder.clone().build();
-        mailer.send(&email)?;
+        mailer.send(&email).map_err(|e| {
+            log::error!("Failed to send email to {}: {}", recipient.email, e);
+            e
+        })?;
+        log::info!("Email sent to {}", recipient.email);
     }
 
     if state.confirm {
         // also send confirmation email to sender
+        let sender = state.sender.clone().unwrap();
         let mut url = Url::parse(config.server_url())?;
         url.query_pairs_mut()
             .append_pair("download", uuid)
-            .append_pair("recipient", &state.sender.clone().unwrap());
+            .append_pair("recipient", &sender);
         url.set_fragment(Some("filesharing"));
 
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
             .header(ContentType::TEXT_HTML)
             .from(config.email_from())
-            .to(state.sender.clone().unwrap().parse()?)
+            .to(sender.parse()?)
             .subject(subject)
             .body(email)?;
 
+        log::info!("Sending confirmation email to {}", sender);
         let mailer = mailer_builder.build();
-        mailer.send(&email)?;
+        mailer.send(&email).map_err(|e| {
+            log::error!("Failed to send confirmation email to {}: {}", sender, e);
+            e
+        })?;
+        log::info!("Confirmation email sent to {}", sender);
     }
 
     Ok("Email successfully sent".to_owned())
