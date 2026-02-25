@@ -415,6 +415,7 @@ async fn rocket() -> _ {
 
     let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
     let response = minreq::get(&pkg_params_url)
+        .with_timeout(10)
         .send()
         .unwrap_or_else(|e| panic!("Failed to reach PKG at {}: {}", pkg_params_url, e));
 
