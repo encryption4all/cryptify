@@ -1,5 +1,5 @@
 [package]
-name = "cryptify-backend"
+name = "cryptify"
 version = "0.1.0"
 authors = ["David Venhoek <david@tweedegolf.com>"]
 edition = "2018"

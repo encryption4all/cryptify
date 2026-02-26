@@ -32,7 +32,7 @@ jobs:
         component: [backend]
         include:
           - component: backend
-            dockerfile: backend.Dockerfile
+            dockerfile: Dockerfile
             image_suffix: "-backend"
             local_tag: local/postguard-backend:scan
             sarif_category: backend

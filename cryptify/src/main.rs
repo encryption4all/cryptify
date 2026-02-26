@@ -413,12 +413,15 @@ async fn rocket() -> _ {
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
-    let response = minreq::get(format!("{}/v2/sign/parameters", config.pkg_url())).send();
+    let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
+    let response = minreq::get(&pkg_params_url)
+        .with_timeout(10)
+        .send()
+        .unwrap_or_else(|e| panic!("Failed to reach PKG at {}: {}", pkg_params_url, e));
 
     let vk = response
-        .expect("could not get global verification key")
         .json::<Parameters<VerifyingKey>>()
-        .expect("no verification key");
+        .unwrap_or_else(|e| panic!("Failed to parse verification key from {}: {}", pkg_params_url, e));
 
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))

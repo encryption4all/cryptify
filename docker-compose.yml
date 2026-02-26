@@ -13,7 +13,7 @@ services:
     depends_on:
       - mailcrab
     volumes:
-      - "./cryptify-back-end/:/app"
+      - "./cryptify/:/app"
       - "./conf/config.toml/:/app/config.toml:ro"
     ports:
         - "8000:8000"
