@@ -1,38 +1,49 @@
-FROM rust:1.93.0-slim-trixie AS builder
+# syntax=docker/dockerfile:1
 
-ENV ROCKET_PROFILE=release
-
+# ── Stage 1: install cargo-chef once ─────────────────────────────────────────
+FROM rust:1.93.0-slim-trixie AS chef
+RUN apt-get update && apt-get --no-install-recommends install -y libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
-COPY cryptify/src ./src
-COPY cryptify/templates ./templates
-COPY cryptify/Cargo.toml .
-COPY cryptify/Cargo.lock .
+# ── Stage 2: compute the dependency recipe ───────────────────────────────────
+FROM chef AS planner
+COPY cryptify/Cargo.toml ./Cargo.toml
+COPY cryptify/Cargo.lock ./Cargo.lock
+COPY cryptify/src        ./src
+COPY cryptify/templates  ./templates
+RUN cargo chef prepare --recipe-path recipe.json
 
-RUN apt-get update  \
-    && apt-get --no-install-recommends install -y libssl-dev pkg-config  \
-    && rm -rf /var/lib/apt/lists/*  \
-    && cargo build --release  \
-    && cp ./target/release/cryptify /usr/local/bin/cryptify
+# ── Stage 3: cook (compile) only the dependencies ────────────────────────────
+# This layer is cached as long as Cargo.toml / Cargo.lock don't change.
+FROM chef AS builder
+ARG CARGO_PROFILE=release
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --profile ${CARGO_PROFILE} --recipe-path recipe.json
 
+# Copy sources and build the application binary
+COPY cryptify/Cargo.toml ./Cargo.toml
+COPY cryptify/Cargo.lock ./Cargo.lock
+COPY cryptify/src        ./src
+COPY cryptify/templates  ./templates
+RUN cargo build --profile ${CARGO_PROFILE} --bin cryptify
 
+# ── Stage 4: minimal runtime image ───────────────────────────────────────────
 FROM debian:trixie-slim
+ARG CARGO_PROFILE=release
 ENV ROCKET_CONFIG=config.toml
-
 RUN groupadd -r nonroot \
     && useradd -r -g nonroot nonroot \
-    && apt-get update  \
-    && apt-get --no-install-recommends install -y ca-certificates libssl3  \
+    && apt-get update \
+    && apt-get --no-install-recommends install -y ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /usr/local/bin/cryptify /usr/local/bin/cryptify
+COPY --from=builder /app/target/${CARGO_PROFILE}/cryptify /usr/local/bin/cryptify
 RUN mkdir -p /app && chown nonroot:nonroot /app
-
 WORKDIR /app
 USER nonroot
-
 RUN mkdir -p /tmp/data
 
 EXPOSE 8000
 
-CMD ["/bin/sh", "-c", "/usr/local/bin/cryptify"]
+CMD ["/usr/local/bin/cryptify"]
