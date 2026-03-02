@@ -104,6 +104,7 @@ async fn upload_init(
                     mail_content: request.mail_content.clone(),
                     mail_lang: request.mail_lang.clone(),
                     sender: None,
+                    sender_attributes: Vec::new(),
                     confirm: request.confirm,
                 },
             );
@@ -383,19 +384,32 @@ async fn upload_finalize(
         .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
         .compat();
 
-    let sender = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
+    let attributes = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
         .await
         .map_err(|_| Error::InternalServerError(Some("couldn't read postguard file".to_string())))?
         .pub_id
-        .con
-        .into_iter()
+        .con;
+
+    let sender = attributes
+        .iter()
         .find(|x| x.atype == "pbdf.sidn-pbdf.email.email")
         .ok_or(Error::InternalServerError(Some(
             "no email attribute".to_string(),
         )))?
-        .value;
+        .value
+        .clone();
+
+    let sender_attributes: Vec<(String, String)> = attributes
+        .into_iter()
+        .filter(|x| x.atype != "pbdf.sidn-pbdf.email.email")
+        .filter_map(|x| {
+            let atype = x.atype;
+            x.value.map(|v| (atype, v))
+        })
+        .collect();
 
     state.sender = sender;
+    state.sender_attributes = sender_attributes;
 
     send_email(config, &state, uuid).await.map_err(|e| {
         log::error!("{}", e);

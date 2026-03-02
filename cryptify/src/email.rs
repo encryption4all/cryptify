@@ -30,6 +30,7 @@ struct MailStrings<'a> {
     header_confirm: &'a str,
     subject_confirm: &'a str,
     confirm: &'a str,
+    files_from: &'a str,
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
@@ -41,6 +42,7 @@ const NL_STRINGS: MailStrings = MailStrings {
     header_confirm: "Je hebt het volgende gestuurd aan",
     subject_confirm: "Je bestanden zijn verstuurd via PostGuard",
     confirm: "Je kunt nog steeds bij je bestanden",
+    files_from: "De bestanden komen van",
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
@@ -52,6 +54,7 @@ const EN_STRINGS: MailStrings = MailStrings {
     header_confirm: "You sent files to",
     subject_confirm: "Your files have been sent via PostGuard",
     confirm: "You can still access your files",
+    files_from: "The files come from",
 };
 
 #[derive(Template)]
@@ -74,6 +77,9 @@ struct EmailTemplate<'a> {
     html_content: &'a str,
     url: &'a str,
     confirm: &'a str,
+    files_from: &'a str,
+    sender_email: &'a str,
+    sender_attributes: &'a [(String, String)],
 }
 
 fn format_file_size(size: u64) -> String {
@@ -112,6 +118,9 @@ fn email_templates(state: &FileState, url: &str) -> (String, String) {
         expiry_date: &format_date(state.expires, &state.mail_lang),
         html_content: &state.mail_content,
         confirm: "",
+        files_from: strings.files_from,
+        sender_email: &sender_str,
+        sender_attributes: &state.sender_attributes,
         url,
     };
     let subject = SubjectTemplate {
@@ -127,6 +136,7 @@ fn email_confirm(state: &FileState, url: &str) -> (String, String) {
         Language::Nl => NL_STRINGS,
     };
 
+    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
     let email = EmailTemplate {
         header: strings.header_confirm,
         subheader: &state.recipients.to_string(),
@@ -137,6 +147,9 @@ fn email_confirm(state: &FileState, url: &str) -> (String, String) {
         html_content: &state.mail_content,
         download_str: strings.download_str,
         confirm: strings.confirm,
+        files_from: strings.files_from,
+        sender_email: &sender_str,
+        sender_attributes: &state.sender_attributes,
         url,
     };
 
