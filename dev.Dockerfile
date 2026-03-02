@@ -36,4 +36,4 @@ RUN mkdir -p /tmp/data
 EXPOSE 8000
 
 # Use cargo-watch to rebuild only app code when source changes
-CMD ["cargo", "watch", "-x", "run"]
+CMD ["cargo", "watch", "--poll", "-x", "run"]
