@@ -50,7 +50,7 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: false
-          tags: ghcr.io/${{ github.repository }}-backend:build-${{ github.run_id }}-amd64
+          tags: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-amd64
           build-args: CARGO_PROFILE=${{ steps.config.outputs.profile }}
           cache-from: type=gha,scope=build-amd64
           cache-to: type=gha,mode=max,scope=build-amd64
@@ -59,7 +59,7 @@ jobs:
         uses: anchore/scan-action@v3
         id: scan
         with:
-          image: ghcr.io/${{ github.repository }}-backend:build-${{ github.run_id }}-amd64
+          image: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-amd64
           only-fixed: true
           fail-build: true
           severity-cutoff: critical
@@ -106,7 +106,7 @@ jobs:
           platforms: linux/arm64
           push: true
           provenance: false
-          tags: ghcr.io/${{ github.repository }}-backend:build-${{ github.run_id }}-arm64
+          tags: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-arm64
           build-args: CARGO_PROFILE=${{ steps.config.outputs.profile }}
           cache-from: type=gha,scope=build-arm64
           cache-to: type=gha,mode=max,scope=build-arm64
@@ -120,7 +120,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}-backend
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}},event=tag
             type=semver,pattern={{major}}.{{minor}},event=tag
@@ -144,5 +144,5 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            "ghcr.io/${{ github.repository }}-backend@${{ needs.build-amd64.outputs.digest }}" \
-            "ghcr.io/${{ github.repository }}-backend@${{ needs.build-arm64.outputs.digest }}"
+            "ghcr.io/${{ github.repository }}@${{ needs.build-amd64.outputs.digest }}" \
+            "ghcr.io/${{ github.repository }}@${{ needs.build-arm64.outputs.digest }}"
