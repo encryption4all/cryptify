@@ -56,7 +56,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=build-amd64
 
       - name: Scan image
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@7037fa011853d5a11690026fb85feee79f4c946c # v7.3.2
         id: scan
         with:
           image: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-amd64
@@ -66,7 +66,7 @@ jobs:
           output-format: sarif
 
       - name: Upload Anchore scan SARIF report
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v4
         if: ${{ !cancelled() }}
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
