@@ -3,10 +3,9 @@ name: Delivery
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +25,7 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -82,7 +81,7 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -124,7 +123,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},event=tag
             type=semver,pattern={{major}}.{{minor}},event=tag
-            type=edge,enable=${{ github.event_name != 'release' }}
+            type=edge,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
             type=ref,event=pr
             type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
 
