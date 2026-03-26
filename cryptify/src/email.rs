@@ -172,7 +172,7 @@ pub async fn send_email(
         config.smtp_url(),
         config.smtp_port(),
         config.smtp_tls(),
-        config.smtp_credentials().is_some()
+        config.smtp_username().is_some()
     );
     let mut mailer_builder = if config.smtp_tls() {
         SmtpTransport::starttls_relay(config.smtp_url())?.port(config.smtp_port())
@@ -183,7 +183,7 @@ pub async fn send_email(
     mailer_builder = mailer_builder.timeout(Some(std::time::Duration::from_secs(10)));
 
     // add credentials, if present
-    if let Some((username, password)) = config.smtp_credentials() {
+    if let (Some(username), Some(password)) = (config.smtp_username(), config.smtp_password()) {
         let credentials = Credentials::new(username.to_owned(), password.to_owned());
         mailer_builder = mailer_builder.credentials(credentials);
     }
