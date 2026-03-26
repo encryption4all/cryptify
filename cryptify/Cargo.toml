@@ -2,7 +2,7 @@
 name = "cryptify"
 version = "0.1.0"
 authors = ["David Venhoek <david@tweedegolf.com>"]
-edition = "2018"
+edition = "2021"
 repository = "https://github.com/encryption4all/cryptify"
 license = "MIT"
 
