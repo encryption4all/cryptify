@@ -6,7 +6,7 @@ edition = "2021"
 repository = "https://github.com/encryption4all/cryptify"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "End-to-end encrypted file sharing service"
 
 [dependencies]
 askama = "0.14.0"
