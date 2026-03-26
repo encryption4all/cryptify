@@ -7,7 +7,8 @@ pub struct RawCryptifyConfig {
     email_from: String,
     smtp_url: String,
     smtp_port: u16,
-    smtp_credentials: Option<(String, String)>,
+    smtp_username: Option<String>,
+    smtp_password: Option<String>,
     smtp_tls: Option<bool>,
     allowed_origins: String,
     pkg_url: String,
@@ -21,7 +22,8 @@ pub struct CryptifyConfig {
     email_from: lettre::message::Mailbox,
     smtp_url: String,
     smtp_port: u16,
-    smtp_credentials: Option<(String, String)>,
+    smtp_username: Option<String>,
+    smtp_password: Option<String>,
     smtp_tls: bool,
     allowed_origins: String,
     pkg_url: String,
@@ -38,7 +40,8 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             }),
             smtp_url: config.smtp_url,
             smtp_port: config.smtp_port,
-            smtp_credentials: config.smtp_credentials,
+            smtp_username: config.smtp_username,
+            smtp_password: config.smtp_password,
             smtp_tls: config.smtp_tls.unwrap_or(true),
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
@@ -67,8 +70,12 @@ impl CryptifyConfig {
         self.smtp_port
     }
 
-    pub fn smtp_credentials(&self) -> Option<&(String, String)> {
-        self.smtp_credentials.as_ref()
+    pub fn smtp_username(&self) -> Option<&str> {
+        self.smtp_username.as_deref()
+    }
+
+    pub fn smtp_password(&self) -> Option<&str> {
+        self.smtp_password.as_deref()
     }
 
     pub fn smtp_tls(&self) -> bool {
