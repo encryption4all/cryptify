@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15](https://github.com/encryption4all/cryptify/compare/v0.1.14...v0.1.15) - 2026-03-27
+
+### Other
+
+- try the rlsplz way
+
 ## [0.1.14](https://github.com/encryption4all/cryptify/compare/v0.1.13...v0.1.14) - 2026-03-27
 
 ### Other
