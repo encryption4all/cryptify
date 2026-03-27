@@ -60,7 +60,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          push: false
           provenance: false
           tags: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-amd64
           build-args: CARGO_PROFILE=${{ needs.config.outputs.profile }}
@@ -110,7 +110,7 @@ jobs:
         with:
           context: .
           platforms: linux/arm64
-          push: true
+          push: false
           provenance: false
           tags: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-arm64
           build-args: CARGO_PROFILE=${{ needs.config.outputs.profile }}
