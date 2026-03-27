@@ -3,19 +3,81 @@ name: Delivery
 on:
   push:
     branches: [main]
-    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-  security-events: write
-
 jobs:
+  release-plz:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      is_release: ${{ steps.tag.outputs.is_release }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Detect release tag
+        id: tag
+        run: |
+          git fetch --tags
+          TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "is_release=$([[ -n "${TAG}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  release-plz-pr:
+    needs: release-plz
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   build-amd64:
     runs-on: ubuntu-latest
+    needs: [release-plz]
+    if: always() && (needs.release-plz.result == 'success' || needs.release-plz.result == 'skipped')
+    permissions:
+      packages: write
+      security-events: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -27,7 +89,7 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ needs.release-plz.outputs.is_release }}" == "true" ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -54,7 +116,7 @@ jobs:
           tags: ghcr.io/${{ github.repository }}:build-${{ github.run_id }}-amd64
           build-args: CARGO_PROFILE=${{ steps.config.outputs.profile }}
           cache-from: type=gha,scope=build-amd64
-          cache-to: type=gha,mode=max,scope=build-arm64
+          cache-to: type=gha,mode=max,scope=build-amd64
 
       - name: Scan image
         uses: anchore/scan-action@7037fa011853d5a11690026fb85feee79f4c946c # v7.3.2
@@ -74,6 +136,10 @@ jobs:
 
   build-arm64:
     runs-on: ubuntu-24.04-arm
+    needs: [release-plz]
+    if: always() && (needs.release-plz.result == 'success' || needs.release-plz.result == 'skipped')
+    permissions:
+      packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -85,7 +151,7 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ needs.release-plz.outputs.is_release }}" == "true" ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -116,33 +182,20 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
-    needs: [build-amd64, build-arm64]
+    needs: [release-plz, build-amd64, build-arm64]
+    if: always() && (needs.build-amd64.result == 'success' && needs.build-arm64.result == 'success')
+    permissions:
+      packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Detect release tag on HEAD
-        id: release
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            TAG="${{ github.ref_name }}"
-          else
-            TAG=""
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "is_release=$([[ -n "${TAG}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.release.outputs.tag }},enable=${{ steps.release.outputs.is_release == 'true' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.release.outputs.tag }},enable=${{ steps.release.outputs.is_release == 'true' }}
-            type=edge,enable=${{ steps.release.outputs.is_release != 'true' }}
+            type=semver,pattern={{version}},value=${{ needs.release-plz.outputs.tag }},enable=${{ needs.release-plz.outputs.is_release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-plz.outputs.tag }},enable=${{ needs.release-plz.outputs.is_release == 'true' }}
+            type=edge,enable=${{ needs.release-plz.outputs.is_release != 'true' }}
             type=ref,event=pr
             type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
 
