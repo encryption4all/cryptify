@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/encryption4all/cryptify/compare/v0.1.3...v0.1.4) - 2026-03-27
+
+### Fixed
+
+- add initial v0.1.0 changelog entry to prevent release-plz from including all history
+
+### Other
+
+- Merge pull request #68 from encryption4all/fix/release-plz-setup
+
 ## [0.1.3](https://github.com/encryption4all/cryptify/compare/v0.1.2...v0.1.3) - 2026-03-26
 
 ### Fixed
