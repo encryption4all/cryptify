@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -12,11 +13,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      packages: write
     with:
       output: image
       push: true
       platforms: linux/amd64,linux/arm64
-      meta-images: user/app
+      meta-images: ghcr.io/${{ github.repository }}
       meta-tags: |
         type=ref,event=branch
         type=ref,event=pr
@@ -24,6 +26,6 @@ jobs:
         type=semver,pattern={{major}}.{{minor}}
     secrets:
       registry-auths: |
-        - registry: docker.io
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
