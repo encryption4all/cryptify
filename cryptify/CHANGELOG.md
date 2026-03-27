@@ -13,3 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - add package description to Cargo.toml
 - update Rust edition from 2018 to 2021
+
+## [0.1.0] - 2026-03-26
+
+Initial release.
