@@ -9,10 +9,10 @@ WORKDIR /app
 
 # ── Stage 2: compute the dependency recipe ───────────────────────────────────
 FROM chef AS planner
-COPY cryptify/Cargo.toml ./Cargo.toml
-COPY cryptify/Cargo.lock ./Cargo.lock
-COPY cryptify/src        ./src
-COPY cryptify/templates  ./templates
+COPY Cargo.toml ./Cargo.toml
+COPY Cargo.lock ./Cargo.lock
+COPY src        ./src
+COPY templates  ./templates
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Stage 3: cook (compile) only the dependencies ────────────────────────────
@@ -23,10 +23,10 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --profile ${CARGO_PROFILE} --recipe-path recipe.json
 
 # Copy sources and build the application binary
-COPY cryptify/Cargo.toml ./Cargo.toml
-COPY cryptify/Cargo.lock ./Cargo.lock
-COPY cryptify/src        ./src
-COPY cryptify/templates  ./templates
+COPY Cargo.toml ./Cargo.toml
+COPY Cargo.lock ./Cargo.lock
+COPY src        ./src
+COPY templates  ./templates
 RUN cargo build --profile ${CARGO_PROFILE} --bin cryptify
 
 # ── Stage 4: minimal runtime image ───────────────────────────────────────────
