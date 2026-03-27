@@ -1,9 +1,10 @@
 name: Delivery
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Release-plz"]
+    types: [completed]
     branches: [main]
-    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,6 +17,7 @@ permissions:
 jobs:
   build-amd64:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -27,7 +29,8 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [[ -n "${TAG}" ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -74,6 +77,7 @@ jobs:
 
   build-arm64:
     runs-on: ubuntu-24.04-arm
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -85,7 +89,8 @@ jobs:
       - name: Select build profile
         id: config
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [[ -n "${TAG}" ]]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
           else
             echo "profile=edge" >> "$GITHUB_OUTPUT"
@@ -126,11 +131,7 @@ jobs:
       - name: Detect release tag on HEAD
         id: release
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            TAG="${{ github.ref_name }}"
-          else
-            TAG=""
-          fi
+          TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "is_release=$([[ -n "${TAG}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
