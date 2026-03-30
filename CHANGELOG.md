@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19](https://github.com/encryption4all/cryptify/compare/v0.1.18...v0.1.19) - 2026-03-30
+
+### Other
+
+- Merge branch 'main' into add-explanation
+- Update build pipeline versions
+
 ## [0.1.18](https://github.com/encryption4all/cryptify/compare/v0.1.17...v0.1.18) - 2026-03-30
 
 ### Other
