@@ -1,4 +1,13 @@
 name: CI
+#
+# Pipeline overview
+# =================
+#
+# Release-plz and Docker delivery are combined in one workflow because
+# GITHUB_TOKEN-created tags do not trigger new workflow runs. This means a
+# versioned Docker image must be built in the same run that release-plz
+# creates the release, using its job outputs to pass the version through.
+#
 
 on:
   push:
