@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21](https://github.com/encryption4all/cryptify/compare/v0.1.20...v0.1.21) - 2026-04-03
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.1.20](https://github.com/encryption4all/cryptify/compare/v0.1.19...v0.1.20) - 2026-04-03
 
 ### Other
