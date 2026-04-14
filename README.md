@@ -1,88 +1,31 @@
 # cryptify
 
-## Introduction
+> For full documentation, visit [docs.postguard.eu](https://docs.postguard.eu/repos/cryptify).
 
-Cryptify offers file encryption/decryption based on IRMA attributes. It allows
-you to encrypt any file with an attribute and only people with that attribute
-can view the contents.
+File encryption and sharing service based on identity attributes. Cryptify is the file storage and delivery backend used by the PostGuard website and JavaScript SDK. When users upload encrypted files through PostGuard, they are stored and served by Cryptify.
 
-## Docker development setup
+The project has a Rust backend and a TypeScript frontend.
 
-To run a development setup:
+## Development
 
-```
+Docker is the recommended way to run the full stack:
+
+```bash
 docker-compose -f docker-compose.dev.yml up
 ```
 
-To run a production-like setup:
+For a production-like setup:
 
-```
+```bash
 docker-compose up
 ```
 
-## Frontend
+To work on individual components without Docker, the frontend needs Node.js and the backend needs Rust. See the `cryptify-front-end` and `cryptify-back-end` directories for details.
 
-### Development setup
+## Releasing
 
--   Clone the project
+Releases are automated with [release-plz](https://release-plz.ieni.dev/). Merging to `main` triggers a release, and Docker images are published automatically.
 
-        git clone git@github.com:privacybydesign/cryptify.git
+## License
 
--   Install nodejs 14 and rust
-
-        # On Debian / Ubuntu
-        curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
--   Goto the `cryptify-front-end` folder and install dependencies
-
-        npm install
-
-### Running the front-end
-
--   Change the `baseurl` constant in `FileProvider.ts` to `http://localhost:3000`.
-    This way the front-end uses the locally running backend.
-
--   Start the development server
-
-        npm run start
-
-### Packaging webpage
-
--   Build the web site
-
-        npm run build
-
-### Packaging electron
-
--   Package electron installers
-
-        npm run dist-electron
-
-## Backend
-
-### Configuration
-
-For the back-end to be able to send e-mail and store files, the following environment variables are needed:
-
--   _ROCKET_CONFIG_: The path to the configuration file (example in `conf/`)
-
-### Build
-
-The backend can be built using:
-
-```
-env ROCKET_ENV={development,production} cargo build
-```
-
-The backend can be run using:
-
-```
-env ROCKET_CONFIG={path_to_config} ./target/{release,debug}/cryptify-backend
-```
-
-Get a development setup using:
-
-```
-env ROCKET_ENV=development ROCKET_CONFIG={path_to_config} cargo watch -x run
-```
+MIT
