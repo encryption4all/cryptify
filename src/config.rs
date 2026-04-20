@@ -1,6 +1,22 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum AllowedOriginsConfig {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl From<AllowedOriginsConfig> for Vec<String> {
+    fn from(value: AllowedOriginsConfig) -> Self {
+        match value {
+            AllowedOriginsConfig::Single(s) => vec![s],
+            AllowedOriginsConfig::Multiple(v) => v,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RawCryptifyConfig {
     server_url: String,
     data_dir: String,
@@ -10,7 +26,7 @@ pub struct RawCryptifyConfig {
     smtp_username: Option<String>,
     smtp_password: Option<String>,
     smtp_tls: Option<bool>,
-    allowed_origins: String,
+    allowed_origins: AllowedOriginsConfig,
     pkg_url: String,
 }
 
@@ -25,7 +41,7 @@ pub struct CryptifyConfig {
     smtp_username: Option<String>,
     smtp_password: Option<String>,
     smtp_tls: bool,
-    allowed_origins: String,
+    allowed_origins: Vec<String>,
     pkg_url: String,
 }
 
@@ -43,7 +59,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_username: config.smtp_username,
             smtp_password: config.smtp_password,
             smtp_tls: config.smtp_tls.unwrap_or(true),
-            allowed_origins: config.allowed_origins,
+            allowed_origins: config.allowed_origins.into(),
             pkg_url: config.pkg_url,
         }
     }
@@ -82,11 +98,40 @@ impl CryptifyConfig {
         self.smtp_tls
     }
 
-    pub fn allowed_origins(&self) -> &str {
+    pub fn allowed_origins(&self) -> &[String] {
         &self.allowed_origins
     }
 
     pub fn pkg_url(&self) -> &str {
         &self.pkg_url
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_string_allowed_origins_is_wrapped_in_vec() {
+        let raw: AllowedOriginsConfig =
+            serde_json::from_str(r#""^https://postguard\\.(eu|nl)$""#).unwrap();
+        let list: Vec<String> = raw.into();
+        assert_eq!(list, vec![r"^https://postguard\.(eu|nl)$".to_string()]);
+    }
+
+    #[test]
+    fn list_allowed_origins_passes_through() {
+        let raw: AllowedOriginsConfig = serde_json::from_str(
+            r#"["^https://postguard\\.eu$", "^https://postguard\\.nl$"]"#,
+        )
+        .unwrap();
+        let list: Vec<String> = raw.into();
+        assert_eq!(
+            list,
+            vec![
+                r"^https://postguard\.eu$".to_string(),
+                r"^https://postguard\.nl$".to_string(),
+            ]
+        );
     }
 }

@@ -438,7 +438,7 @@ async fn rocket() -> _ {
         .unwrap_or_else(|e| panic!("Failed to parse verification key from {}: {}", pkg_params_url, e));
 
     let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
+        .allowed_origins(AllowedOrigins::some_regex(config.allowed_origins()))
         .allowed_methods(
             vec![Method::Get, Method::Post, Method::Put]
                 .into_iter()
