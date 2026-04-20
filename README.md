@@ -1,88 +1,35 @@
-# cryptify
+# <p align="center"><img src="./img/pg_logo.svg" height="128px" alt="PostGuard" /></p>
 
-## Introduction
+> For full documentation, visit [docs.postguard.eu](https://docs.postguard.eu/repos/cryptify).
 
-Cryptify offers file encryption/decryption based on IRMA attributes. It allows
-you to encrypt any file with an attribute and only people with that attribute
-can view the contents.
+File encryption and sharing service based on identity attributes. Cryptify is the file storage and delivery backend used by the PostGuard website and JavaScript SDK. When users upload encrypted files through PostGuard, they are stored and served by Cryptify.
 
-## Docker development setup
+Cryptify is a Rust service built on the Rocket framework.
 
-To run a development setup:
+## Development
 
-```
+Docker is the recommended way to run the service:
+
+```bash
 docker-compose -f docker-compose.dev.yml up
 ```
 
-To run a production-like setup:
+For a production-like setup:
 
-```
+```bash
 docker-compose up
 ```
 
-## Frontend
+To work on the service without Docker, Rust is required:
 
-### Development setup
-
--   Clone the project
-
-        git clone git@github.com:privacybydesign/cryptify.git
-
--   Install nodejs 14 and rust
-
-        # On Debian / Ubuntu
-        curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
--   Goto the `cryptify-front-end` folder and install dependencies
-
-        npm install
-
-### Running the front-end
-
--   Change the `baseurl` constant in `FileProvider.ts` to `http://localhost:3000`.
-    This way the front-end uses the locally running backend.
-
--   Start the development server
-
-        npm run start
-
-### Packaging webpage
-
--   Build the web site
-
-        npm run build
-
-### Packaging electron
-
--   Package electron installers
-
-        npm run dist-electron
-
-## Backend
-
-### Configuration
-
-For the back-end to be able to send e-mail and store files, the following environment variables are needed:
-
--   _ROCKET_CONFIG_: The path to the configuration file (example in `conf/`)
-
-### Build
-
-The backend can be built using:
-
-```
-env ROCKET_ENV={development,production} cargo build
+```bash
+env ROCKET_CONFIG=conf/config.dev.toml cargo run
 ```
 
-The backend can be run using:
+## Releasing
 
-```
-env ROCKET_CONFIG={path_to_config} ./target/{release,debug}/cryptify-backend
-```
+Releases are automated with [release-plz](https://release-plz.ieni.dev/). Merging to `main` triggers a release, and Docker images are published automatically.
 
-Get a development setup using:
+## License
 
-```
-env ROCKET_ENV=development ROCKET_CONFIG={path_to_config} cargo watch -x run
-```
+MIT
