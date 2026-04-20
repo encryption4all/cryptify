@@ -4,11 +4,11 @@
 
 File encryption and sharing service based on identity attributes. Cryptify is the file storage and delivery backend used by the PostGuard website and JavaScript SDK. When users upload encrypted files through PostGuard, they are stored and served by Cryptify.
 
-The project has a Rust backend and a TypeScript frontend.
+Cryptify is a Rust service built on the Rocket framework.
 
 ## Development
 
-Docker is the recommended way to run the full stack:
+Docker is the recommended way to run the service:
 
 ```bash
 docker-compose -f docker-compose.dev.yml up
@@ -20,7 +20,11 @@ For a production-like setup:
 docker-compose up
 ```
 
-To work on individual components without Docker, the frontend needs Node.js and the backend needs Rust. See the `cryptify-front-end` and `cryptify-back-end` directories for details.
+To work on the service without Docker, Rust is required:
+
+```bash
+env ROCKET_CONFIG=conf/config.dev.toml cargo run
+```
 
 ## Releasing
 
