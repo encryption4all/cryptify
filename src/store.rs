@@ -1,4 +1,5 @@
 use crate::email;
+use crate::metrics::Metrics;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -18,6 +19,9 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
+    /// Traffic source this upload originated from ("website", "outlook",
+    /// "thunderbird", "api", ...). Used only for metrics labelling.
+    pub source_channel: String,
 }
 
 struct StoreState {
@@ -30,6 +34,7 @@ struct StoreState {
 struct SharedState {
     state: std::sync::Mutex<StoreState>,
     notify: Notify,
+    metrics: Arc<Metrics>,
 }
 
 pub struct Store {
@@ -37,7 +42,7 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn new() -> Self {
+    pub fn new(metrics: Arc<Metrics>) -> Self {
         let result = Store {
             shared: Arc::new(SharedState {
                 state: std::sync::Mutex::new(StoreState {
@@ -47,6 +52,7 @@ impl Store {
                     shutdown: false,
                 }),
                 notify: Notify::new(),
+                metrics,
             }),
         };
 
@@ -98,7 +104,16 @@ impl SharedState {
                 return Some(when);
             }
 
-            state.files.remove(id);
+            let id = id.clone();
+            if let Some(entry) = state.files.remove(&id) {
+                // An entry that still had no `sender` set was never finalized.
+                // (`sender` is populated by `upload_finalize` once the file has
+                // been unsealed.)
+                let was_unfinalized = entry.try_lock().map(|g| g.sender.is_none()).unwrap_or(false);
+                if was_unfinalized {
+                    self.metrics.record_expired();
+                }
+            }
             state.expirations.remove(&(when, removal_id));
         }
 

@@ -9,6 +9,8 @@ servers:
 tags:
 - name: "Health"
   description: "Health check"
+- name: "Metrics"
+  description: "Prometheus scrape endpoint"
 - name: "File upload"
   description: "Upload files"
 - name: "File download"
@@ -28,6 +30,37 @@ paths:
               schema:
                 type: "string"
                 example: "OK"
+  /metrics:
+    get:
+      tags:
+        - "Metrics"
+      summary: "Prometheus text-format metrics"
+      description: |
+        Returns usage counters and gauges suitable for Prometheus scraping
+        by the Grafana instance on Scaleway. Intended to be reachable only
+        from the internal monitoring network; firewall or reverse-proxy
+        allow-list in front of Cryptify.
+
+        Exposed metrics:
+          * `cryptify_uploads_total{channel}` — counter of finalized uploads.
+          * `cryptify_upload_bytes_total{channel}` — counter of bytes.
+          * `cryptify_storage_bytes` — gauge, current disk usage.
+          * `cryptify_active_files` — gauge, current file count.
+          * `cryptify_expired_files_total` — counter of uploads purged
+             before finalization.
+
+        The `channel` label is derived from the `X-Cryptify-Source` header,
+        falling back to `Authorization`/`X-Api-Key` (→ `api`), then the
+        `Origin` header (`website` / `staging-website`), then `User-Agent`
+        (`outlook` / `thunderbird`), then `unknown`.
+      operationId: "metrics"
+      responses:
+        "200":
+          description: "Prometheus text exposition format"
+          content:
+            text/plain:
+              schema:
+                type: "string"
   /fileupload/init:
     post:
         tags:
