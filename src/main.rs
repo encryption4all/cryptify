@@ -5,7 +5,8 @@ mod store;
 
 use crate::config::CryptifyConfig;
 use crate::email::send_email;
-use crate::error::Error;
+use crate::error::{Error, PayloadTooLargeBody};
+use crate::store::{PER_UPLOAD_LIMIT, ROLLING_LIMIT, ROLLING_WINDOW_SECS};
 
 use std::path::Path;
 use std::str::FromStr;
@@ -286,6 +287,18 @@ async fn upload_chunk(
         )));
     }
 
+    if end > PER_UPLOAD_LIMIT {
+        return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
+            error: format!(
+                "Upload exceeds the per-upload limit of {} bytes",
+                PER_UPLOAD_LIMIT
+            ),
+            limit: "per_upload",
+            used_bytes: state.uploaded,
+            limit_bytes: PER_UPLOAD_LIMIT,
+        }));
+    }
+
     if headers.cryptify_token != state.cryptify_token {
         return Err(Error::BadRequest(Some(
             "Cryptify Token header does not match".to_owned(),
@@ -408,7 +421,27 @@ async fn upload_finalize(
         })
         .collect();
 
-    state.sender = sender;
+    let now_secs = chrono::offset::Utc::now().timestamp();
+    if let Some(sender_email) = sender.as_deref() {
+        let usage = store.get_usage(sender_email, now_secs);
+        if usage.used_bytes.saturating_add(state.uploaded) > ROLLING_LIMIT {
+            drop(state);
+            store.remove(uuid);
+            let _ = rocket::tokio::fs::remove_file(Path::new(config.data_dir()).join(uuid)).await;
+            return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
+                error: format!(
+                    "Sender has exceeded the {}-day rolling limit of {} bytes",
+                    ROLLING_WINDOW_SECS / 86_400,
+                    ROLLING_LIMIT
+                ),
+                limit: "rolling_window",
+                used_bytes: usage.used_bytes,
+                limit_bytes: ROLLING_LIMIT,
+            }));
+        }
+    }
+
+    state.sender = sender.clone();
     state.sender_attributes = sender_attributes;
 
     send_email(config, &state, uuid).await.map_err(|e| {
@@ -416,7 +449,40 @@ async fn upload_finalize(
         Error::InternalServerError(Some("could not send email".to_owned()))
     })?;
 
+    if let Some(sender_email) = sender {
+        store.record_upload(sender_email, state.uploaded, now_secs);
+    }
+
     Ok(Some(()))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct UsageResponse {
+    email: String,
+    used_bytes: u64,
+    limit_bytes: u64,
+    window_days: u64,
+    per_upload_limit_bytes: u64,
+    resets_at: Option<String>,
+}
+
+#[get("/usage?<email>")]
+fn usage(store: &State<Store>, email: String) -> Json<UsageResponse> {
+    let now = chrono::offset::Utc::now().timestamp();
+    let usage = store.get_usage(&email, now);
+    let resets_at = usage
+        .oldest_expires_at
+        .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    Json(UsageResponse {
+        email,
+        used_bytes: usage.used_bytes,
+        limit_bytes: ROLLING_LIMIT,
+        window_days: (ROLLING_WINDOW_SECS / 86_400) as u64,
+        per_upload_limit_bytes: PER_UPLOAD_LIMIT,
+        resets_at,
+    })
 }
 
 #[launch]
@@ -452,7 +518,7 @@ async fn rocket() -> _ {
 
     rocket
         .attach(cors)
-        .mount("/", routes![health,upload_init, upload_chunk, upload_finalize,])
+        .mount("/", routes![health, upload_init, upload_chunk, upload_finalize, usage])
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
