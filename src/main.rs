@@ -522,7 +522,18 @@ fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<Us
 
 #[launch]
 async fn rocket() -> _ {
-    let rocket = rocket::build();
+    // Raise Rocket's default body-size limits so chunked uploads up to
+    // CHUNK_SIZE do not trip "Data limit reached while reading the request
+    // body". `data.open((end - start).bytes())` already caps the per-request
+    // read; this lifts the framework-level cap that runs before it.
+    // A small headroom above CHUNK_SIZE leaves room for HTTP overhead.
+    let limits = rocket::data::Limits::default()
+        .limit("bytes", (CHUNK_SIZE + 1024 * 1024).bytes())
+        .limit("data-form", (CHUNK_SIZE + 1024 * 1024).bytes())
+        .limit("file", (CHUNK_SIZE + 1024 * 1024).bytes());
+
+    let figment = rocket::Config::figment().merge(("limits", limits));
+    let rocket = rocket::custom(figment);
     let config = rocket
         .figment()
         .extract::<CryptifyConfig>()
