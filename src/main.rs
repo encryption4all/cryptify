@@ -6,7 +6,10 @@ mod store;
 use crate::config::CryptifyConfig;
 use crate::email::send_email;
 use crate::error::{Error, PayloadTooLargeBody};
-use crate::store::{PER_UPLOAD_LIMIT, ROLLING_LIMIT, ROLLING_WINDOW_SECS};
+use crate::store::{
+    PER_UPLOAD_LIMIT, ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT,
+    ROLLING_WINDOW_SECS,
+};
 
 use std::path::Path;
 use std::str::FromStr;
@@ -38,7 +41,7 @@ use rocket_cors::{AllowedOrigins, CorsOptions};
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-const CHUNK_SIZE: u64 = 1024 * 1024; // 1 MB
+const CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10 MiB
 
 #[derive(Serialize, Deserialize)]
 struct InitBody {
@@ -74,10 +77,24 @@ struct InitResponder {
 fn health() -> &'static str {
     "OK"
 }
+
+/// Presence of an X-Api-Key header (value not validated here — PKG handles that).
+struct ApiKeyPresent(bool);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ApiKeyPresent {
+    type Error = ();
+    async fn from_request(req: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
+        let present = req.headers().get_one("X-Api-Key").is_some();
+        rocket::request::Outcome::Success(ApiKeyPresent(present))
+    }
+}
+
 #[post("/fileupload/init", data = "<request>")]
 async fn upload_init(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
+    api_key: ApiKeyPresent,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
@@ -107,6 +124,7 @@ async fn upload_init(
                     sender: None,
                     sender_attributes: Vec::new(),
                     confirm: request.confirm,
+                    is_api_key: api_key.0,
                 },
             );
 
@@ -283,19 +301,21 @@ async fn upload_chunk(
 
     if end - start > CHUNK_SIZE {
         return Err(Error::BadRequest(Some(
-            "File chunk too large; the maximum is 1 MB".to_owned(),
+            "File chunk too large; the maximum is 10 MiB".to_owned(),
         )));
     }
 
-    if end > PER_UPLOAD_LIMIT {
+    let per_upload_limit = if state.is_api_key { API_KEY_PER_UPLOAD_LIMIT } else { PER_UPLOAD_LIMIT };
+    if end > per_upload_limit {
         return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
             error: format!(
                 "Upload exceeds the per-upload limit of {} bytes",
-                PER_UPLOAD_LIMIT
+                per_upload_limit
             ),
             limit: "per_upload",
             used_bytes: state.uploaded,
-            limit_bytes: PER_UPLOAD_LIMIT,
+            limit_bytes: per_upload_limit,
+            resets_at: None,
         }));
     }
 
@@ -421,22 +441,32 @@ async fn upload_finalize(
         })
         .collect();
 
+    let rolling_limit = if state.is_api_key { API_KEY_ROLLING_LIMIT } else { ROLLING_LIMIT };
     let now_secs = chrono::offset::Utc::now().timestamp();
     if let Some(sender_email) = sender.as_deref() {
         let usage = store.get_usage(sender_email, now_secs);
-        if usage.used_bytes.saturating_add(state.uploaded) > ROLLING_LIMIT {
+        log::info!(
+            "Rolling limit check for {} (api_key={}): used={} + current={} vs limit={}",
+            sender_email, state.is_api_key, usage.used_bytes, state.uploaded, rolling_limit
+        );
+        if usage.used_bytes.saturating_add(state.uploaded) > rolling_limit {
             drop(state);
             store.remove(uuid);
             let _ = rocket::tokio::fs::remove_file(Path::new(config.data_dir()).join(uuid)).await;
+            let resets_at = usage
+                .oldest_expires_at
+                .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
             return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
                 error: format!(
                     "Sender has exceeded the {}-day rolling limit of {} bytes",
                     ROLLING_WINDOW_SECS / 86_400,
-                    ROLLING_LIMIT
+                    rolling_limit
                 ),
                 limit: "rolling_window",
                 used_bytes: usage.used_bytes,
-                limit_bytes: ROLLING_LIMIT,
+                limit_bytes: rolling_limit,
+                resets_at,
             }));
         }
     }
@@ -468,7 +498,12 @@ struct UsageResponse {
 }
 
 #[get("/usage?<email>")]
-fn usage(store: &State<Store>, email: String) -> Json<UsageResponse> {
+fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<UsageResponse> {
+    let (rolling_limit, per_upload_limit) = if api_key.0 {
+        (API_KEY_ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT)
+    } else {
+        (ROLLING_LIMIT, PER_UPLOAD_LIMIT)
+    };
     let now = chrono::offset::Utc::now().timestamp();
     let usage = store.get_usage(&email, now);
     let resets_at = usage
@@ -478,9 +513,9 @@ fn usage(store: &State<Store>, email: String) -> Json<UsageResponse> {
     Json(UsageResponse {
         email,
         used_bytes: usage.used_bytes,
-        limit_bytes: ROLLING_LIMIT,
+        limit_bytes: rolling_limit,
         window_days: (ROLLING_WINDOW_SECS / 86_400) as u64,
-        per_upload_limit_bytes: PER_UPLOAD_LIMIT,
+        per_upload_limit_bytes: per_upload_limit,
         resets_at,
     })
 }

@@ -11,6 +11,8 @@ pub struct PayloadTooLargeBody {
     pub limit: &'static str,
     pub used_bytes: u64,
     pub limit_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
 }
 
 #[derive(Debug)]

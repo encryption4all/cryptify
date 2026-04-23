@@ -9,7 +9,9 @@ use std::{
 use rocket::tokio::{sync::Notify, time::Instant};
 
 pub const PER_UPLOAD_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
-pub const ROLLING_LIMIT: u64 = 15 * 1024 * 1024 * 1024;
+pub const ROLLING_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
+pub const API_KEY_PER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
+pub const API_KEY_ROLLING_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
 pub const ROLLING_WINDOW_SECS: i64 = 14 * 24 * 60 * 60;
 
 pub struct FileState {
@@ -22,6 +24,7 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
+    pub is_api_key: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
