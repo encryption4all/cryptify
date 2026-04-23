@@ -13,6 +13,8 @@ tags:
   description: "Upload files"
 - name: "File download"
   description: "Download files"
+- name: "Usage"
+  description: "Upload usage quotas"
 paths:
   /health:
     get:
@@ -144,6 +146,12 @@ paths:
                       type: "string"
         "404":
           description: "Partially uploaded file does not exist."
+        "413":
+          description: "The upload exceeds the per-upload size limit (5 GiB)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayloadTooLarge"
 
   /fileupload/finalize/{uuid}:
     post:
@@ -188,9 +196,74 @@ paths:
                       type: "string"
         "404":
           description: "Partially upload file does not exist."
+        "413":
+          description: "The sender has exceeded the rolling 14-day upload limit (15 GiB)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayloadTooLarge"
         "422":
           description: "Data is missing to form complete file."
-   
+
+  /usage:
+    get:
+      tags:
+      - "Usage"
+      summary: "Get rolling upload usage for a sender email"
+      description:
+        "Returns the bytes uploaded by the given email address in the last 14 days,
+        together with the applicable limits. Frontends use this to warn the user
+        before they hit the limit."
+      operationId: "getUsage"
+      parameters:
+      - in: "query"
+        name: "email"
+        description: "The sender email address to query."
+        required: true
+        schema:
+          type: "string"
+          format: "email"
+      responses:
+        "200":
+          description: "Usage information for the given email."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                  - email
+                  - used_bytes
+                  - limit_bytes
+                  - window_days
+                  - per_upload_limit_bytes
+                properties:
+                  email:
+                    type: "string"
+                    format: "email"
+                  used_bytes:
+                    type: "integer"
+                    format: "int64"
+                    description: "Bytes uploaded by this email in the rolling window."
+                  limit_bytes:
+                    type: "integer"
+                    format: "int64"
+                    description: "Rolling-window upload limit in bytes (15 GiB)."
+                  window_days:
+                    type: "integer"
+                    description: "Length of the rolling window in days."
+                  per_upload_limit_bytes:
+                    type: "integer"
+                    format: "int64"
+                    description: "Maximum size of a single upload in bytes (5 GiB)."
+                  resets_at:
+                    type: "string"
+                    format: "date-time"
+                    nullable: true
+                    description:
+                      "RFC-3339 timestamp at which the oldest recorded upload
+                      falls out of the rolling window, partially freeing quota.
+                      Null if the sender has no recorded uploads."
+
   /filedownload/{uuid}:
     get:
       tags:
@@ -224,3 +297,34 @@ paths:
                       type: "string"
         "404":
           description: "Uploaded file does not exist."
+
+components:
+  schemas:
+    PayloadTooLarge:
+      type: "object"
+      required:
+        - error
+        - limit
+        - used_bytes
+        - limit_bytes
+      properties:
+        error:
+          type: "string"
+          description: "Human-readable explanation of which limit was hit."
+        limit:
+          type: "string"
+          enum:
+            - "per_upload"
+            - "rolling_window"
+          description: "Which limit tripped the 413 response."
+        used_bytes:
+          type: "integer"
+          format: "int64"
+          description:
+            "Bytes already attributed to the sender in the relevant window.
+            For per_upload, this is the bytes already written for the current
+            upload before the rejected chunk."
+        limit_bytes:
+          type: "integer"
+          format: "int64"
+          description: "The limit value in bytes."

@@ -1,12 +1,16 @@
 use crate::email;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     sync::Arc,
     time::Duration,
 };
 
 use rocket::tokio::{sync::Notify, time::Instant};
+
+pub const PER_UPLOAD_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
+pub const ROLLING_LIMIT: u64 = 15 * 1024 * 1024 * 1024;
+pub const ROLLING_WINDOW_SECS: i64 = 14 * 24 * 60 * 60;
 
 pub struct FileState {
     pub uploaded: u64,
@@ -20,9 +24,16 @@ pub struct FileState {
     pub confirm: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct UploadRecord {
+    timestamp: i64,
+    bytes: u64,
+}
+
 struct StoreState {
     files: HashMap<String, Arc<rocket::tokio::sync::Mutex<FileState>>>,
     expirations: BTreeMap<(Instant, u64), String>,
+    usage: HashMap<String, VecDeque<UploadRecord>>,
     next_id: u64,
     shutdown: bool,
 }
@@ -43,6 +54,7 @@ impl Store {
                 state: std::sync::Mutex::new(StoreState {
                     files: HashMap::new(),
                     expirations: BTreeMap::new(),
+                    usage: HashMap::new(),
                     next_id: 0,
                     shutdown: false,
                 }),
@@ -70,6 +82,57 @@ impl Store {
     pub fn get(&self, id: &str) -> Option<Arc<rocket::tokio::sync::Mutex<FileState>>> {
         let state = self.shared.state.lock().unwrap(); // this will only panic if we already panicked elsewhere while holding the mutex, which is fine.
         state.files.get(id).cloned()
+    }
+
+    pub fn remove(&self, id: &str) {
+        let mut state = self.shared.state.lock().unwrap();
+        state.files.remove(id);
+    }
+
+    pub fn record_upload(&self, email: String, bytes: u64, now: i64) {
+        let mut state = self.shared.state.lock().unwrap();
+        let entry = state.usage.entry(email).or_default();
+        prune_records(entry, now);
+        entry.push_back(UploadRecord {
+            timestamp: now,
+            bytes,
+        });
+    }
+
+    pub fn get_usage(&self, email: &str, now: i64) -> UsageSnapshot {
+        let mut state = self.shared.state.lock().unwrap();
+        match state.usage.get_mut(email) {
+            Some(entry) => {
+                prune_records(entry, now);
+                let used_bytes = entry.iter().map(|r| r.bytes).sum();
+                let oldest_expires_at = entry.front().map(|r| r.timestamp + ROLLING_WINDOW_SECS);
+                UsageSnapshot {
+                    used_bytes,
+                    oldest_expires_at,
+                }
+            }
+            None => UsageSnapshot {
+                used_bytes: 0,
+                oldest_expires_at: None,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UsageSnapshot {
+    pub used_bytes: u64,
+    pub oldest_expires_at: Option<i64>,
+}
+
+fn prune_records(records: &mut VecDeque<UploadRecord>, now: i64) {
+    let cutoff = now - ROLLING_WINDOW_SECS;
+    while let Some(front) = records.front() {
+        if front.timestamp < cutoff {
+            records.pop_front();
+        } else {
+            break;
+        }
     }
 }
 
@@ -120,5 +183,74 @@ async fn purge_task(shared: Arc<SharedState>) {
         } else {
             shared.notify.notified().await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rocket::async_test]
+    async fn usage_is_zero_for_unknown_email() {
+        let store = Store::new();
+        assert_eq!(
+            store.get_usage("unknown@example.com", 1_000_000).used_bytes,
+            0
+        );
+    }
+
+    #[rocket::async_test]
+    async fn usage_sums_records_in_window() {
+        let store = Store::new();
+        let now: i64 = 2_000_000;
+        store.record_upload("a@example.com".into(), 1_000_000_000, now - 3600);
+        store.record_upload("a@example.com".into(), 2_000_000_000, now - 60);
+        let snap = store.get_usage("a@example.com", now);
+        assert_eq!(snap.used_bytes, 3_000_000_000);
+        assert_eq!(
+            snap.oldest_expires_at,
+            Some(now - 3600 + ROLLING_WINDOW_SECS)
+        );
+    }
+
+    #[rocket::async_test]
+    async fn usage_excludes_records_outside_window() {
+        let store = Store::new();
+        let now: i64 = 2_000_000;
+        store.record_upload(
+            "b@example.com".into(),
+            5_000_000_000,
+            now - ROLLING_WINDOW_SECS - 1,
+        );
+        store.record_upload("b@example.com".into(), 1_000_000_000, now - 60);
+        assert_eq!(
+            store.get_usage("b@example.com", now).used_bytes,
+            1_000_000_000
+        );
+    }
+
+    #[rocket::async_test]
+    async fn usage_is_isolated_per_email() {
+        let store = Store::new();
+        let now: i64 = 2_000_000;
+        store.record_upload("a@example.com".into(), 1_000, now);
+        store.record_upload("b@example.com".into(), 2_000, now);
+        assert_eq!(store.get_usage("a@example.com", now).used_bytes, 1_000);
+        assert_eq!(store.get_usage("b@example.com", now).used_bytes, 2_000);
+    }
+
+    #[rocket::async_test]
+    async fn pruning_removes_only_expired_records() {
+        let store = Store::new();
+        let now: i64 = 2_000_000;
+        store.record_upload(
+            "c@example.com".into(),
+            1_000,
+            now - ROLLING_WINDOW_SECS - 10,
+        );
+        store.record_upload("c@example.com".into(), 2_000, now - 10);
+        assert_eq!(store.get_usage("c@example.com", now).used_bytes, 2_000);
+        store.record_upload("c@example.com".into(), 3_000, now);
+        assert_eq!(store.get_usage("c@example.com", now).used_bytes, 5_000);
     }
 }
