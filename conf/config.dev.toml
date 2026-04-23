@@ -10,6 +10,7 @@ smtp_tls = false
 # smtp_username = "user"
 # smtp_password = "pw"
 allowed_origins = "^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?$"
+usage_db = "/app/data/usage.db"
 # pkg_url = "https://postguard-main.cs.ru.nl/pkg"
 # pkg_url = "https://pkg.staging.yivi.app"
 pkg_url = "http://postguard-pkg:8087"
