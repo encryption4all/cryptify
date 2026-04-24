@@ -6,9 +6,32 @@ use askama::Template;
 use chrono::{format::Locale, TimeZone};
 
 use lettre::{
-    message::header::ContentType, transport::smtp::authentication::Credentials, Message,
-    SmtpTransport, Transport,
+    message::header::{ContentType, Header, HeaderName, HeaderValue},
+    transport::smtp::authentication::Credentials,
+    Message, SmtpTransport, Transport,
 };
+
+/// `X-PostGuard: <version>` header. Set on every outgoing notification so the
+/// Outlook add-in's `OnMessageRead` launch event (which filters on this
+/// header name) fires for PostGuard mail. See encryption4all/cryptify#52.
+#[derive(Clone, Debug)]
+struct XPostGuard(String);
+
+impl Header for XPostGuard {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("X-PostGuard")
+    }
+
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(XPostGuard(s.to_owned()))
+    }
+
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
+const X_POSTGUARD_VERSION: &str = "0.1.0";
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -203,6 +226,7 @@ pub async fn send_email(
         let (email, subject) = email_templates(state, url.as_str());
         let email = Message::builder()
             .header(ContentType::TEXT_HTML)
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
             .from(config.email_from()) // checked in config
             .to(recipient.clone())
             .subject(subject)
@@ -231,6 +255,7 @@ pub async fn send_email(
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
             .header(ContentType::TEXT_HTML)
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
             .from(config.email_from())
             .to(sender.parse()?)
             .subject(subject)
@@ -251,6 +276,35 @@ pub async fn send_email(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn x_postguard_header_name_matches_outlook_filter() {
+        assert_eq!(format!("{}", XPostGuard::name()), "X-PostGuard");
+    }
+
+    #[test]
+    fn x_postguard_header_round_trips() {
+        let parsed = XPostGuard::parse("0.1.0").expect("parse");
+        assert_eq!(parsed.0, "0.1.0");
+    }
+
+    #[test]
+    fn x_postguard_header_serialises_into_message() {
+        use lettre::message::Mailbox;
+        let msg = Message::builder()
+            .from("noreply@example.com".parse::<Mailbox>().unwrap())
+            .to("to@example.com".parse::<Mailbox>().unwrap())
+            .subject("t")
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+            .body(String::from("hi"))
+            .expect("build");
+        let raw = String::from_utf8(msg.formatted()).expect("utf8");
+        assert!(
+            raw.contains("X-PostGuard: 0.1.0"),
+            "expected X-PostGuard header in message, got: {}",
+            raw
+        );
+    }
 
     #[test]
     fn format_file_size_zero() {
