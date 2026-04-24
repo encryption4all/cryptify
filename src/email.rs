@@ -170,6 +170,14 @@ pub async fn send_email(
     state: &FileState,
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    if config.email_stub() {
+        log::info!(
+            "email_stub is enabled; not sending email for upload {} ({} recipients)",
+            uuid,
+            state.recipients.iter().count()
+        );
+        return Ok("Email send stubbed".to_owned());
+    }
     // setup SMTP connection
     log::info!(
         "Setting up SMTP: host={}, port={}, tls={}, credentials={}",

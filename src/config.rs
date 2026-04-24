@@ -10,6 +10,8 @@ pub struct RawCryptifyConfig {
     smtp_username: Option<String>,
     smtp_password: Option<String>,
     smtp_tls: Option<bool>,
+    #[serde(default)]
+    email_stub: Option<bool>,
     allowed_origins: String,
     pkg_url: String,
 }
@@ -25,6 +27,7 @@ pub struct CryptifyConfig {
     smtp_username: Option<String>,
     smtp_password: Option<String>,
     smtp_tls: bool,
+    email_stub: bool,
     allowed_origins: String,
     pkg_url: String,
 }
@@ -43,6 +46,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_username: config.smtp_username,
             smtp_password: config.smtp_password,
             smtp_tls: config.smtp_tls.unwrap_or(true),
+            email_stub: config.email_stub.unwrap_or(false),
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
         }
@@ -80,6 +84,10 @@ impl CryptifyConfig {
 
     pub fn smtp_tls(&self) -> bool {
         self.smtp_tls
+    }
+
+    pub fn email_stub(&self) -> bool {
+        self.email_stub
     }
 
     pub fn allowed_origins(&self) -> &str {
