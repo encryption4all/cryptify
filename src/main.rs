@@ -41,8 +41,6 @@ use rocket_cors::{AllowedOrigins, CorsOptions};
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-const CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10 MiB
-
 #[derive(Serialize, Deserialize)]
 struct InitBody {
     recipient: String,
@@ -308,9 +306,9 @@ async fn upload_chunk(
         )));
     }
 
-    if end - start > CHUNK_SIZE {
+    if end - start > config.chunk_size() {
         return Err(Error::BadRequest(Some(
-            "File chunk too large; the maximum is 10 MiB".to_owned(),
+            format!("File chunk too large; the maximum is {} bytes", config.chunk_size()),
         )));
     }
 
@@ -544,22 +542,24 @@ fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<Us
 
 #[launch]
 async fn rocket() -> _ {
+    // Extract config first so we can use chunk_size for Rocket's body-size limits.
+    let config = rocket::Config::figment()
+        .extract::<CryptifyConfig>()
+        .expect("Missing configuration");
+
     // Raise Rocket's default body-size limits so chunked uploads up to
-    // CHUNK_SIZE do not trip "Data limit reached while reading the request
+    // chunk_size do not trip "Data limit reached while reading the request
     // body". `data.open((end - start).bytes())` already caps the per-request
     // read; this lifts the framework-level cap that runs before it.
-    // A small headroom above CHUNK_SIZE leaves room for HTTP overhead.
+    // A small headroom above chunk_size leaves room for HTTP overhead.
+    let chunk_size = config.chunk_size();
     let limits = rocket::data::Limits::default()
-        .limit("bytes", (CHUNK_SIZE + 1024 * 1024).bytes())
-        .limit("data-form", (CHUNK_SIZE + 1024 * 1024).bytes())
-        .limit("file", (CHUNK_SIZE + 1024 * 1024).bytes());
+        .limit("bytes", (chunk_size + 1024 * 1024).bytes())
+        .limit("data-form", (chunk_size + 1024 * 1024).bytes())
+        .limit("file", (chunk_size + 1024 * 1024).bytes());
 
     let figment = rocket::Config::figment().merge(("limits", limits));
     let rocket = rocket::custom(figment);
-    let config = rocket
-        .figment()
-        .extract::<CryptifyConfig>()
-        .expect("Missing configuration");
 
     let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
     let response = minreq::get(&pkg_params_url)

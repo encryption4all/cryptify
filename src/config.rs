@@ -12,6 +12,7 @@ pub struct RawCryptifyConfig {
     smtp_tls: Option<bool>,
     allowed_origins: String,
     pkg_url: String,
+    chunk_size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +28,7 @@ pub struct CryptifyConfig {
     smtp_tls: bool,
     allowed_origins: String,
     pkg_url: String,
+    chunk_size: u64,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -45,6 +47,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_tls: config.smtp_tls.unwrap_or(true),
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
+            chunk_size: config.chunk_size.unwrap_or(5_000_000),
         }
     }
 }
@@ -88,5 +91,9 @@ impl CryptifyConfig {
 
     pub fn pkg_url(&self) -> &str {
         &self.pkg_url
+    }
+
+    pub fn chunk_size(&self) -> u64 {
+        self.chunk_size
     }
 }
