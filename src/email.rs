@@ -107,11 +107,15 @@ struct EmailTemplate<'a> {
 
 fn format_file_size(size: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let i = ((size as f64).log10() / (1024_f64).log10()).floor();
+    if size == 0 {
+        return "0 B".to_owned();
+    }
+    let i = ((size as f64).log10() / (1024_f64).log10()).floor() as usize;
+    let i = i.min(UNITS.len() - 1);
     format!(
         "{:.1} {}",
         (size as f64 / (1024_f64).powi(i as i32)),
-        UNITS[i as usize]
+        UNITS[i]
     )
 }
 
@@ -300,5 +304,45 @@ mod tests {
             "expected X-PostGuard header in message, got: {}",
             raw
         );
+    }
+
+    #[test]
+    fn format_file_size_zero() {
+        assert_eq!(format_file_size(0), "0 B");
+    }
+
+    #[test]
+    fn format_file_size_bytes() {
+        assert_eq!(format_file_size(1), "1.0 B");
+        assert_eq!(format_file_size(1023), "1023.0 B");
+    }
+
+    #[test]
+    fn format_file_size_kibibytes() {
+        assert_eq!(format_file_size(1024), "1.0 kB");
+        assert_eq!(format_file_size(1536), "1.5 kB");
+    }
+
+    #[test]
+    fn format_file_size_mebibytes() {
+        assert_eq!(format_file_size(1024 * 1024), "1.0 MB");
+    }
+
+    #[test]
+    fn format_file_size_gibibytes() {
+        assert_eq!(format_file_size(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn format_file_size_tebibytes() {
+        assert_eq!(format_file_size(1024_u64.pow(4)), "1.0 TB");
+    }
+
+    #[test]
+    fn format_file_size_clamps_above_tb() {
+        // u64 max is ~16 EB, far beyond TB — previously UNITS[i] would panic.
+        // The clamp keeps us at TB and produces a sensible large-TB number.
+        let result = format_file_size(u64::MAX);
+        assert!(result.ends_with(" TB"), "got {}", result);
     }
 }

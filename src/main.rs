@@ -266,6 +266,15 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
     format!("{:x}", hash.finalize())
 }
 
+fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
+    if header != expected {
+        return Err(Error::BadRequest(Some(
+            "Cryptify Token header does not match".to_owned(),
+        )));
+    }
+    Ok(())
+}
+
 #[put("/fileupload/<uuid>", data = "<data>")]
 async fn upload_chunk(
     config: &State<CryptifyConfig>,
@@ -319,11 +328,7 @@ async fn upload_chunk(
         }));
     }
 
-    if headers.cryptify_token != state.cryptify_token {
-        return Err(Error::BadRequest(Some(
-            "Cryptify Token header does not match".to_owned(),
-        )));
-    }
+    check_cryptify_token(&headers.cryptify_token, &state.cryptify_token)?;
 
     let mut file = match OpenOptions::new()
         .write(true)
@@ -364,6 +369,7 @@ async fn upload_chunk(
 }
 
 struct FinalizeHeaders {
+    cryptify_token: String,
     content_range: ContentRange,
 }
 
@@ -374,6 +380,17 @@ impl<'r> FromRequest<'r> for FinalizeHeaders {
     async fn from_request(
         request: &'r rocket::Request<'_>,
     ) -> rocket::request::Outcome<Self, Self::Error> {
+        let cryptify_token = match request.headers().get_one("CryptifyToken") {
+            Some(cryptify_token) => cryptify_token,
+            None => {
+                return rocket::request::Outcome::Error((
+                    rocket::http::Status::BadRequest,
+                    "Missing Cryptify Token header".into(),
+                ))
+            }
+        }
+        .to_string();
+
         let content_range = match request.headers().get_one("Content-Range") {
             Some(content_range) => content_range,
             None => {
@@ -390,7 +407,10 @@ impl<'r> FromRequest<'r> for FinalizeHeaders {
                 return rocket::request::Outcome::Error((rocket::http::Status::BadRequest, e))
             }
         };
-        rocket::request::Outcome::Success(FinalizeHeaders { content_range })
+        rocket::request::Outcome::Success(FinalizeHeaders {
+            cryptify_token,
+            content_range,
+        })
     }
 }
 
@@ -407,6 +427,8 @@ async fn upload_finalize(
         None => return Ok(None),
     };
     let mut state = state.lock().await;
+
+    check_cryptify_token(&headers.cryptify_token, &state.cryptify_token)?;
 
     if headers.content_range.size != Some(state.uploaded) {
         return Err(Error::UnprocessableEntity(None));
@@ -522,7 +544,18 @@ fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<Us
 
 #[launch]
 async fn rocket() -> _ {
-    let rocket = rocket::build();
+    // Raise Rocket's default body-size limits so chunked uploads up to
+    // CHUNK_SIZE do not trip "Data limit reached while reading the request
+    // body". `data.open((end - start).bytes())` already caps the per-request
+    // read; this lifts the framework-level cap that runs before it.
+    // A small headroom above CHUNK_SIZE leaves room for HTTP overhead.
+    let limits = rocket::data::Limits::default()
+        .limit("bytes", (CHUNK_SIZE + 1024 * 1024).bytes())
+        .limit("data-form", (CHUNK_SIZE + 1024 * 1024).bytes())
+        .limit("file", (CHUNK_SIZE + 1024 * 1024).bytes());
+
+    let figment = rocket::Config::figment().merge(("limits", limits));
+    let rocket = rocket::custom(figment);
     let config = rocket
         .figment()
         .extract::<CryptifyConfig>()
@@ -558,4 +591,156 @@ async fn rocket() -> _ {
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
         .manage(vk)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rocket::http::{Header, Status};
+    use rocket::local::asynchronous::Client;
+
+    // Test-only route exercising the FinalizeHeaders extractor in isolation.
+    // Echoes the extracted fields so the test can verify successful parsing.
+    #[post("/__test/finalize_headers")]
+    fn finalize_headers_echo(h: FinalizeHeaders) -> String {
+        format!(
+            "{}|{}",
+            h.cryptify_token,
+            h.content_range.size.unwrap_or(0)
+        )
+    }
+
+    async fn headers_client() -> Client {
+        let r = rocket::build().mount("/", routes![finalize_headers_echo]);
+        Client::tracked(r).await.expect("valid rocket")
+    }
+
+    #[rocket::async_test]
+    async fn finalize_headers_reject_missing_cryptify_token() {
+        let client = headers_client().await;
+        let res = client
+            .post("/__test/finalize_headers")
+            .header(Header::new("Content-Range", "bytes 0-99/100"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::BadRequest);
+    }
+
+    #[rocket::async_test]
+    async fn finalize_headers_reject_missing_content_range() {
+        let client = headers_client().await;
+        let res = client
+            .post("/__test/finalize_headers")
+            .header(Header::new("CryptifyToken", "abc123"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::BadRequest);
+    }
+
+    #[rocket::async_test]
+    async fn finalize_headers_reject_malformed_content_range() {
+        let client = headers_client().await;
+        let res = client
+            .post("/__test/finalize_headers")
+            .header(Header::new("CryptifyToken", "abc123"))
+            .header(Header::new("Content-Range", "not a real range"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::BadRequest);
+    }
+
+    #[rocket::async_test]
+    async fn finalize_headers_extract_both_headers() {
+        let client = headers_client().await;
+        let res = client
+            .post("/__test/finalize_headers")
+            .header(Header::new("CryptifyToken", "deadbeef"))
+            .header(Header::new("Content-Range", "bytes 0-99/100"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(res.into_string().await.as_deref(), Some("deadbeef|100"));
+    }
+
+    #[test]
+    fn content_range_parses_well_formed_range() {
+        let cr: ContentRange = "bytes 0-99/100".parse().unwrap();
+        assert_eq!(cr.start, Some(0));
+        assert_eq!(cr.end, Some(99));
+        assert_eq!(cr.size, Some(100));
+    }
+
+    #[test]
+    fn content_range_accepts_wildcard_range() {
+        let cr: ContentRange = "bytes */100".parse().unwrap();
+        assert_eq!(cr.start, None);
+        assert_eq!(cr.end, None);
+        assert_eq!(cr.size, Some(100));
+    }
+
+    #[test]
+    fn content_range_accepts_wildcard_size() {
+        let cr: ContentRange = "bytes 0-99/*".parse().unwrap();
+        assert_eq!(cr.start, Some(0));
+        assert_eq!(cr.end, Some(99));
+        assert_eq!(cr.size, None);
+    }
+
+    #[test]
+    fn content_range_rejects_wrong_unit() {
+        assert!("items 0-99/100".parse::<ContentRange>().is_err());
+    }
+
+    #[test]
+    fn content_range_rejects_empty_string() {
+        assert!("".parse::<ContentRange>().is_err());
+    }
+
+    #[test]
+    fn check_cryptify_token_accepts_matching_token() {
+        assert!(check_cryptify_token("abc123", "abc123").is_ok());
+    }
+
+    #[test]
+    fn check_cryptify_token_rejects_mismatched_token() {
+        let result = check_cryptify_token("wrong", "expected");
+        match result {
+            Err(Error::BadRequest(Some(msg))) => {
+                assert_eq!(msg, "Cryptify Token header does not match");
+            }
+            other => panic!("expected BadRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_cryptify_token_rejects_empty_header_when_token_expected() {
+        assert!(matches!(
+            check_cryptify_token("", "expected"),
+            Err(Error::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn check_cryptify_token_is_case_sensitive() {
+        assert!(matches!(
+            check_cryptify_token("ABC123", "abc123"),
+            Err(Error::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn compute_hash_is_deterministic() {
+        let h1 = compute_hash(b"token", b"data");
+        let h2 = compute_hash(b"token", b"data");
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64);
+    }
+
+    #[test]
+    fn compute_hash_differs_for_different_tokens() {
+        assert_ne!(
+            compute_hash(b"token-a", b"data"),
+            compute_hash(b"token-b", b"data")
+        );
+    }
 }
