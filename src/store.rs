@@ -8,10 +8,10 @@ use std::{
 
 use rocket::tokio::{sync::Notify, time::Instant};
 
-pub const PER_UPLOAD_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
-pub const ROLLING_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
-pub const API_KEY_PER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
-pub const API_KEY_ROLLING_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
+pub const PER_UPLOAD_LIMIT: u64 = 5_000_000_000;
+pub const ROLLING_LIMIT: u64 = 5_000_000_000;
+pub const API_KEY_PER_UPLOAD_LIMIT: u64 = 100_000_000_000;
+pub const API_KEY_ROLLING_LIMIT: u64 = 100_000_000_000;
 pub const ROLLING_WINDOW_SECS: i64 = 14 * 24 * 60 * 60;
 
 pub struct FileState {
