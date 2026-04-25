@@ -26,6 +26,15 @@ To work on the service without Docker, Rust is required:
 env ROCKET_CONFIG=conf/config.dev.toml cargo run
 ```
 
+## Monitoring
+
+Cryptify exposes Prometheus metrics at `GET /metrics` for scraping from the
+monitoring network. See [`docs/grafana/`](docs/grafana/) for the reference
+dashboard JSON and the Prometheus scrape configuration.
+
+The endpoint is unauthenticated — restrict access at the firewall or reverse
+proxy.
+
 ## Releasing
 
 Releases are automated with [release-plz](https://release-plz.ieni.dev/). Merging to `main` triggers a release, and Docker images are published automatically.
