@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22](https://github.com/encryption4all/cryptify/compare/v0.1.21...v0.1.22) - 2026-04-24
+
+### Added
+
+- make chunk size configurable via TOML, default 5 MB
+- tiered upload limits for API key users, 10 MiB chunks, resets_at in 413
+- enforce server-side upload limits (5 GiB/upload, 15 GiB rolling/email)
+
+### Fixed
+
+- align upload limits to round GB values (5 GB / 100 GB)
+- use GB instead of GiB in API description
+- *(upload)* raise Rocket data limits to match CHUNK_SIZE
+
+### Other
+
+- Merge branch 'main' into feat/x-postguard-email-header
+- Merge pull request #105 from encryption4all/fix/upload-chunk-data-limit
+- remove outdated cryptify-frontend/backend references
+- Add PostGuard logo to README
+- Standardize README
+
 ## [0.1.21](https://github.com/encryption4all/cryptify/compare/v0.1.20...v0.1.21) - 2026-04-20
 
 ### Other

@@ -42,8 +42,6 @@ use rocket_cors::{AllowedOrigins, CorsOptions};
 use serde::{Deserialize, Serialize};
 use store::{FileState, Store};
 
-const CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10 MiB
-
 #[derive(Serialize, Deserialize)]
 struct InitBody {
     recipient: String,
@@ -309,9 +307,9 @@ async fn upload_chunk(
         )));
     }
 
-    if end - start > CHUNK_SIZE {
+    if end - start > config.chunk_size() {
         return Err(Error::BadRequest(Some(
-            "File chunk too large; the maximum is 10 MiB".to_owned(),
+            format!("File chunk too large; the maximum is {} bytes", config.chunk_size()),
         )));
     }
 
@@ -543,16 +541,12 @@ fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<Us
     })
 }
 
-/// Figment with the body-size limits needed for chunked uploads. Shared by the
-/// production launch path and the integration test harness so tests exercise
-/// the same framework-level configuration that production does.
+/// Base Rocket figment shared by the production launch path and the integration
+/// test harness. Body-size limits are applied later in [`build_rocket`] once
+/// the merged config has been extracted (chunk_size is now configurable via
+/// TOML, so it isn't known at this point in the test path).
 pub fn default_figment() -> Figment {
-    let limits = rocket::data::Limits::default()
-        .limit("bytes", (CHUNK_SIZE + 1024 * 1024).bytes())
-        .limit("data-form", (CHUNK_SIZE + 1024 * 1024).bytes())
-        .limit("file", (CHUNK_SIZE + 1024 * 1024).bytes());
-
-    rocket::Config::figment().merge(("limits", limits))
+    rocket::Config::figment()
 }
 
 /// Build a Rocket instance from a pre-loaded config figment and verifying key.
@@ -561,11 +555,22 @@ pub fn default_figment() -> Figment {
 /// stubbed email sending) and their own `VerifyingKey` (from
 /// `pg_core::test::TestSetup`) without needing a live PKG at startup.
 pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Build> {
-    let rocket = rocket::custom(figment);
-    let config = rocket
-        .figment()
+    let config = figment
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
+
+    // Raise Rocket's default body-size limits so chunked uploads up to
+    // chunk_size do not trip "Data limit reached while reading the request
+    // body". `data.open((end - start).bytes())` already caps the per-request
+    // read; this lifts the framework-level cap that runs before it.
+    // A small headroom above chunk_size leaves room for HTTP overhead.
+    let chunk_size = config.chunk_size();
+    let limits = rocket::data::Limits::default()
+        .limit("bytes", (chunk_size + 1024 * 1024).bytes())
+        .limit("data-form", (chunk_size + 1024 * 1024).bytes())
+        .limit("file", (chunk_size + 1024 * 1024).bytes());
+
+    let rocket = rocket::custom(figment.merge(("limits", limits)));
 
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
