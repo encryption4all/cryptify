@@ -6,9 +6,32 @@ use askama::Template;
 use chrono::{format::Locale, TimeZone};
 
 use lettre::{
-    message::header::ContentType, transport::smtp::authentication::Credentials, Message,
-    SmtpTransport, Transport,
+    message::header::{ContentType, Header, HeaderName, HeaderValue},
+    transport::smtp::authentication::Credentials,
+    Message, SmtpTransport, Transport,
 };
+
+/// `X-PostGuard: <version>` header. Set on every outgoing notification so the
+/// Outlook add-in's `OnMessageRead` launch event (which filters on this
+/// header name) fires for PostGuard mail. See encryption4all/cryptify#52.
+#[derive(Clone, Debug)]
+struct XPostGuard(String);
+
+impl Header for XPostGuard {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("X-PostGuard")
+    }
+
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(XPostGuard(s.to_owned()))
+    }
+
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
+const X_POSTGUARD_VERSION: &str = "0.1.0";
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -84,11 +107,15 @@ struct EmailTemplate<'a> {
 
 fn format_file_size(size: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let i = ((size as f64).log10() / (1024_f64).log10()).floor();
+    if size == 0 {
+        return "0 B".to_owned();
+    }
+    let i = ((size as f64).log10() / (1024_f64).log10()).floor() as usize;
+    let i = i.min(UNITS.len() - 1);
     format!(
         "{:.1} {}",
         (size as f64 / (1024_f64).powi(i as i32)),
-        UNITS[i as usize]
+        UNITS[i]
     )
 }
 
@@ -199,6 +226,7 @@ pub async fn send_email(
         let (email, subject) = email_templates(state, url.as_str());
         let email = Message::builder()
             .header(ContentType::TEXT_HTML)
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
             .from(config.email_from()) // checked in config
             .to(recipient.clone())
             .subject(subject)
@@ -227,6 +255,7 @@ pub async fn send_email(
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
             .header(ContentType::TEXT_HTML)
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
             .from(config.email_from())
             .to(sender.parse()?)
             .subject(subject)
@@ -242,4 +271,78 @@ pub async fn send_email(
     }
 
     Ok("Email successfully sent".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn x_postguard_header_name_matches_outlook_filter() {
+        assert_eq!(format!("{}", XPostGuard::name()), "X-PostGuard");
+    }
+
+    #[test]
+    fn x_postguard_header_round_trips() {
+        let parsed = XPostGuard::parse("0.1.0").expect("parse");
+        assert_eq!(parsed.0, "0.1.0");
+    }
+
+    #[test]
+    fn x_postguard_header_serialises_into_message() {
+        use lettre::message::Mailbox;
+        let msg = Message::builder()
+            .from("noreply@example.com".parse::<Mailbox>().unwrap())
+            .to("to@example.com".parse::<Mailbox>().unwrap())
+            .subject("t")
+            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+            .body(String::from("hi"))
+            .expect("build");
+        let raw = String::from_utf8(msg.formatted()).expect("utf8");
+        assert!(
+            raw.contains("X-PostGuard: 0.1.0"),
+            "expected X-PostGuard header in message, got: {}",
+            raw
+        );
+    }
+
+    #[test]
+    fn format_file_size_zero() {
+        assert_eq!(format_file_size(0), "0 B");
+    }
+
+    #[test]
+    fn format_file_size_bytes() {
+        assert_eq!(format_file_size(1), "1.0 B");
+        assert_eq!(format_file_size(1023), "1023.0 B");
+    }
+
+    #[test]
+    fn format_file_size_kibibytes() {
+        assert_eq!(format_file_size(1024), "1.0 kB");
+        assert_eq!(format_file_size(1536), "1.5 kB");
+    }
+
+    #[test]
+    fn format_file_size_mebibytes() {
+        assert_eq!(format_file_size(1024 * 1024), "1.0 MB");
+    }
+
+    #[test]
+    fn format_file_size_gibibytes() {
+        assert_eq!(format_file_size(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn format_file_size_tebibytes() {
+        assert_eq!(format_file_size(1024_u64.pow(4)), "1.0 TB");
+    }
+
+    #[test]
+    fn format_file_size_clamps_above_tb() {
+        // u64 max is ~16 EB, far beyond TB — previously UNITS[i] would panic.
+        // The clamp keeps us at TB and produces a sensible large-TB number.
+        let result = format_file_size(u64::MAX);
+        assert!(result.ends_with(" TB"), "got {}", result);
+    }
 }
