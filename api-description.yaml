@@ -147,7 +147,7 @@ paths:
         "404":
           description: "Partially uploaded file does not exist."
         "413":
-          description: "The upload exceeds the per-upload size limit (5 GB)."
+          description: "The upload exceeds the per-upload size limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
             application/json:
               schema:
@@ -197,7 +197,7 @@ paths:
         "404":
           description: "Partially upload file does not exist."
         "413":
-          description: "The sender has exceeded the rolling 14-day upload limit (15 GB)."
+          description: "The sender has exceeded the rolling 14-day upload limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
             application/json:
               schema:
@@ -247,14 +247,14 @@ paths:
                   limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Rolling-window upload limit in bytes (15 GB)."
+                    description: "Rolling-window upload limit in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
                   window_days:
                     type: "integer"
                     description: "Length of the rolling window in days."
                   per_upload_limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Maximum size of a single upload in bytes (5 GB)."
+                    description: "Maximum size of a single upload in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
                   resets_at:
                     type: "string"
                     format: "date-time"
