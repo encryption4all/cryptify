@@ -1667,9 +1667,9 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pg-core"
-version = "0.3.1"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a18a138ae7c29391a901e9a4bd5f23729be78e27daee95988fe7a50cf6aa6d57"
+checksum = "8c4d538eda0ae961d100ba8ddf549197eb401bac7d24c14a1ba7aa5aeadae30b"
 dependencies = [
  "aead",
  "aes-gcm",
