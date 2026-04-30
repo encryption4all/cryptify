@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.24](https://github.com/encryption4all/cryptify/compare/v0.1.23...v0.1.24) - 2026-04-30
+
+### Other
+
+- Merge pull request #113 from encryption4all/dependabot/cargo/rustls-webpki-0.103.13
+- Merge pull request #128 from encryption4all/dependabot/cargo/openssl-0.10.78
+- Merge remote-tracking branch 'origin/main' into chore/strum-0.28
+- Merge remote-tracking branch 'origin/main' into dobby/reqwest-0.13
+- Merge pull request #121 from encryption4all/dobby/sha2-rand
+- Merge pull request #122 from encryption4all/dobby/pg-core-0.5
+- *(deps)* bump pg-core to 0.5
+
 ## [0.1.23](https://github.com/encryption4all/cryptify/compare/v0.1.22...v0.1.23) - 2026-04-26
 
 ### Other
