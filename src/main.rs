@@ -7,7 +7,7 @@ use crate::config::CryptifyConfig;
 use crate::email::send_email;
 use crate::error::{Error, PayloadTooLargeBody};
 use crate::store::{
-    PER_UPLOAD_LIMIT, ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT,
+    API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT, PER_UPLOAD_LIMIT, ROLLING_LIMIT,
     ROLLING_WINDOW_SECS,
 };
 
@@ -21,7 +21,6 @@ use pg_core::client::Unsealer;
 
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
-use rand::Rng;
 use sha2::Digest;
 use std::fmt::Write;
 
@@ -31,7 +30,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, http::Header, launch, get, post, put, request::FromRequest,
+    data::ToByteUnit, fairing::AdHoc, get, http::Header, launch, post, put, request::FromRequest,
     response::Responder, routes, serde::json::Json, Data, State,
 };
 
@@ -106,7 +105,7 @@ async fn upload_init(
         }
     };
 
-    let init_cryptify_token = bytes_to_hex(&rand::rng().random::<[u8; 32]>());
+    let init_cryptify_token = bytes_to_hex(&rand::random::<[u8; 32]>());
 
     match request.recipient.parse() {
         Ok(recipient) => {
@@ -261,7 +260,7 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
     let mut hash = sha2::Sha256::new();
     hash.update(cryptify_token);
     hash.update(data);
-    format!("{:x}", hash.finalize())
+    bytes_to_hex(&hash.finalize())
 }
 
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
@@ -307,12 +306,17 @@ async fn upload_chunk(
     }
 
     if end - start > config.chunk_size() {
-        return Err(Error::BadRequest(Some(
-            format!("File chunk too large; the maximum is {} bytes", config.chunk_size()),
-        )));
+        return Err(Error::BadRequest(Some(format!(
+            "File chunk too large; the maximum is {} bytes",
+            config.chunk_size()
+        ))));
     }
 
-    let per_upload_limit = if state.is_api_key { API_KEY_PER_UPLOAD_LIMIT } else { PER_UPLOAD_LIMIT };
+    let per_upload_limit = if state.is_api_key {
+        API_KEY_PER_UPLOAD_LIMIT
+    } else {
+        PER_UPLOAD_LIMIT
+    };
     if end > per_upload_limit {
         return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
             error: format!(
@@ -461,13 +465,21 @@ async fn upload_finalize(
         })
         .collect();
 
-    let rolling_limit = if state.is_api_key { API_KEY_ROLLING_LIMIT } else { ROLLING_LIMIT };
+    let rolling_limit = if state.is_api_key {
+        API_KEY_ROLLING_LIMIT
+    } else {
+        ROLLING_LIMIT
+    };
     let now_secs = chrono::offset::Utc::now().timestamp();
     if let Some(sender_email) = sender.as_deref() {
         let usage = store.get_usage(sender_email, now_secs);
         log::info!(
             "Rolling limit check for {} (api_key={}): used={} + current={} vs limit={}",
-            sender_email, state.is_api_key, usage.used_bytes, state.uploaded, rolling_limit
+            sender_email,
+            state.is_api_key,
+            usage.used_bytes,
+            state.uploaded,
+            rolling_limit
         );
         if usage.used_bytes.saturating_add(state.uploaded) > rolling_limit {
             drop(state);
@@ -569,7 +581,12 @@ async fn rocket() -> _ {
 
     let vk = response
         .json::<Parameters<VerifyingKey>>()
-        .unwrap_or_else(|e| panic!("Failed to parse verification key from {}: {}", pkg_params_url, e));
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to parse verification key from {}: {}",
+                pkg_params_url, e
+            )
+        });
 
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
@@ -586,7 +603,10 @@ async fn rocket() -> _ {
 
     rocket
         .attach(cors)
-        .mount("/", routes![health, upload_init, upload_chunk, upload_finalize, usage])
+        .mount(
+            "/",
+            routes![health, upload_init, upload_chunk, upload_finalize, usage],
+        )
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
@@ -603,11 +623,7 @@ mod tests {
     // Echoes the extracted fields so the test can verify successful parsing.
     #[post("/__test/finalize_headers")]
     fn finalize_headers_echo(h: FinalizeHeaders) -> String {
-        format!(
-            "{}|{}",
-            h.cryptify_token,
-            h.content_range.size.unwrap_or(0)
-        )
+        format!("{}|{}", h.cryptify_token, h.content_range.size.unwrap_or(0))
     }
 
     async fn headers_client() -> Client {
