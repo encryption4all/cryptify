@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.23](https://github.com/encryption4all/cryptify/compare/v0.1.22...v0.1.23) - 2026-04-26
+
+### Other
+
+- *(api)* align upload limit descriptions with current constants
+
 ## [0.1.22](https://github.com/encryption4all/cryptify/compare/v0.1.21...v0.1.22) - 2026-04-24
 
 ### Added
