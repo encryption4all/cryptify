@@ -364,6 +364,9 @@ async fn upload_chunk(
 
     state.uploaded += end - start;
 
+    drop(state);
+    store.touch(uuid);
+
     Ok(Some(UploadResponder {
         body: (),
         cryptify_token: CryptifyToken(shasum),
