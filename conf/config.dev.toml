@@ -15,3 +15,20 @@ usage_db = "/app/data/usage.db"
 # pkg_url = "https://pkg.staging.yivi.app"
 pkg_url = "http://postguard-pkg:8087"
 chunk_size = 5000000
+
+# Optional: allowlist of API keys that grant the higher upload-quota tier
+# (100 GB per upload, 100 GB rolling window). Each entry stores the
+# sha256 hash of the raw key value sent in the `X-Api-Key` header — the
+# raw key value itself never appears in this file. Tenant ids are used as
+# the rolling-window accounting key (`api-key:<tenant>`).
+#
+# Generate the hash for a new key with:
+#   printf 'YOUR-RAW-KEY-VALUE' | sha256sum
+#
+# An empty list (or omitting the section entirely) disables the API-key
+# tier — every request, including those sending an `X-Api-Key` header,
+# is treated as the default tier.
+#
+# [[api_keys]]
+# tenant = "example-tenant"
+# hash = "0000000000000000000000000000000000000000000000000000000000000000"
