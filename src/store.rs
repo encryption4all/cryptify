@@ -24,6 +24,11 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
+    /// When false, the recipient notification email is suppressed (the
+    /// recipients still appear in the parsed list, but the SMTP delivery
+    /// loop in `send_email` is skipped). The sender confirmation, if
+    /// `confirm` is true, is sent regardless.
+    pub notify_recipients: bool,
     pub is_api_key: bool,
 }
 
