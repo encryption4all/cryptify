@@ -250,7 +250,7 @@ pub async fn send_email(
         let mut url = base.join("/download")?;
         url.query_pairs_mut()
             .append_pair("uuid", uuid)
-            .append_pair("recipient", &format!("{}", &sender));
+            .append_pair("recipient", &sender);
 
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
