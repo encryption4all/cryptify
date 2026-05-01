@@ -3,7 +3,7 @@ mod email;
 mod error;
 mod store;
 
-use crate::config::CryptifyConfig;
+use crate::config::{validate_api_key, CryptifyConfig};
 use crate::email::send_email;
 use crate::error::{Error, PayloadTooLargeBody};
 use crate::store::{
@@ -75,15 +75,24 @@ fn health() -> &'static str {
     "OK"
 }
 
-/// Presence of an X-Api-Key header (value not validated here — PKG handles that).
-struct ApiKeyPresent(bool);
+/// Validated `X-Api-Key`. `Some(tenant)` only when the header value matches
+/// a configured key in `CryptifyConfig::api_keys` (compared by sha256 hash).
+/// A missing, empty, or unrecognised value yields `None` and the caller is
+/// treated as the default (lower-quota) tier.
+struct ApiKey(Option<String>);
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for ApiKeyPresent {
+impl<'r> FromRequest<'r> for ApiKey {
     type Error = ();
     async fn from_request(req: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
-        let present = req.headers().get_one("X-Api-Key").is_some();
-        rocket::request::Outcome::Success(ApiKeyPresent(present))
+        let header = req.headers().get_one("X-Api-Key");
+        let configured = req
+            .rocket()
+            .state::<CryptifyConfig>()
+            .map(|c| c.api_keys())
+            .unwrap_or(&[]);
+        let tenant = validate_api_key(header, configured);
+        rocket::request::Outcome::Success(ApiKey(tenant))
     }
 }
 
@@ -91,7 +100,7 @@ impl<'r> FromRequest<'r> for ApiKeyPresent {
 async fn upload_init(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
-    api_key: ApiKeyPresent,
+    api_key: ApiKey,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
@@ -121,7 +130,7 @@ async fn upload_init(
                     sender: None,
                     sender_attributes: Vec::new(),
                     confirm: request.confirm,
-                    is_api_key: api_key.0,
+                    api_key_tenant: api_key.0,
                 },
             );
 
@@ -312,7 +321,7 @@ async fn upload_chunk(
         ))));
     }
 
-    let per_upload_limit = if state.is_api_key {
+    let per_upload_limit = if state.api_key_tenant.is_some() {
         API_KEY_PER_UPLOAD_LIMIT
     } else {
         PER_UPLOAD_LIMIT
@@ -465,18 +474,27 @@ async fn upload_finalize(
         })
         .collect();
 
-    let rolling_limit = if state.is_api_key {
+    let rolling_limit = if state.api_key_tenant.is_some() {
         API_KEY_ROLLING_LIMIT
     } else {
         ROLLING_LIMIT
     };
     let now_secs = chrono::offset::Utc::now().timestamp();
-    if let Some(sender_email) = sender.as_deref() {
-        let usage = store.get_usage(sender_email, now_secs);
+    // Rolling-window accounting key: when a validated API-key tenant is
+    // present we account per tenant (`api-key:<tenant>`) so a single
+    // tenant cannot evade quota by varying sender attributes. Otherwise
+    // we fall back to per-sender email as before.
+    let accounting_key = state
+        .api_key_tenant
+        .as_deref()
+        .map(|t| format!("api-key:{}", t))
+        .or_else(|| sender.clone());
+    if let Some(key) = accounting_key.as_deref() {
+        let usage = store.get_usage(key, now_secs);
         log::info!(
-            "Rolling limit check for {} (api_key={}): used={} + current={} vs limit={}",
-            sender_email,
-            state.is_api_key,
+            "Rolling limit check for {} (api_key_tenant={:?}): used={} + current={} vs limit={}",
+            key,
+            state.api_key_tenant,
             usage.used_bytes,
             state.uploaded,
             rolling_limit
@@ -511,8 +529,8 @@ async fn upload_finalize(
         Error::InternalServerError(Some("could not send email".to_owned()))
     })?;
 
-    if let Some(sender_email) = sender {
-        store.record_upload(sender_email, state.uploaded, now_secs);
+    if let Some(key) = accounting_key {
+        store.record_upload(key, state.uploaded, now_secs);
     }
 
     Ok(Some(()))
@@ -530,14 +548,20 @@ struct UsageResponse {
 }
 
 #[get("/usage?<email>")]
-fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<UsageResponse> {
-    let (rolling_limit, per_upload_limit) = if api_key.0 {
+fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResponse> {
+    let (rolling_limit, per_upload_limit) = if api_key.0.is_some() {
         (API_KEY_ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT)
     } else {
         (ROLLING_LIMIT, PER_UPLOAD_LIMIT)
     };
     let now = chrono::offset::Utc::now().timestamp();
-    let usage = store.get_usage(&email, now);
+    // For API-key callers the rolling window is accounted per tenant, not
+    // per sender email — query the same key the finalize path records under.
+    let lookup_key = match api_key.0.as_deref() {
+        Some(tenant) => format!("api-key:{}", tenant),
+        None => email.clone(),
+    };
+    let usage = store.get_usage(&lookup_key, now);
     let resets_at = usage
         .oldest_expires_at
         .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))

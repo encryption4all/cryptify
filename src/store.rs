@@ -24,7 +24,12 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
-    pub is_api_key: bool,
+    /// Tenant identifier when the request authenticated with a configured
+    /// API key (validated against `CryptifyConfig::api_keys`). `None` for
+    /// unauthenticated requests, which receive the lower default quota
+    /// tier. Used both for limit selection and as the rolling-window
+    /// accounting key (`api-key:<tenant>`).
+    pub api_key_tenant: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
