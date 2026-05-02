@@ -65,6 +65,11 @@ paths:
                     type: "boolean"
                     example: true
                     description: "Whether to send a confirmation email to the sender"
+                  notifyRecipients:
+                    type: "boolean"
+                    default: true
+                    example: true
+                    description: "Whether to email each recipient with a download link. Optional; defaults to true. Set to false to upload silently when the encrypted payload reaches recipients through another channel and a Cryptify-sent notification would be a duplicate."
         responses:
           "200":
             description: "Successful operation"
