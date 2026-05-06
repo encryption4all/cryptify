@@ -48,6 +48,19 @@ struct InitBody {
     #[serde(rename = "mailLang")]
     mail_lang: email::Language,
     confirm: bool,
+    /// Whether to email each recipient with a download link. Optional;
+    /// defaults to `true` to preserve existing client behaviour. Set to
+    /// `false` when the encrypted payload reaches the recipients through
+    /// another channel (e.g. an email add-in delivering the message from
+    /// the user's own mailbox) and a Cryptify-sent notification would be
+    /// a duplicate. The recipient list itself is still validated and
+    /// stored — only the SMTP delivery is skipped.
+    #[serde(rename = "notifyRecipients", default = "default_true")]
+    notify_recipients: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,6 +143,7 @@ async fn upload_init(
                     sender: None,
                     sender_attributes: Vec::new(),
                     confirm: request.confirm,
+                    notify_recipients: request.notify_recipients,
                     api_key_tenant: api_key.0,
                 },
             );
