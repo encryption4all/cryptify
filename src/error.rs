@@ -21,6 +21,11 @@ pub enum Error {
     UnprocessableEntity(Option<String>),
     InternalServerError(Option<String>),
     PayloadTooLarge(PayloadTooLargeBody),
+    /// 503 — pg-pkg was unreachable for the full retry budget while
+    /// validating an API key. Returned when the upload exceeds the default
+    /// tier and we couldn't confirm the caller is entitled to the higher
+    /// tier. Smaller uploads degrade silently to the default tier.
+    ServiceUnavailable(Option<String>),
 }
 
 impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
@@ -44,6 +49,11 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
                     .header(ContentType::JSON)
                     .ok()
             }
+            Error::ServiceUnavailable(e) => response::status::Custom::<String>(
+                rocket::http::Status::ServiceUnavailable,
+                e.unwrap_or_else(|| "".to_owned()),
+            )
+            .respond_to(request),
         }
     }
 }
