@@ -38,6 +38,7 @@ use rocket::http::Method;
 use rocket_cors::{AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use store::{FileState, Store};
 
 #[derive(Serialize, Deserialize)]
@@ -88,15 +89,161 @@ fn health() -> &'static str {
     "OK"
 }
 
-/// Presence of an X-Api-Key header (value not validated here — PKG handles that).
-struct ApiKeyPresent(bool);
+/// Extract a `PG-…` bearer token from an Authorization header value, or
+/// `None` for any other shape (missing, wrong scheme, non-PG prefix). Kept
+/// as a pure helper so the parsing rules are unit-testable without HTTP.
+fn extract_pg_bearer(header: Option<&str>) -> Option<&str> {
+    let token = header
+        .and_then(|h| {
+            h.strip_prefix("Bearer ")
+                .or_else(|| h.strip_prefix("bearer "))
+        })
+        .map(str::trim)?;
+    if token.starts_with("PG-") {
+        Some(token)
+    } else {
+        None
+    }
+}
+
+/// HTTP client for talking to pg-pkg's `/v2/api-key/validate` endpoint.
+/// Held as Rocket state so the per-request `ApiKey` guard can call it.
+struct PkgClient {
+    http: reqwest::Client,
+    pkg_url: String,
+}
+
+/// Total wall-clock budget for retrying pg-pkg validation when the call
+/// errors out (network errors, 5xx). Authoritative responses (2xx with
+/// validated tenant, 401/403 unrecognised key) short-circuit immediately —
+/// retrying them would not change the outcome.
+const PKG_VALIDATE_RETRY_BUDGET: Duration = Duration::from_secs(30);
+const PKG_VALIDATE_INITIAL_BACKOFF: Duration = Duration::from_millis(250);
+const PKG_VALIDATE_MAX_BACKOFF: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Deserialize)]
+struct ValidateResponse {
+    tenant_id: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    organisation_name: Option<String>,
+}
+
+#[derive(Debug)]
+enum ValidationOutcome {
+    /// No `Authorization: Bearer PG-…` header — caller is default tier.
+    NoCredentials,
+    /// pg-pkg confirmed the key. Tenant id (uuid) accompanies.
+    Validated(String),
+    /// pg-pkg returned an authoritative rejection (401/403). Caller is
+    /// degraded to default tier — their fake/expired key won't earn the
+    /// higher tier, but they can still upload up to the default cap.
+    Rejected,
+    /// pg-pkg was unreachable for the full retry budget. Caller is treated
+    /// as default tier *unless* they exceed the default cap, at which point
+    /// the chunk/finalize handler returns 503.
+    PkgUnreachable,
+}
+
+impl PkgClient {
+    fn new(pkg_url: String) -> Self {
+        let http = reqwest::Client::builder()
+            // Per-request timeout — bounded by the retry budget regardless,
+            // but a low ceiling per attempt keeps the loop responsive.
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("reqwest client build");
+        Self { http, pkg_url }
+    }
+
+    async fn validate(&self, header: Option<&str>) -> ValidationOutcome {
+        let Some(token) = extract_pg_bearer(header).map(str::to_owned) else {
+            return ValidationOutcome::NoCredentials;
+        };
+
+        let url = format!("{}/v2/api-key/validate", self.pkg_url.trim_end_matches('/'));
+
+        let deadline = rocket::tokio::time::Instant::now() + PKG_VALIDATE_RETRY_BUDGET;
+        let mut backoff = PKG_VALIDATE_INITIAL_BACKOFF;
+        loop {
+            match self.http.get(&url).bearer_auth(&token).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    match resp.json::<ValidateResponse>().await {
+                        Ok(body) => return ValidationOutcome::Validated(body.tenant_id),
+                        Err(e) => {
+                            log::error!("pg-pkg /api-key/validate parse failed: {}", e);
+                            return ValidationOutcome::PkgUnreachable;
+                        }
+                    }
+                }
+                Ok(resp) if matches!(resp.status().as_u16(), 401 | 403) => {
+                    return ValidationOutcome::Rejected;
+                }
+                Ok(resp) => {
+                    log::warn!(
+                        "pg-pkg /api-key/validate returned status {} — will retry",
+                        resp.status()
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "pg-pkg /api-key/validate request failed: {} — will retry",
+                        e
+                    );
+                }
+            }
+
+            let now = rocket::tokio::time::Instant::now();
+            if now + backoff >= deadline {
+                return ValidationOutcome::PkgUnreachable;
+            }
+            rocket::tokio::time::sleep(backoff).await;
+            backoff = (backoff * 2).min(PKG_VALIDATE_MAX_BACKOFF);
+        }
+    }
+}
+
+/// Result of validating an `Authorization: Bearer PG-…` header against
+/// pg-pkg. `tenant` is `Some` only on success; `validation_failed` is true
+/// only when a PG-prefixed bearer was supplied but pg-pkg was unreachable.
+struct ApiKey {
+    tenant: Option<String>,
+    validation_failed: bool,
+}
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for ApiKeyPresent {
+impl<'r> FromRequest<'r> for ApiKey {
     type Error = ();
     async fn from_request(req: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
-        let present = req.headers().get_one("X-Api-Key").is_some();
-        rocket::request::Outcome::Success(ApiKeyPresent(present))
+        let header = req.headers().get_one("Authorization");
+        let Some(client) = req.rocket().state::<PkgClient>() else {
+            log::error!("PkgClient missing from Rocket state — treating request as default tier");
+            return rocket::request::Outcome::Success(ApiKey {
+                tenant: None,
+                validation_failed: false,
+            });
+        };
+        let outcome = client.validate(header).await;
+        let api_key = match outcome {
+            ValidationOutcome::Validated(t) => ApiKey {
+                tenant: Some(t),
+                validation_failed: false,
+            },
+            ValidationOutcome::NoCredentials | ValidationOutcome::Rejected => ApiKey {
+                tenant: None,
+                validation_failed: false,
+            },
+            ValidationOutcome::PkgUnreachable => {
+                log::warn!(
+                    "pg-pkg unreachable during API-key validation; degrading to default tier (over-default uploads will 503)"
+                );
+                ApiKey {
+                    tenant: None,
+                    validation_failed: true,
+                }
+            }
+        };
+        rocket::request::Outcome::Success(api_key)
     }
 }
 
@@ -104,7 +251,7 @@ impl<'r> FromRequest<'r> for ApiKeyPresent {
 async fn upload_init(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
-    api_key: ApiKeyPresent,
+    api_key: ApiKey,
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
@@ -135,7 +282,8 @@ async fn upload_init(
                     sender_attributes: Vec::new(),
                     confirm: request.confirm,
                     notify_recipients: request.notify_recipients,
-                    is_api_key: api_key.0,
+                    api_key_tenant: api_key.tenant,
+                    api_key_validation_failed: api_key.validation_failed,
                 },
             );
 
@@ -326,12 +474,22 @@ async fn upload_chunk(
         ))));
     }
 
-    let per_upload_limit = if state.is_api_key {
+    let per_upload_limit = if state.api_key_tenant.is_some() {
         API_KEY_PER_UPLOAD_LIMIT
     } else {
         PER_UPLOAD_LIMIT
     };
     if end > per_upload_limit {
+        // If the caller presented an API key but pg-pkg was unreachable at
+        // init time, we degraded them to the default tier. Below the default
+        // cap that's silent; here, where we'd reject, surface 503 so the
+        // client knows the higher tier *might* have applied if pg-pkg had
+        // been reachable. Within-default uploads keep flowing as today.
+        if state.api_key_validation_failed {
+            return Err(Error::ServiceUnavailable(Some(
+                "pg-pkg was unreachable while validating the API key; cannot apply the higher upload tier".to_owned(),
+            )));
+        }
         return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
             error: format!(
                 "Upload exceeds the per-upload limit of {} bytes",
@@ -479,18 +637,26 @@ async fn upload_finalize(
         })
         .collect();
 
-    let rolling_limit = if state.is_api_key {
+    let rolling_limit = if state.api_key_tenant.is_some() {
         API_KEY_ROLLING_LIMIT
     } else {
         ROLLING_LIMIT
     };
     let now_secs = chrono::offset::Utc::now().timestamp();
-    if let Some(sender_email) = sender.as_deref() {
-        let usage = store.get_usage(sender_email, now_secs);
+    // Account per-tenant when an API key was validated, otherwise per
+    // sender email. The tenant key (`api-key:<tenant>`) prevents a single
+    // tenant from evading quota by varying sender attributes.
+    let accounting_key = state
+        .api_key_tenant
+        .as_deref()
+        .map(|t| format!("api-key:{}", t))
+        .or_else(|| sender.clone());
+    if let Some(key) = accounting_key.as_deref() {
+        let usage = store.get_usage(key, now_secs);
         log::info!(
-            "Rolling limit check for {} (api_key={}): used={} + current={} vs limit={}",
-            sender_email,
-            state.is_api_key,
+            "Rolling limit check for {} (api_key_tenant={:?}): used={} + current={} vs limit={}",
+            key,
+            state.api_key_tenant,
             usage.used_bytes,
             state.uploaded,
             rolling_limit
@@ -525,8 +691,8 @@ async fn upload_finalize(
         Error::InternalServerError(Some("could not send email".to_owned()))
     })?;
 
-    if let Some(sender_email) = sender {
-        store.record_upload(sender_email, state.uploaded, now_secs);
+    if let Some(key) = accounting_key {
+        store.record_upload(key, state.uploaded, now_secs);
     }
 
     Ok(Some(()))
@@ -544,14 +710,20 @@ struct UsageResponse {
 }
 
 #[get("/usage?<email>")]
-fn usage(store: &State<Store>, api_key: ApiKeyPresent, email: String) -> Json<UsageResponse> {
-    let (rolling_limit, per_upload_limit) = if api_key.0 {
+fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResponse> {
+    let (rolling_limit, per_upload_limit) = if api_key.tenant.is_some() {
         (API_KEY_ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT)
     } else {
         (ROLLING_LIMIT, PER_UPLOAD_LIMIT)
     };
     let now = chrono::offset::Utc::now().timestamp();
-    let usage = store.get_usage(&email, now);
+    // For API-key callers the rolling window is accounted per tenant, not
+    // per sender email — query the same key the finalize path records under.
+    let lookup_key = match api_key.tenant.as_deref() {
+        Some(tenant) => format!("api-key:{}", tenant),
+        None => email.clone(),
+    };
+    let usage = store.get_usage(&lookup_key, now);
     let resets_at = usage
         .oldest_expires_at
         .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
@@ -615,6 +787,8 @@ async fn rocket() -> _ {
         .to_cors()
         .expect("unable to configure CORS");
 
+    let pkg_client = PkgClient::new(config.pkg_url().to_string());
+
     rocket
         .attach(cors)
         .mount(
@@ -625,6 +799,7 @@ async fn rocket() -> _ {
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
         .manage(vk)
+        .manage(pkg_client)
 }
 
 #[cfg(test)]
@@ -772,5 +947,52 @@ mod tests {
             compute_hash(b"token-a", b"data"),
             compute_hash(b"token-b", b"data")
         );
+    }
+
+    #[test]
+    fn extract_pg_bearer_accepts_pg_prefixed_token() {
+        assert_eq!(
+            extract_pg_bearer(Some("Bearer PG-abc123")),
+            Some("PG-abc123")
+        );
+    }
+
+    #[test]
+    fn extract_pg_bearer_accepts_lowercase_scheme() {
+        assert_eq!(
+            extract_pg_bearer(Some("bearer PG-abc123")),
+            Some("PG-abc123")
+        );
+    }
+
+    #[test]
+    fn extract_pg_bearer_rejects_missing_header() {
+        assert_eq!(extract_pg_bearer(None), None);
+    }
+
+    #[test]
+    fn extract_pg_bearer_rejects_empty_header() {
+        assert_eq!(extract_pg_bearer(Some("")), None);
+    }
+
+    #[test]
+    fn extract_pg_bearer_rejects_non_pg_token() {
+        // A JWT-style bearer must not be treated as a PG key.
+        assert_eq!(
+            extract_pg_bearer(Some("Bearer eyJhbGciOiJSUzI1NiJ9.foo.bar")),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_pg_bearer_rejects_wrong_scheme() {
+        // `Basic` and other schemes must not pass through.
+        assert_eq!(extract_pg_bearer(Some("Basic PG-abc")), None);
+    }
+
+    #[test]
+    fn extract_pg_bearer_rejects_pg_prefix_without_scheme() {
+        // The PG- prefix alone (no `Bearer `) is not a valid bearer.
+        assert_eq!(extract_pg_bearer(Some("PG-abc123")), None);
     }
 }
