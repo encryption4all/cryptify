@@ -47,6 +47,37 @@ pub struct FileState {
     /// (pkg down — would have allowed the higher tier) from 413 (default
     /// tier — would have rejected anyway) once the default cap is exceeded.
     pub api_key_validation_failed: bool,
+    /// Replay record of the most recently committed chunk. Lets the chunk
+    /// handler detect a duplicate retry (when the client never saw the
+    /// previous response): if the request's `CryptifyToken` matches
+    /// `prev_token` and `Content-Range.start` matches `prev_uploaded`, and
+    /// the body's SHA-256 matches `chunk_sha256`, the server replays
+    /// `response_token` instead of advancing the rolling-token chain or
+    /// double-writing the chunk. `None` until at least one chunk has been
+    /// successfully committed.
+    pub last_chunk: Option<LastChunkRecord>,
+}
+
+/// Replay record of the most recently committed chunk. See
+/// [`FileState::last_chunk`].
+#[derive(Clone, Debug)]
+pub struct LastChunkRecord {
+    /// The `CryptifyToken` the client sent in the chunk PUT — i.e., the
+    /// rolling token *before* this chunk advanced it. A retry that lost the
+    /// response will keep sending this same value.
+    pub prev_token: String,
+    /// `state.uploaded` *before* this chunk was applied — equals the
+    /// chunk's `Content-Range` start.
+    pub prev_uploaded: u64,
+    /// The chunk body length in bytes.
+    pub chunk_len: u64,
+    /// SHA-256 of the chunk body. Verified on retry to ensure the client
+    /// is replaying the same bytes (not a colliding-offset different chunk).
+    pub chunk_sha256: [u8; 32],
+    /// The token the server returned in response to the original PUT —
+    /// i.e., the value of `state.cryptify_token` after this chunk was
+    /// applied. Replayed verbatim on a detected retry.
+    pub response_token: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -319,6 +350,7 @@ mod tests {
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,
+            last_chunk: None,
         }
     }
 
