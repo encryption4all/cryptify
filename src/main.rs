@@ -255,48 +255,43 @@ async fn upload_init(
     request: Json<InitBody>,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
+
+    let recipient: lettre::message::Mailboxes = request
+        .recipient
+        .parse()
+        .map_err(|e| Error::BadRequest(Some(format!("Could not parse e-mail address: {}", e))))?;
+
     let uuid = uuid::Uuid::new_v4().hyphenated().to_string();
 
-    match File::create(Path::new(config.data_dir()).join(&uuid)).await {
-        Ok(v) => v,
-        Err(e) => {
-            log::error!("{}", e);
-            return Err(Error::InternalServerError(None));
-        }
-    };
+    if let Err(e) = File::create(Path::new(config.data_dir()).join(&uuid)).await {
+        log::error!("{}", e);
+        return Err(Error::InternalServerError(None));
+    }
 
     let init_cryptify_token = bytes_to_hex(&rand::random::<[u8; 32]>());
 
-    match request.recipient.parse() {
-        Ok(recipient) => {
-            store.create(
-                uuid.clone(),
-                FileState {
-                    cryptify_token: init_cryptify_token.clone(),
-                    uploaded: 0,
-                    expires: current_time + 1_209_600,
-                    recipients: recipient,
-                    mail_content: request.mail_content.clone(),
-                    mail_lang: request.mail_lang.clone(),
-                    sender: None,
-                    sender_attributes: Vec::new(),
-                    confirm: request.confirm,
-                    notify_recipients: request.notify_recipients,
-                    api_key_tenant: api_key.tenant,
-                    api_key_validation_failed: api_key.validation_failed,
-                },
-            );
+    store.create(
+        uuid.clone(),
+        FileState {
+            cryptify_token: init_cryptify_token.clone(),
+            uploaded: 0,
+            expires: current_time + 1_209_600,
+            recipients: recipient,
+            mail_content: request.mail_content.clone(),
+            mail_lang: request.mail_lang.clone(),
+            sender: None,
+            sender_attributes: Vec::new(),
+            confirm: request.confirm,
+            notify_recipients: request.notify_recipients,
+            api_key_tenant: api_key.tenant,
+            api_key_validation_failed: api_key.validation_failed,
+        },
+    );
 
-            Ok(InitResponder {
-                inner: Json(InitResponse { uuid }),
-                cryptify_token: CryptifyToken(init_cryptify_token),
-            })
-        }
-        Err(e) => Err(Error::BadRequest(Some(format!(
-            "Could not parse e-mail address: {}",
-            e
-        )))),
-    }
+    Ok(InitResponder {
+        inner: Json(InitResponse { uuid }),
+        cryptify_token: CryptifyToken(init_cryptify_token),
+    })
 }
 
 struct ContentRange {
@@ -947,6 +942,97 @@ mod tests {
             compute_hash(b"token-a", b"data"),
             compute_hash(b"token-b", b"data")
         );
+    }
+
+    // Builds a minimal rocket instance that mounts only `upload_init` and the
+    // state it depends on, with a fresh per-test `data_dir` under
+    // `std::env::temp_dir()`. Used to verify upload_init's rejection path
+    // does not leave orphan files behind (issue #125).
+    async fn upload_init_client(data_dir: &std::path::Path) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        std::fs::create_dir_all(data_dir).expect("create test data_dir");
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "http://localhost",
+                "data_dir": data_dir.to_str().unwrap(),
+                "email_from": "Test <test@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+            }),
+        ));
+
+        let rocket = rocket::custom(figment)
+            .mount("/", routes![upload_init])
+            .attach(AdHoc::config::<CryptifyConfig>())
+            .manage(Store::new());
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    fn dir_entry_count(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir)
+            .map(|rd| rd.filter_map(Result::ok).count())
+            .unwrap_or(0)
+    }
+
+    // Regression test for issue #125: a malformed recipient must not leave
+    // an empty file behind in data_dir.
+    #[rocket::async_test]
+    async fn upload_init_bad_recipient_does_not_create_file() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = upload_init_client(&data_dir).await;
+
+        assert_eq!(dir_entry_count(&data_dir), 0, "data_dir starts empty");
+
+        let res = client
+            .post("/fileupload/init")
+            .header(rocket::http::ContentType::JSON)
+            .body(
+                r#"{"recipient":"not a valid address","mailContent":"hi","mailLang":"EN","confirm":false}"#,
+            )
+            .dispatch()
+            .await;
+
+        assert_eq!(res.status(), Status::BadRequest);
+        assert_eq!(
+            dir_entry_count(&data_dir),
+            0,
+            "no orphan file should be created when recipient parsing fails"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Happy-path complement: a valid recipient still creates exactly one file
+    // in data_dir, so the reorder did not regress the success case.
+    #[rocket::async_test]
+    async fn upload_init_good_recipient_creates_file() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = upload_init_client(&data_dir).await;
+
+        let res = client
+            .post("/fileupload/init")
+            .header(rocket::http::ContentType::JSON)
+            .body(
+                r#"{"recipient":"alice@example.com","mailContent":"hi","mailLang":"EN","confirm":false}"#,
+            )
+            .dispatch()
+            .await;
+
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(dir_entry_count(&data_dir), 1);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
