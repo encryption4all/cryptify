@@ -15,6 +15,13 @@ pub struct PayloadTooLargeBody {
     pub resets_at: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct UploadSessionNotFoundBody {
+    pub error: &'static str,
+    pub uuid: String,
+    pub reason: &'static str,
+}
+
 #[derive(Debug)]
 pub enum Error {
     BadRequest(Option<String>),
@@ -26,6 +33,17 @@ pub enum Error {
     /// tier and we couldn't confirm the caller is entitled to the higher
     /// tier. Smaller uploads degrade silently to the default tier.
     ServiceUnavailable(Option<String>),
+    UploadSessionNotFound(UploadSessionNotFoundBody),
+}
+
+impl Error {
+    pub fn upload_session_not_found(uuid: impl Into<String>, reason: &'static str) -> Self {
+        Error::UploadSessionNotFound(UploadSessionNotFoundBody {
+            error: "upload_session_not_found",
+            uuid: uuid.into(),
+            reason,
+        })
+    }
 }
 
 impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
@@ -54,6 +72,12 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
                 e.unwrap_or_else(|| "".to_owned()),
             )
             .respond_to(request),
+            Error::UploadSessionNotFound(body) => {
+                response::Response::build_from(Json(body).respond_to(request)?)
+                    .status(rocket::http::Status::NotFound)
+                    .header(ContentType::JSON)
+                    .ok()
+            }
         }
     }
 }
