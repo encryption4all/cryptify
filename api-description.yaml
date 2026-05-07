@@ -150,7 +150,16 @@ paths:
                     message:
                       type: "string"
         "404":
-          description: "Partially uploaded file does not exist."
+          description:
+            "The upload session is not known to the server. Either the
+            client never called `/fileupload/init`, the session was idle
+            past the configured TTL and got evicted, or the on-disk file
+            has been removed. Clients should not retry — start a new
+            upload via `/fileupload/init`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
         "413":
           description: "The upload exceeds the per-upload size limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
@@ -200,7 +209,14 @@ paths:
                     message:
                       type: "string"
         "404":
-          description: "Partially upload file does not exist."
+          description:
+            "The upload session is not known to the server (see
+            `/fileupload/{uuid}` 404 for details). Clients should not
+            retry — start a new upload via `/fileupload/init`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
         "413":
           description: "The sender has exceeded the rolling 14-day upload limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
@@ -333,3 +349,32 @@ components:
           type: "integer"
           format: "int64"
           description: "The limit value in bytes."
+    UploadSessionNotFound:
+      type: "object"
+      required:
+        - error
+        - uuid
+        - reason
+      properties:
+        error:
+          type: "string"
+          enum:
+            - "upload_session_not_found"
+          description: "Stable machine-readable error code for clients."
+        uuid:
+          type: "string"
+          format: "uuid"
+          description: "The upload UUID the request targeted."
+        reason:
+          type: "string"
+          enum:
+            - "expired_or_unknown"
+            - "invalid_uuid"
+            - "file_missing"
+          description:
+            "Why the session is not retrievable. `expired_or_unknown`
+            means the session was either evicted after its idle TTL or
+            never existed (clients cannot tell these apart, by design).
+            `invalid_uuid` means the path UUID is malformed.
+            `file_missing` means the in-memory session exists but the
+            on-disk file is gone (server-state inconsistency)."

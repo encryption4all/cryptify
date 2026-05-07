@@ -14,10 +14,12 @@ pub const API_KEY_PER_UPLOAD_LIMIT: u64 = 100_000_000_000;
 pub const API_KEY_ROLLING_LIMIT: u64 = 100_000_000_000;
 pub const ROLLING_WINDOW_SECS: i64 = 14 * 24 * 60 * 60;
 
-/// Idle window for an in-memory upload session. Each successful chunk PUT
-/// resets it; if no activity is seen for this long the session is evicted
-/// (the on-disk file is left alone — `FileState.expires` covers that).
-pub const UPLOAD_SESSION_IDLE_TIMEOUT_SECS: u64 = 60 * 60;
+/// Default idle window for an in-memory upload session when no value is
+/// provided in config. Each successful chunk PUT resets it; if no activity
+/// is seen for this long the session is evicted (the on-disk file is left
+/// alone — `FileState.expires` covers that).
+#[cfg(test)]
+pub const DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS: u64 = 60 * 60;
 
 pub struct FileState {
     pub uploaded: u64,
@@ -67,6 +69,7 @@ struct StoreState {
 struct SharedState {
     state: std::sync::Mutex<StoreState>,
     notify: Notify,
+    idle_ttl: Duration,
 }
 
 pub struct Store {
@@ -74,7 +77,14 @@ pub struct Store {
 }
 
 impl Store {
+    #[cfg(test)]
     pub fn new() -> Self {
+        Self::with_idle_ttl(Duration::from_secs(
+            DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS,
+        ))
+    }
+
+    pub fn with_idle_ttl(idle_ttl: Duration) -> Self {
         let result = Store {
             shared: Arc::new(SharedState {
                 state: std::sync::Mutex::new(StoreState {
@@ -86,6 +96,7 @@ impl Store {
                     shutdown: false,
                 }),
                 notify: Notify::new(),
+                idle_ttl,
             }),
         };
 
@@ -101,8 +112,7 @@ impl Store {
         );
         let removal_id = state.next_id;
         state.next_id += 1;
-        let removal_instant =
-            Instant::now() + Duration::from_secs(UPLOAD_SESSION_IDLE_TIMEOUT_SECS);
+        let removal_instant = Instant::now() + self.shared.idle_ttl;
         state
             .expirations
             .insert((removal_instant, removal_id), id.clone());
@@ -126,7 +136,7 @@ impl Store {
             return;
         };
         state.expirations.remove(&(old_when, removal_id));
-        let new_when = Instant::now() + Duration::from_secs(UPLOAD_SESSION_IDLE_TIMEOUT_SECS);
+        let new_when = Instant::now() + self.shared.idle_ttl;
         state
             .expirations
             .insert((new_when, removal_id), id.to_owned());
@@ -306,7 +316,9 @@ mod tests {
             sender: None,
             sender_attributes: Vec::new(),
             confirm: false,
-            is_api_key: false,
+            notify_recipients: true,
+            api_key_tenant: None,
+            api_key_validation_failed: false,
         }
     }
 

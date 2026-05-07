@@ -436,15 +436,15 @@ async fn upload_chunk(
     uuid: &str,
     headers: UploadHeaders,
     data: Data<'_>,
-) -> Result<Option<UploadResponder>, Error> {
+) -> Result<UploadResponder, Error> {
     let state = match store.get(uuid) {
         Some(v) => v,
-        None => return Ok(None),
+        None => return Err(Error::upload_session_not_found(uuid, "expired_or_unknown")),
     };
     let mut state = state.lock().await;
 
     if uuid::Uuid::parse_str(uuid).is_err() {
-        return Ok(None);
+        return Err(Error::upload_session_not_found(uuid, "invalid_uuid"));
     }
 
     let start = headers
@@ -505,7 +505,7 @@ async fn upload_chunk(
         .await
     {
         Ok(v) => v,
-        Err(_) => return Ok(None),
+        Err(_) => return Err(Error::upload_session_not_found(uuid, "file_missing")),
     };
 
     file.seek(std::io::SeekFrom::Start(start))
@@ -534,10 +534,10 @@ async fn upload_chunk(
     drop(state);
     store.touch(uuid);
 
-    Ok(Some(UploadResponder {
+    Ok(UploadResponder {
         body: (),
         cryptify_token: CryptifyToken(shasum),
-    }))
+    })
 }
 
 struct FinalizeHeaders {
@@ -593,10 +593,10 @@ async fn upload_finalize(
     vk: &State<Parameters<VerifyingKey>>,
     headers: FinalizeHeaders,
     uuid: &str,
-) -> Result<Option<()>, Error> {
+) -> Result<(), Error> {
     let state = match store.get(uuid) {
         Some(v) => v,
-        None => return Ok(None),
+        None => return Err(Error::upload_session_not_found(uuid, "expired_or_unknown")),
     };
     let mut state = state.lock().await;
 
@@ -693,7 +693,7 @@ async fn upload_finalize(
         store.record_upload(key, state.uploaded, now_secs);
     }
 
-    Ok(Some(()))
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -795,7 +795,9 @@ async fn rocket() -> _ {
         )
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
-        .manage(Store::new())
+        .manage(Store::with_idle_ttl(std::time::Duration::from_secs(
+            config.session_ttl_secs(),
+        )))
         .manage(vk)
         .manage(pkg_client)
 }
