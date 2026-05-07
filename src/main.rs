@@ -421,11 +421,14 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
     bytes_to_hex(&hash.finalize())
 }
 
+/// Wire-level error message for a `CryptifyToken` mismatch. Reused by both
+/// `check_cryptify_token` (the finalize path) and the chunk classifier so the
+/// message can't drift silently between call sites.
+const TOKEN_MISMATCH_MSG: &str = "Cryptify Token header does not match";
+
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
     if header != expected {
-        return Err(Error::BadRequest(Some(
-            "Cryptify Token header does not match".to_owned(),
-        )));
+        return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
     }
     Ok(())
 }
@@ -470,6 +473,25 @@ async fn upload_chunk(
         ))));
     }
 
+    // Cheap pre-check before reading the body, so a leaked UUID can't be
+    // used to force the server to buffer up to `chunk_size` bytes per
+    // request just to be rejected. Mirrors the structural part of
+    // `classify_chunk_request` — we only commit to reading the body when
+    // the request looks like either a normal next chunk or a candidate
+    // replay of the last committed chunk.
+    let is_normal_next = state.uploaded == start && headers.cryptify_token == state.cryptify_token;
+    let is_replay_candidate = state.last_chunk.as_ref().is_some_and(|last| {
+        last.prev_uploaded == start && headers.cryptify_token == last.prev_token
+    });
+    if !is_normal_next && !is_replay_candidate {
+        if state.uploaded != start {
+            return Err(Error::BadRequest(Some(
+                "Incorrect Content-Range header".to_owned(),
+            )));
+        }
+        return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
+    }
+
     let body = data
         .open((end - start).bytes())
         .into_bytes()
@@ -482,7 +504,7 @@ async fn upload_chunk(
 
     // Three branches: normal next chunk, idempotent retry of the last
     // committed chunk, or rejection.
-    match classify_chunk_request(&state, &headers.cryptify_token, start, end, &body) {
+    match classify_chunk_request(&state, &headers.cryptify_token, start, &body) {
         ChunkClassification::NormalNext => {}
         ChunkClassification::ReplayLastChunk(token) => {
             drop(state);
@@ -540,16 +562,13 @@ async fn upload_chunk(
         .await
         .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
 
-    let prev_token = headers.cryptify_token.clone();
-    let chunk_sha256 = sha256_of(&body);
+    let prev_token = headers.cryptify_token;
     let shasum = compute_hash(prev_token.as_bytes(), &body);
     state.cryptify_token = shasum.clone();
     state.uploaded += end - start;
     state.last_chunk = Some(LastChunkRecord {
         prev_token,
         prev_uploaded: start,
-        chunk_len: end - start,
-        chunk_sha256,
         response_token: shasum.clone(),
     });
 
@@ -571,9 +590,10 @@ enum ChunkClassification {
     /// returns this token to the client without re-writing or double-counting.
     ReplayLastChunk(String),
     /// Reject the request with this error — the standard 400 you'd get
-    /// before idempotent-retry support, plus stricter 400s when the request
-    /// looks like a retry but the body or length diverges (almost certainly
-    /// a client bug, never accept different bytes for the same offset).
+    /// before idempotent-retry support, plus a stricter 400 when the
+    /// request looks like a retry but the body bytes (or their length)
+    /// diverge from the cached chunk. Never accept different bytes for
+    /// the same offset.
     Reject(Error),
 }
 
@@ -581,7 +601,6 @@ fn classify_chunk_request(
     state: &FileState,
     request_token: &str,
     start: u64,
-    end: u64,
     body: &[u8],
 ) -> ChunkClassification {
     if state.uploaded == start && request_token == state.cryptify_token {
@@ -590,17 +609,18 @@ fn classify_chunk_request(
 
     if let Some(last) = state.last_chunk.as_ref() {
         if request_token == last.prev_token && start == last.prev_uploaded {
-            if end - start != last.chunk_len {
-                return ChunkClassification::Reject(Error::BadRequest(Some(
-                    "Idempotent retry: chunk length differs from the original".to_owned(),
-                )));
+            // Recompute the rolling hash over the incoming body. Identity
+            // is implicit in the rolling-token construction itself: if the
+            // hash matches `response_token`, the body is byte-identical to
+            // the original chunk (modulo a SHA-256 collision, which would
+            // also break the rolling chain). Length divergence surfaces
+            // here too.
+            if compute_hash(last.prev_token.as_bytes(), body) == last.response_token {
+                return ChunkClassification::ReplayLastChunk(last.response_token.clone());
             }
-            if sha256_of(body) != last.chunk_sha256 {
-                return ChunkClassification::Reject(Error::BadRequest(Some(
-                    "Idempotent retry: body hash differs from the original chunk".to_owned(),
-                )));
-            }
-            return ChunkClassification::ReplayLastChunk(last.response_token.clone());
+            return ChunkClassification::Reject(Error::BadRequest(Some(
+                "Idempotent retry: body differs from the original chunk".to_owned(),
+            )));
         }
     }
 
@@ -610,17 +630,7 @@ fn classify_chunk_request(
         )));
     }
 
-    // Right offset but wrong token: the existing `check_cryptify_token`
-    // wording, so error messages don't change for non-retry callers.
-    ChunkClassification::Reject(Error::BadRequest(Some(
-        "Cryptify Token header does not match".to_owned(),
-    )))
-}
-
-fn sha256_of(data: &[u8]) -> [u8; 32] {
-    let mut hash = sha2::Sha256::new();
-    hash.update(data);
-    hash.finalize().into()
+    ChunkClassification::Reject(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())))
 }
 
 struct FinalizeHeaders {
@@ -1151,10 +1161,22 @@ mod tests {
         s
     }
 
+    /// Build a `LastChunkRecord` whose `response_token` correctly encodes
+    /// `prev_token + body`, the same construction the production handler
+    /// uses. Tests use this so the replay path's hash check passes on a
+    /// genuine retry and fails when the body is tampered with.
+    fn last_chunk_for(prev_token: &str, prev_uploaded: u64, body: &[u8]) -> LastChunkRecord {
+        LastChunkRecord {
+            prev_token: prev_token.to_owned(),
+            prev_uploaded,
+            response_token: compute_hash(prev_token.as_bytes(), body),
+        }
+    }
+
     #[test]
     fn classify_normal_next_chunk() {
         let state = empty_filestate(100, "tok-current");
-        match classify_chunk_request(&state, "tok-current", 100, 200, b"chunk") {
+        match classify_chunk_request(&state, "tok-current", 100, b"chunk") {
             ChunkClassification::NormalNext => {}
             _ => panic!("expected NormalNext"),
         }
@@ -1163,16 +1185,11 @@ mod tests {
     #[test]
     fn classify_replays_last_chunk_on_matching_retry() {
         let body = b"hello world";
-        let last = LastChunkRecord {
-            prev_token: "tok-prev".into(),
-            prev_uploaded: 100,
-            chunk_len: body.len() as u64,
-            chunk_sha256: sha256_of(body),
-            response_token: "tok-after".into(),
-        };
-        let state = filestate_with_last_chunk(100 + body.len() as u64, "tok-after", last);
-        match classify_chunk_request(&state, "tok-prev", 100, 100 + body.len() as u64, body) {
-            ChunkClassification::ReplayLastChunk(t) => assert_eq!(t, "tok-after"),
+        let last = last_chunk_for("tok-prev", 100, body);
+        let response_token = last.response_token.clone();
+        let state = filestate_with_last_chunk(100 + body.len() as u64, &response_token, last);
+        match classify_chunk_request(&state, "tok-prev", 100, body) {
+            ChunkClassification::ReplayLastChunk(t) => assert_eq!(t, response_token),
             _ => panic!("expected ReplayLastChunk"),
         }
     }
@@ -1180,48 +1197,34 @@ mod tests {
     #[test]
     fn classify_rejects_retry_with_different_body() {
         let body = b"original";
-        let last = LastChunkRecord {
-            prev_token: "tok-prev".into(),
-            prev_uploaded: 100,
-            chunk_len: body.len() as u64,
-            chunk_sha256: sha256_of(body),
-            response_token: "tok-after".into(),
-        };
-        let state = filestate_with_last_chunk(100 + body.len() as u64, "tok-after", last);
+        let last = last_chunk_for("tok-prev", 100, body);
+        let response_token = last.response_token.clone();
+        let state = filestate_with_last_chunk(100 + body.len() as u64, &response_token, last);
         let tampered = b"tampered";
-        let result = classify_chunk_request(
-            &state,
-            "tok-prev",
-            100,
-            100 + tampered.len() as u64,
-            tampered,
-        );
+        let result = classify_chunk_request(&state, "tok-prev", 100, tampered);
         match result {
             ChunkClassification::Reject(Error::BadRequest(Some(msg))) => {
-                assert!(msg.contains("body hash"), "got: {}", msg);
+                assert!(msg.contains("body differs"), "got: {}", msg);
             }
-            _ => panic!("expected BadRequest about body hash"),
+            _ => panic!("expected BadRequest about body differs"),
         }
     }
 
     #[test]
     fn classify_rejects_retry_with_different_length() {
+        // Same prev_token + start, but a shorter body. The recomputed
+        // rolling hash won't match, so the body-differs path catches this
+        // case too — we no longer need a length-specific record.
         let body = b"original";
-        let last = LastChunkRecord {
-            prev_token: "tok-prev".into(),
-            prev_uploaded: 100,
-            chunk_len: body.len() as u64,
-            chunk_sha256: sha256_of(body),
-            response_token: "tok-after".into(),
-        };
-        let state = filestate_with_last_chunk(100 + body.len() as u64, "tok-after", last);
-        // Same prev_token + start, but length differs from cached record.
-        let result = classify_chunk_request(&state, "tok-prev", 100, 100 + 5, b"short");
+        let last = last_chunk_for("tok-prev", 100, body);
+        let response_token = last.response_token.clone();
+        let state = filestate_with_last_chunk(100 + body.len() as u64, &response_token, last);
+        let result = classify_chunk_request(&state, "tok-prev", 100, b"short");
         match result {
             ChunkClassification::Reject(Error::BadRequest(Some(msg))) => {
-                assert!(msg.contains("chunk length"), "got: {}", msg);
+                assert!(msg.contains("body differs"), "got: {}", msg);
             }
-            _ => panic!("expected BadRequest about chunk length"),
+            _ => panic!("expected BadRequest about body differs"),
         }
     }
 
@@ -1229,7 +1232,7 @@ mod tests {
     fn classify_rejects_offset_mismatch_with_no_replay() {
         // No last_chunk recorded → offset mismatch is just the regular 400.
         let state = empty_filestate(100, "tok-current");
-        let result = classify_chunk_request(&state, "tok-current", 50, 60, b"abc");
+        let result = classify_chunk_request(&state, "tok-current", 50, b"abc");
         match result {
             ChunkClassification::Reject(Error::BadRequest(Some(msg))) => {
                 assert_eq!(msg, "Incorrect Content-Range header");
@@ -1241,10 +1244,10 @@ mod tests {
     #[test]
     fn classify_rejects_token_mismatch_at_correct_offset() {
         let state = empty_filestate(100, "tok-current");
-        let result = classify_chunk_request(&state, "tok-wrong", 100, 110, b"chunk");
+        let result = classify_chunk_request(&state, "tok-wrong", 100, b"chunk");
         match result {
             ChunkClassification::Reject(Error::BadRequest(Some(msg))) => {
-                assert_eq!(msg, "Cryptify Token header does not match");
+                assert_eq!(msg, TOKEN_MISMATCH_MSG);
             }
             _ => panic!("expected BadRequest about token mismatch"),
         }
@@ -1255,15 +1258,10 @@ mod tests {
         // Last chunk exists but the retry presents a *different* prev_token.
         // Falls through to the regular offset-mismatch rejection.
         let body = b"original";
-        let last = LastChunkRecord {
-            prev_token: "tok-prev".into(),
-            prev_uploaded: 100,
-            chunk_len: body.len() as u64,
-            chunk_sha256: sha256_of(body),
-            response_token: "tok-after".into(),
-        };
-        let state = filestate_with_last_chunk(100 + body.len() as u64, "tok-after", last);
-        let result = classify_chunk_request(&state, "tok-something-else", 100, 108, body);
+        let last = last_chunk_for("tok-prev", 100, body);
+        let response_token = last.response_token.clone();
+        let state = filestate_with_last_chunk(100 + body.len() as u64, &response_token, last);
+        let result = classify_chunk_request(&state, "tok-something-else", 100, body);
         match result {
             ChunkClassification::Reject(Error::BadRequest(Some(msg))) => {
                 assert_eq!(msg, "Incorrect Content-Range header");

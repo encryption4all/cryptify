@@ -51,15 +51,21 @@ pub struct FileState {
     /// handler detect a duplicate retry (when the client never saw the
     /// previous response): if the request's `CryptifyToken` matches
     /// `prev_token` and `Content-Range.start` matches `prev_uploaded`, and
-    /// the body's SHA-256 matches `chunk_sha256`, the server replays
-    /// `response_token` instead of advancing the rolling-token chain or
-    /// double-writing the chunk. `None` until at least one chunk has been
-    /// successfully committed.
+    /// recomputing the rolling hash over the incoming body equals
+    /// `response_token`, the server replays `response_token` instead of
+    /// advancing the rolling-token chain or double-writing the chunk.
+    /// `None` until at least one chunk has been successfully committed.
     pub last_chunk: Option<LastChunkRecord>,
 }
 
 /// Replay record of the most recently committed chunk. See
 /// [`FileState::last_chunk`].
+///
+/// Body identity is checked by recomputing the rolling hash
+/// `sha256(prev_token || body)` and comparing against `response_token` —
+/// the same construction the rolling-token chain itself relies on, so no
+/// separate digest needs to be cached. Length differences also surface as
+/// a hash mismatch.
 #[derive(Clone, Debug)]
 pub struct LastChunkRecord {
     /// The `CryptifyToken` the client sent in the chunk PUT — i.e., the
@@ -69,11 +75,6 @@ pub struct LastChunkRecord {
     /// `state.uploaded` *before* this chunk was applied — equals the
     /// chunk's `Content-Range` start.
     pub prev_uploaded: u64,
-    /// The chunk body length in bytes.
-    pub chunk_len: u64,
-    /// SHA-256 of the chunk body. Verified on retry to ensure the client
-    /// is replaying the same bytes (not a colliding-offset different chunk).
-    pub chunk_sha256: [u8; 32],
     /// The token the server returned in response to the original PUT —
     /// i.e., the value of `state.cryptify_token` after this chunk was
     /// applied. Replayed verbatim on a detected retry.
