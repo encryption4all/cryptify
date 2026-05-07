@@ -93,12 +93,28 @@ paths:
       tags:
       - "File upload"
       summary: "Upload a file part"
+      description:
+        "Append a single chunk to the upload identified by `uuid`.\n\n
+        **Idempotent retry contract.** A chunk PUT whose response was lost
+        in flight can be safely retried with the *previous* `cryptifytoken`
+        value (the one the client sent on the failed attempt) at the same
+        `Content-Range` offset and with the same body. The server detects
+        this case — the request matches the cached `(prev_token, offset,
+        length, sha256)` of the most recently committed chunk — and
+        replays the previously returned `cryptifytoken` without
+        re-writing the file or double-counting against quotas. If the
+        request looks like a retry but the body bytes differ, the server
+        responds 400; clients must not retry the same offset with
+        different bytes.\n\n
+        Retries are only honoured for the *most recently committed*
+        chunk. If a client falls behind by more than one chunk it must
+        start a new upload."
       operationId: "uploadFilePart"
       parameters:
       - in: "header"
         name: "cryptifytoken"
         description:
-          "Identifies the version of the upload file parts. Part of the header from the last fileupload response."
+          "Identifies the version of the upload file parts. Part of the header from the last fileupload response. On a retry of a chunk whose response was lost, send the *previous* token (the one originally sent on the failed PUT)."
         schema:
           type: "string"
         required: true
