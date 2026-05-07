@@ -436,6 +436,36 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
 /// message can't drift silently between call sites.
 const TOKEN_MISMATCH_MSG: &str = "Cryptify Token header does not match";
 
+/// Build the rocket_cors fairing from a single source so production and the
+/// preflight test can't drift on the allowed-headers list. The methods set
+/// (GET/POST/PUT) and the allow-list — `Authorization` for the Bearer
+/// API-key tier flow; `Content-Type`/`Content-Range`/`CryptifyToken` for
+/// chunk PUTs; `X-Recovery-Token` for `GET /fileupload/{uuid}/status` —
+/// must stay in sync with the actual request shapes the server accepts;
+/// `expose_headers` advertises `cryptifytoken` because clients rely on
+/// reading it from the chunk PUT response.
+fn build_cors(allowed_origins: AllowedOrigins) -> rocket_cors::Cors {
+    CorsOptions::default()
+        .allowed_origins(allowed_origins)
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Put]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        .allowed_headers(AllowedHeaders::some(&[
+            "Authorization",
+            "Content-Type",
+            "Content-Range",
+            "CryptifyToken",
+            "X-Recovery-Token",
+        ]))
+        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
+        .max_age(Some(86400))
+        .to_cors()
+        .expect("unable to configure CORS")
+}
+
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
     if header != expected {
         return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
@@ -973,29 +1003,7 @@ async fn rocket() -> _ {
             )
         });
 
-    let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
-        .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Put]
-                .into_iter()
-                .map(From::from)
-                .collect(),
-        )
-        // Browser preflight needs to allow our custom request headers.
-        // `Authorization` is here for the Bearer-API-key tier flow;
-        // `cryptifytoken`, `content-range`, and `content-type` ride on
-        // chunk PUTs; `x-recovery-token` authenticates GET /…/status.
-        .allowed_headers(AllowedHeaders::some(&[
-            "Authorization",
-            "Content-Type",
-            "Content-Range",
-            "CryptifyToken",
-            "X-Recovery-Token",
-        ]))
-        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
-        .max_age(Some(86400))
-        .to_cors()
-        .expect("unable to configure CORS");
+    let cors = build_cors(AllowedOrigins::some_regex(&[config.allowed_origins()]));
 
     let pkg_client = PkgClient::new(config.pkg_url().to_string());
 
@@ -1306,23 +1314,9 @@ mod tests {
             }),
         ));
 
-        let cors = CorsOptions::default()
-            .allowed_origins(AllowedOrigins::all())
-            .allowed_methods(
-                vec![Method::Get, Method::Post, Method::Put]
-                    .into_iter()
-                    .map(From::from)
-                    .collect(),
-            )
-            .allowed_headers(AllowedHeaders::some(&[
-                "Authorization",
-                "Content-Type",
-                "Content-Range",
-                "CryptifyToken",
-                "X-Recovery-Token",
-            ]))
-            .to_cors()
-            .expect("valid cors");
+        // Reuse the production cors builder so the preflight test pins
+        // the actual allow-list, not a parallel copy that could drift.
+        let cors = build_cors(AllowedOrigins::all());
 
         let rocket = rocket::custom(figment)
             .attach(cors)
