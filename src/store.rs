@@ -56,6 +56,14 @@ pub struct FileState {
     /// advancing the rolling-token chain or double-writing the chunk.
     /// `None` until at least one chunk has been successfully committed.
     pub last_chunk: Option<LastChunkRecord>,
+    /// Bearer token for the cross-refresh-resume status endpoint
+    /// (`GET /fileupload/{uuid}/status`). Issued at `upload_init` and
+    /// returned to the client alongside the first `cryptifytoken`. The
+    /// path UUID alone isn't authoritative (URLs leak), so any read of
+    /// session state requires the client to present this token in an
+    /// `X-Recovery-Token` header. Compared in constant time to defeat
+    /// timing oracles. Hex-encoded 32-byte random.
+    pub recovery_token: String,
 }
 
 /// Replay record of the most recently committed chunk. See
@@ -184,6 +192,17 @@ impl Store {
         if let Some((when, removal_id)) = state.expiration_keys.remove(id) {
             state.expirations.remove(&(when, removal_id));
         }
+    }
+
+    /// Test-only accessor for the current eviction deadline of `id`.
+    /// Lets route-level integration tests assert that a successful
+    /// `GET /fileupload/{uuid}/status` reset the idle window via
+    /// `Store::touch` (the design AC for #146 explicitly calls this
+    /// out). Returns `None` if no session exists for `id`.
+    #[cfg(test)]
+    pub fn deadline_for(&self, id: &str) -> Option<Instant> {
+        let state = self.shared.state.lock().unwrap();
+        state.expiration_keys.get(id).map(|(when, _)| *when)
     }
 
     pub fn record_upload(&self, email: String, bytes: u64, now: i64) {
@@ -352,6 +371,7 @@ mod tests {
             api_key_tenant: None,
             api_key_validation_failed: false,
             last_chunk: None,
+            recovery_token: String::new(),
         }
     }
 

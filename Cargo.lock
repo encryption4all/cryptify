@@ -476,6 +476,7 @@ dependencies = [
  "sha2",
  "strum",
  "strum_macros",
+ "subtle",
  "tokio",
  "tokio-util",
  "url",

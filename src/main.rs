@@ -35,7 +35,7 @@ use rocket::{
 };
 
 use rocket::http::Method;
-use rocket_cors::{AllowedOrigins, CorsOptions};
+use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -68,6 +68,11 @@ fn default_true() -> bool {
 #[serde(rename = "camelCase")]
 struct InitResponse {
     uuid: String,
+    /// Bearer credential for the cross-refresh-resume status endpoint
+    /// (`GET /fileupload/{uuid}/status`). The client stores this alongside
+    /// the UUID — typically in IndexedDB — and sends it back in an
+    /// `X-Recovery-Token` header on resume. Hex-encoded 32-byte random.
+    recovery_token: String,
 }
 
 struct CryptifyToken(String);
@@ -269,6 +274,7 @@ async fn upload_init(
     }
 
     let init_cryptify_token = bytes_to_hex(&rand::random::<[u8; 32]>());
+    let recovery_token = bytes_to_hex(&rand::random::<[u8; 32]>());
 
     store.create(
         uuid.clone(),
@@ -286,11 +292,15 @@ async fn upload_init(
             api_key_tenant: api_key.tenant,
             api_key_validation_failed: api_key.validation_failed,
             last_chunk: None,
+            recovery_token: recovery_token.clone(),
         },
     );
 
     Ok(InitResponder {
-        inner: Json(InitResponse { uuid }),
+        inner: Json(InitResponse {
+            uuid,
+            recovery_token,
+        }),
         cryptify_token: CryptifyToken(init_cryptify_token),
     })
 }
@@ -789,6 +799,104 @@ async fn upload_finalize(
     Ok(())
 }
 
+/// Snapshot of an in-flight upload's rolling-token state, returned by
+/// `GET /fileupload/{uuid}/status`. The client uses this to rehydrate a
+/// session it lost track of (page refresh, tab crash) and feed the next
+/// chunk PUT through the idempotent-retry path from #145. `prev_token`
+/// and `prev_offset` are `None` until at least one chunk has been
+/// committed — in that case the client just resumes from offset 0 with
+/// `cryptify_token`.
+#[derive(Serialize)]
+struct UploadStatusResponse {
+    uploaded: u64,
+    cryptify_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prev_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prev_offset: Option<u64>,
+}
+
+/// Constant-time compare of the recovery token. Hex-encoded equal-length
+/// strings, but `subtle::ConstantTimeEq` makes the timing independent of
+/// where the bytes start to differ — defeats timing oracles even though
+/// 32 bytes of high-entropy random aren't realistically guessable.
+fn recovery_tokens_match(presented: &str, expected: &str) -> bool {
+    use subtle::ConstantTimeEq;
+    if presented.len() != expected.len() {
+        return false;
+    }
+    presented.as_bytes().ct_eq(expected.as_bytes()).into()
+}
+
+#[get("/fileupload/<uuid>/status")]
+async fn upload_status(
+    store: &State<Store>,
+    uuid: &str,
+    recovery_token: RecoveryTokenHeader,
+) -> Result<Json<UploadStatusResponse>, Error> {
+    // Two-step auth-versus-existence ordering: present a 401 for missing /
+    // malformed credentials regardless of UUID; once the credential is
+    // structurally present, an unknown UUID *or* a value mismatch both
+    // surface as 404 with `upload_session_not_found`. That collapsing is
+    // deliberate — otherwise an attacker with a guessable UUID could send
+    // any value and read 401 vs 404 to confirm which UUIDs have live
+    // sessions.
+    let state = store
+        .get(uuid)
+        .ok_or_else(|| Error::upload_session_not_found(uuid, "expired_or_unknown"))?;
+    let state = state.lock().await;
+
+    if !recovery_tokens_match(&recovery_token.0, &state.recovery_token) {
+        // Same body shape as evicted/unknown so the response doesn't leak
+        // session existence to a token-guessing attacker.
+        return Err(Error::upload_session_not_found(uuid, "expired_or_unknown"));
+    }
+
+    let (prev_token, prev_offset) = match state.last_chunk.as_ref() {
+        Some(last) => (Some(last.prev_token.clone()), Some(last.prev_uploaded)),
+        None => (None, None),
+    };
+    let response = UploadStatusResponse {
+        uploaded: state.uploaded,
+        cryptify_token: state.cryptify_token.clone(),
+        prev_token,
+        prev_offset,
+    };
+
+    drop(state);
+    // The whole point of cross-refresh resume is to hand control back to
+    // the client mid-upload — push the eviction deadline so the very next
+    // chunk PUT doesn't 404 because the rehydrate window aged out.
+    store.touch(uuid);
+    Ok(Json(response))
+}
+
+/// Extractor for the `X-Recovery-Token` header. Missing or malformed
+/// header → 401 from the route handler. Deliberately not reusing the
+/// `Authorization: Bearer …` scheme: that channel already carries
+/// `PG-…` API-key credentials for the upload-tier flow, and crossing
+/// the two would invite middleware misrouting.
+struct RecoveryTokenHeader(String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for RecoveryTokenHeader {
+    type Error = ();
+    async fn from_request(request: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
+        let token = request.headers().get_one("X-Recovery-Token").and_then(|t| {
+            let trimmed = t.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_owned())
+            }
+        });
+        match token {
+            Some(t) => rocket::request::Outcome::Success(RecoveryTokenHeader(t)),
+            None => rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, ())),
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct UsageResponse {
@@ -873,6 +981,17 @@ async fn rocket() -> _ {
                 .map(From::from)
                 .collect(),
         )
+        // Browser preflight needs to allow our custom request headers.
+        // `Authorization` is here for the Bearer-API-key tier flow;
+        // `cryptifytoken`, `content-range`, and `content-type` ride on
+        // chunk PUTs; `x-recovery-token` authenticates GET /…/status.
+        .allowed_headers(AllowedHeaders::some(&[
+            "Authorization",
+            "Content-Type",
+            "Content-Range",
+            "CryptifyToken",
+            "X-Recovery-Token",
+        ]))
         .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
         .max_age(Some(86400))
         .to_cors()
@@ -884,7 +1003,14 @@ async fn rocket() -> _ {
         .attach(cors)
         .mount(
             "/",
-            routes![health, upload_init, upload_chunk, upload_finalize, usage],
+            routes![
+                health,
+                upload_init,
+                upload_chunk,
+                upload_finalize,
+                upload_status,
+                usage
+            ],
         )
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
@@ -1133,6 +1259,354 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
+    // Builds a rocket instance with both upload_init and upload_status
+    // mounted. Used for the cross-refresh-resume status-endpoint tests.
+    async fn status_client(data_dir: &std::path::Path) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        std::fs::create_dir_all(data_dir).expect("create test data_dir");
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "http://localhost",
+                "data_dir": data_dir.to_str().unwrap(),
+                "email_from": "Test <test@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+            }),
+        ));
+
+        let rocket = rocket::custom(figment)
+            .mount("/", routes![upload_init, upload_status])
+            .attach(AdHoc::config::<CryptifyConfig>())
+            .manage(Store::new());
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    /// Variant of `status_client` that also attaches the production cors
+    /// fairing, so tests can exercise browser-preflight behaviour for the
+    /// new `/status` route.
+    async fn status_client_with_cors(data_dir: &std::path::Path) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        std::fs::create_dir_all(data_dir).expect("create test data_dir");
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "http://localhost",
+                "data_dir": data_dir.to_str().unwrap(),
+                "email_from": "Test <test@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+            }),
+        ));
+
+        let cors = CorsOptions::default()
+            .allowed_origins(AllowedOrigins::all())
+            .allowed_methods(
+                vec![Method::Get, Method::Post, Method::Put]
+                    .into_iter()
+                    .map(From::from)
+                    .collect(),
+            )
+            .allowed_headers(AllowedHeaders::some(&[
+                "Authorization",
+                "Content-Type",
+                "Content-Range",
+                "CryptifyToken",
+                "X-Recovery-Token",
+            ]))
+            .to_cors()
+            .expect("valid cors");
+
+        let rocket = rocket::custom(figment)
+            .attach(cors)
+            .mount("/", routes![upload_init, upload_status])
+            .attach(AdHoc::config::<CryptifyConfig>())
+            .manage(Store::new());
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    /// Init an upload via the test client and return `(uuid, recovery_token)`.
+    async fn init_upload(client: &Client) -> (String, String) {
+        let res = client
+            .post("/fileupload/init")
+            .header(rocket::http::ContentType::JSON)
+            .body(
+                r#"{"recipient":"alice@example.com","mailContent":"hi","mailLang":"EN","confirm":false}"#,
+            )
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+        let body: serde_json::Value = res.into_json().await.expect("init body");
+        let uuid = body["uuid"].as_str().expect("uuid in init body").to_owned();
+        let recovery_token = body["recovery_token"]
+            .as_str()
+            .expect("recovery_token in init body")
+            .to_owned();
+        (uuid, recovery_token)
+    }
+
+    #[rocket::async_test]
+    async fn status_returns_initial_state_after_init() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, recovery_token) = init_upload(&client).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", recovery_token))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+
+        let body: serde_json::Value = res.into_json().await.expect("status body");
+        assert_eq!(body["uploaded"].as_u64(), Some(0));
+        assert!(body["cryptify_token"].as_str().is_some());
+        // No chunk committed yet — prev_token / prev_offset are absent.
+        assert!(body.get("prev_token").is_none());
+        assert!(body.get("prev_offset").is_none());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn status_returns_401_when_recovery_header_missing() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, _) = init_upload(&client).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Unauthorized);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn status_returns_401_when_recovery_header_blank() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, _) = init_upload(&client).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", "   "))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Unauthorized);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Wrong recovery token must return the same shape as an unknown UUID
+    // — otherwise an attacker can probe for live UUIDs.
+    #[rocket::async_test]
+    async fn status_returns_404_for_token_mismatch_same_as_unknown_uuid() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, _) = init_upload(&client).await;
+
+        // Real UUID, wrong token.
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", "00".repeat(32)))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+        let body_real: serde_json::Value = res.into_json().await.expect("404 body");
+        assert_eq!(
+            body_real["error"].as_str(),
+            Some("upload_session_not_found")
+        );
+
+        // Unknown UUID, any token.
+        let res = client
+            .get(format!(
+                "/fileupload/{}/status",
+                uuid::Uuid::new_v4().hyphenated()
+            ))
+            .header(Header::new("X-Recovery-Token", "ff".repeat(32)))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+        let body_fake: serde_json::Value = res.into_json().await.expect("404 body");
+        assert_eq!(
+            body_fake["error"].as_str(),
+            Some("upload_session_not_found")
+        );
+        assert_eq!(body_real["error"], body_fake["error"]);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn recovery_tokens_match_constant_time_helper() {
+        // The function under test is the constant-time wrapper itself —
+        // we can't observe timing in a unit test, but we can pin the
+        // value-equality semantics so a future refactor doesn't silently
+        // turn it into `presented == expected`.
+        assert!(recovery_tokens_match("abc123", "abc123"));
+        assert!(!recovery_tokens_match("abc123", "abc124"));
+        assert!(!recovery_tokens_match("abc123", "abc12")); // length mismatch
+        assert!(!recovery_tokens_match("", "abc"));
+        assert!(recovery_tokens_match("", ""));
+    }
+
+    // Browser preflight regression: design AC for #146 explicitly required
+    // a CORS smoke test so the `X-Recovery-Token` allow-list entry can't
+    // silently regress. Sends an `OPTIONS /fileupload/{uuid}/status`
+    // preflight and asserts the response advertises `X-Recovery-Token`
+    // among `Access-Control-Allow-Headers`.
+    #[rocket::async_test]
+    async fn status_preflight_advertises_x_recovery_token() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client_with_cors(&data_dir).await;
+
+        let res = client
+            .req(
+                rocket::http::Method::Options,
+                "/fileupload/00000000-0000-0000-0000-000000000000/status",
+            )
+            .header(Header::new("Origin", "https://example.com"))
+            .header(Header::new("Access-Control-Request-Method", "GET"))
+            .header(Header::new(
+                "Access-Control-Request-Headers",
+                "X-Recovery-Token",
+            ))
+            .dispatch()
+            .await;
+
+        // rocket_cors echoes successful preflights back as 2xx.
+        assert!(
+            res.status().code < 400,
+            "expected 2xx preflight, got {}",
+            res.status()
+        );
+        let allow_headers = res
+            .headers()
+            .get_one("Access-Control-Allow-Headers")
+            .expect("CORS allow-headers in preflight response");
+        // Header names compare case-insensitively per RFC 7230, but the
+        // standard cors fairing emits the names verbatim from our config.
+        let allow_headers_lc = allow_headers.to_ascii_lowercase();
+        assert!(
+            allow_headers_lc.contains("x-recovery-token"),
+            "Access-Control-Allow-Headers `{}` should include x-recovery-token",
+            allow_headers
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Design AC for #146: a successful `/status` call must reset the idle
+    // eviction deadline (otherwise rehydrate succeeds, then the very next
+    // chunk PUT 404s because the session aged out between the GET and the
+    // PUT). Inspect the deadline directly via the test-only accessor.
+    #[rocket::async_test]
+    async fn status_extends_eviction_deadline() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, recovery_token) = init_upload(&client).await;
+
+        let store = client.rocket().state::<Store>().expect("Store managed");
+        let before = store
+            .deadline_for(&uuid)
+            .expect("session has a deadline after init");
+
+        // tokio::time::Instant has millisecond resolution on most
+        // platforms; sleep enough that a fresh `now() + ttl` is strictly
+        // later than the value captured at init.
+        rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", recovery_token))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+
+        let after = store
+            .deadline_for(&uuid)
+            .expect("session still alive after status call");
+        assert!(
+            after > before,
+            "successful /status should extend the eviction deadline"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Negative complement: failed auth (wrong recovery token) must NOT
+    // extend the deadline. Otherwise an attacker with a known UUID could
+    // keep a session alive past its eviction window just by hitting
+    // `/status` with bogus tokens.
+    #[rocket::async_test]
+    async fn status_does_not_extend_deadline_on_token_mismatch() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, _) = init_upload(&client).await;
+
+        let store = client.rocket().state::<Store>().expect("Store managed");
+        let before = store
+            .deadline_for(&uuid)
+            .expect("session has a deadline after init");
+
+        rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", "00".repeat(32)))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+
+        let after = store
+            .deadline_for(&uuid)
+            .expect("session still alive (token mismatch doesn't evict)");
+        assert_eq!(
+            before, after,
+            "failed-auth /status must not extend the deadline"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
     fn empty_filestate(uploaded: u64, current_token: &str) -> FileState {
         FileState {
             uploaded,
@@ -1148,6 +1622,7 @@ mod tests {
             api_key_tenant: None,
             api_key_validation_failed: false,
             last_chunk: None,
+            recovery_token: String::new(),
         }
     }
 
