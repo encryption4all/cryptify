@@ -14,6 +14,11 @@ pub const API_KEY_PER_UPLOAD_LIMIT: u64 = 100_000_000_000;
 pub const API_KEY_ROLLING_LIMIT: u64 = 100_000_000_000;
 pub const ROLLING_WINDOW_SECS: i64 = 14 * 24 * 60 * 60;
 
+/// Idle window for an in-memory upload session. Each successful chunk PUT
+/// resets it; if no activity is seen for this long the session is evicted
+/// (the on-disk file is left alone — `FileState.expires` covers that).
+pub const UPLOAD_SESSION_IDLE_TIMEOUT_SECS: u64 = 60 * 60;
+
 pub struct FileState {
     pub uploaded: u64,
     pub cryptify_token: String,
@@ -51,6 +56,9 @@ struct UploadRecord {
 struct StoreState {
     files: HashMap<String, Arc<rocket::tokio::sync::Mutex<FileState>>>,
     expirations: BTreeMap<(Instant, u64), String>,
+    /// Reverse index: file id → its current `(deadline, removal_id)` entry in
+    /// `expirations`. Lets `touch` extend the deadline without scanning.
+    expiration_keys: HashMap<String, (Instant, u64)>,
     usage: HashMap<String, VecDeque<UploadRecord>>,
     next_id: u64,
     shutdown: bool,
@@ -72,6 +80,7 @@ impl Store {
                 state: std::sync::Mutex::new(StoreState {
                     files: HashMap::new(),
                     expirations: BTreeMap::new(),
+                    expiration_keys: HashMap::new(),
                     usage: HashMap::new(),
                     next_id: 0,
                     shutdown: false,
@@ -92,8 +101,14 @@ impl Store {
         );
         let removal_id = state.next_id;
         state.next_id += 1;
-        let removal_instant = Instant::now() + Duration::from_secs(60 * 15);
-        state.expirations.insert((removal_instant, removal_id), id);
+        let removal_instant =
+            Instant::now() + Duration::from_secs(UPLOAD_SESSION_IDLE_TIMEOUT_SECS);
+        state
+            .expirations
+            .insert((removal_instant, removal_id), id.clone());
+        state
+            .expiration_keys
+            .insert(id, (removal_instant, removal_id));
         self.shared.notify.notify_one()
     }
 
@@ -102,9 +117,31 @@ impl Store {
         state.files.get(id).cloned()
     }
 
+    /// Reset the idle-eviction deadline for `id` to "now + idle timeout".
+    /// Called from `upload_chunk` after a successful chunk PUT so an upload
+    /// that takes longer than the idle window is not killed mid-flight.
+    pub fn touch(&self, id: &str) {
+        let mut state = self.shared.state.lock().unwrap();
+        let Some(&(old_when, removal_id)) = state.expiration_keys.get(id) else {
+            return;
+        };
+        state.expirations.remove(&(old_when, removal_id));
+        let new_when = Instant::now() + Duration::from_secs(UPLOAD_SESSION_IDLE_TIMEOUT_SECS);
+        state
+            .expirations
+            .insert((new_when, removal_id), id.to_owned());
+        state
+            .expiration_keys
+            .insert(id.to_owned(), (new_when, removal_id));
+        self.shared.notify.notify_one();
+    }
+
     pub fn remove(&self, id: &str) {
         let mut state = self.shared.state.lock().unwrap();
         state.files.remove(id);
+        if let Some((when, removal_id)) = state.expiration_keys.remove(id) {
+            state.expirations.remove(&(when, removal_id));
+        }
     }
 
     pub fn record_upload(&self, email: String, bytes: u64, now: i64) {
@@ -180,6 +217,7 @@ impl SharedState {
             }
 
             state.files.remove(id);
+            state.expiration_keys.remove(id);
             state.expirations.remove(&(when, removal_id));
         }
 
@@ -255,6 +293,72 @@ mod tests {
         store.record_upload("b@example.com".into(), 2_000, now);
         assert_eq!(store.get_usage("a@example.com", now).used_bytes, 1_000);
         assert_eq!(store.get_usage("b@example.com", now).used_bytes, 2_000);
+    }
+
+    fn dummy_filestate() -> FileState {
+        FileState {
+            uploaded: 0,
+            cryptify_token: String::new(),
+            expires: 0,
+            recipients: lettre::message::Mailboxes::new(),
+            mail_content: String::new(),
+            mail_lang: email::Language::En,
+            sender: None,
+            sender_attributes: Vec::new(),
+            confirm: false,
+            is_api_key: false,
+        }
+    }
+
+    #[rocket::async_test]
+    async fn touch_extends_eviction_deadline() {
+        let store = Store::new();
+        store.create("u1".into(), dummy_filestate());
+
+        let original = {
+            let s = store.shared.state.lock().unwrap();
+            s.expiration_keys.get("u1").copied().unwrap()
+        };
+
+        // tokio::time::Instant has millisecond resolution on most platforms;
+        // sleep enough for the deadline to be strictly later.
+        rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+        store.touch("u1");
+
+        let updated = {
+            let s = store.shared.state.lock().unwrap();
+            s.expiration_keys.get("u1").copied().unwrap()
+        };
+
+        assert_eq!(original.1, updated.1, "removal_id should be stable");
+        assert!(
+            updated.0 > original.0,
+            "touch should push the deadline forward"
+        );
+
+        let s = store.shared.state.lock().unwrap();
+        assert!(!s.expirations.contains_key(&original));
+        assert_eq!(s.expirations.get(&updated).map(String::as_str), Some("u1"));
+    }
+
+    #[rocket::async_test]
+    async fn touch_on_unknown_id_is_noop() {
+        let store = Store::new();
+        store.touch("nope");
+        let s = store.shared.state.lock().unwrap();
+        assert!(s.expirations.is_empty());
+        assert!(s.expiration_keys.is_empty());
+    }
+
+    #[rocket::async_test]
+    async fn remove_cleans_up_expirations() {
+        let store = Store::new();
+        store.create("u2".into(), dummy_filestate());
+        store.remove("u2");
+        let s = store.shared.state.lock().unwrap();
+        assert!(s.files.is_empty());
+        assert!(s.expirations.is_empty());
+        assert!(s.expiration_keys.is_empty());
     }
 
     #[rocket::async_test]
