@@ -24,7 +24,22 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
-    pub is_api_key: bool,
+    /// When false, the recipient notification email is suppressed (the
+    /// recipients still appear in the parsed list, but the SMTP delivery
+    /// loop in `send_email` is skipped). The sender confirmation, if
+    /// `confirm` is true, is sent regardless.
+    pub notify_recipients: bool,
+    /// Tenant identifier when the request authenticated with a `PG-…` key
+    /// validated against pg-pkg. `None` for unauthenticated requests, which
+    /// receive the lower default quota tier. Used both for limit selection
+    /// and as the rolling-window accounting key (`api-key:<tenant>`).
+    pub api_key_tenant: Option<String>,
+    /// True when the caller sent an `Authorization: Bearer PG-…` header but
+    /// pg-pkg was unreachable during the full retry budget at init time.
+    /// Chunk and finalize handlers consult this to differentiate 503
+    /// (pkg down — would have allowed the higher tier) from 413 (default
+    /// tier — would have rejected anyway) once the default cap is exceeded.
+    pub api_key_validation_failed: bool,
 }
 
 #[derive(Clone, Copy, Debug)]

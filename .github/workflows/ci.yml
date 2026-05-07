@@ -17,6 +17,27 @@ on:
 
 jobs:
 
+  # Rust quality gate: fmt, clippy, tests. Runs on every PR and on push to
+  # main, in parallel to the release-plz/Docker pipeline (does not block it).
+  quality:
+    name: Rust quality (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --all-targets
+
   # Release unpublished packages.
   release-plz-release:
     name: Release-plz release

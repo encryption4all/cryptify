@@ -215,31 +215,39 @@ pub async fn send_email(
         mailer_builder = mailer_builder.credentials(credentials);
     }
 
-    for recipient in state.recipients.iter() {
-        // combine URL with mail variables into template
-        let base = Url::parse(config.server_url())?;
-        let mut url = base.join("/download")?;
-        url.query_pairs_mut()
-            .append_pair("uuid", uuid)
-            .append_pair("recipient", &format!("{}", recipient.email));
+    if state.notify_recipients {
+        for recipient in state.recipients.iter() {
+            // combine URL with mail variables into template
+            let base = Url::parse(config.server_url())?;
+            let mut url = base.join("/download")?;
+            url.query_pairs_mut()
+                .append_pair("uuid", uuid)
+                .append_pair("recipient", &format!("{}", recipient.email));
 
-        let (email, subject) = email_templates(state, url.as_str());
-        let email = Message::builder()
-            .header(ContentType::TEXT_HTML)
-            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
-            .from(config.email_from()) // checked in config
-            .to(recipient.clone())
-            .subject(subject)
-            .body(email)?;
+            let (email, subject) = email_templates(state, url.as_str());
+            let email = Message::builder()
+                .header(ContentType::TEXT_HTML)
+                .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+                .from(config.email_from()) // checked in config
+                .to(recipient.clone())
+                .subject(subject)
+                .body(email)?;
 
-        // send email
-        log::info!("Sending email to {}", recipient.email);
-        let mailer = mailer_builder.clone().build();
-        mailer.send(&email).map_err(|e| {
-            log::error!("Failed to send email to {}: {}", recipient.email, e);
-            e
-        })?;
-        log::info!("Email sent to {}", recipient.email);
+            // send email
+            log::info!("Sending email to {}", recipient.email);
+            let mailer = mailer_builder.clone().build();
+            mailer.send(&email).map_err(|e| {
+                log::error!("Failed to send email to {}: {}", recipient.email, e);
+                e
+            })?;
+            log::info!("Email sent to {}", recipient.email);
+        }
+    } else {
+        log::info!(
+            "notify_recipients disabled — skipping notification mail for {} recipient(s) on upload {}",
+            state.recipients.iter().count(),
+            uuid
+        );
     }
 
     if state.confirm {
@@ -250,7 +258,7 @@ pub async fn send_email(
         let mut url = base.join("/download")?;
         url.query_pairs_mut()
             .append_pair("uuid", uuid)
-            .append_pair("recipient", &format!("{}", &sender));
+            .append_pair("recipient", &sender);
 
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
