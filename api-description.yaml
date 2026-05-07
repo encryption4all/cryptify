@@ -83,11 +83,24 @@ paths:
               application/json:
                 schema:
                   type: "object"
+                  required:
+                    - uuid
+                    - recovery_token
                   properties:
                     uuid:
                       type: "string"
                       format: "uuid"
                       description: "Unique identifier for the file upload"
+                    recovery_token:
+                      type: "string"
+                      description:
+                        "Bearer credential for the cross-refresh-resume
+                        status endpoint (`GET /fileupload/{uuid}/status`).
+                        The client should store this alongside the UUID
+                        (e.g. in IndexedDB) and present it in an
+                        `X-Recovery-Token` header to recover from a
+                        page refresh, tab crash, or navigate-away-and-back.
+                        Hex-encoded 32-byte random."
   /fileupload/{uuid}:
     put:
       tags:
@@ -242,6 +255,69 @@ paths:
         "422":
           description: "Data is missing to form complete file."
 
+  /fileupload/{uuid}/status:
+    get:
+      tags:
+      - "File upload"
+      summary: "Read upload state for cross-refresh resume"
+      description:
+        "Returns the rolling-token state of an in-flight upload so a
+        client that lost track of the session (page refresh, tab crash,
+        navigate-away-and-back) can rehydrate and feed the next chunk
+        PUT through the idempotent-retry path
+        (`PUT /fileupload/{uuid}`). Authenticates via the
+        `X-Recovery-Token` header issued at `upload_init`. **Behaviour
+        on resume conflict:** if two clients hold the same UUID and
+        recovery token (e.g. two tabs), the first chunk PUT to land
+        wins and the second sees a 4xx as soon as it tries to advance
+        past the now-stale state — single-active-resumer semantics, no
+        lease enforcement on the server side. A successful call also
+        resets the session's idle eviction deadline so the very next
+        chunk PUT does not 404 because the rehydrate window aged out."
+      operationId: "uploadStatus"
+      parameters:
+      - in: "header"
+        name: "X-Recovery-Token"
+        description:
+          "Bearer credential issued in the `recovery_token` field of
+          the `upload_init` response. Compared in constant time on the
+          server. Missing / empty → 401."
+        schema:
+          type: "string"
+        required: true
+      - in: "path"
+        name: "uuid"
+        required: true
+        description: "The unique identifier received when initializing file upload."
+        schema:
+          type: "string"
+          format: "uuid"
+      responses:
+        "200":
+          description: "Successful operation."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatus"
+        "401":
+          description:
+            "Missing or empty `X-Recovery-Token` header. Note: a
+            *valid-format* token that simply does not match the stored
+            value returns 404 with the same body shape as an evicted
+            session, deliberately, so attackers cannot probe for live
+            UUIDs by varying the token."
+        "404":
+          description:
+            "The upload session is not known to the server, OR the
+            recovery token does not match the stored value. The two
+            cases are deliberately collapsed — same response shape as
+            `PUT /fileupload/{uuid}` — to avoid leaking session
+            existence."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
+
   /usage:
     get:
       tags:
@@ -394,3 +470,37 @@ components:
             `invalid_uuid` means the path UUID is malformed.
             `file_missing` means the in-memory session exists but the
             on-disk file is gone (server-state inconsistency)."
+    UploadStatus:
+      type: "object"
+      required:
+        - uploaded
+        - cryptify_token
+      properties:
+        uploaded:
+          type: "integer"
+          format: "int64"
+          description:
+            "Total bytes the server has committed for this upload so far.
+            The client should resume from this offset."
+        cryptify_token:
+          type: "string"
+          description:
+            "Current value of the rolling token. The client must send this
+            as `cryptifytoken` on the next chunk PUT."
+        prev_token:
+          type: "string"
+          description:
+            "Token the client sent on the most recently committed chunk
+            (i.e. the value of `cryptify_token` *before* that chunk
+            advanced it). Combined with `prev_offset`, lets the client
+            re-issue the most recent chunk on the idempotent-retry path
+            (PUT `/fileupload/{uuid}`) if it is unsure whether the chunk
+            was committed. Omitted until at least one chunk has been
+            committed."
+        prev_offset:
+          type: "integer"
+          format: "int64"
+          description:
+            "Byte offset where the most recently committed chunk started
+            (i.e. `uploaded - chunk_len`). Omitted until at least one
+            chunk has been committed."
