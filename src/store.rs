@@ -194,6 +194,17 @@ impl Store {
         }
     }
 
+    /// Test-only accessor for the current eviction deadline of `id`.
+    /// Lets route-level integration tests assert that a successful
+    /// `GET /fileupload/{uuid}/status` reset the idle window via
+    /// `Store::touch` (the design AC for #146 explicitly calls this
+    /// out). Returns `None` if no session exists for `id`.
+    #[cfg(test)]
+    pub fn deadline_for(&self, id: &str) -> Option<Instant> {
+        let state = self.shared.state.lock().unwrap();
+        state.expiration_keys.get(id).map(|(when, _)| *when)
+    }
+
     pub fn record_upload(&self, email: String, bytes: u64, now: i64) {
         let mut state = self.shared.state.lock().unwrap();
         let entry = state.usage.entry(email).or_default();

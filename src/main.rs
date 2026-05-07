@@ -1286,6 +1286,53 @@ mod tests {
         Client::tracked(rocket).await.expect("valid rocket")
     }
 
+    /// Variant of `status_client` that also attaches the production cors
+    /// fairing, so tests can exercise browser-preflight behaviour for the
+    /// new `/status` route.
+    async fn status_client_with_cors(data_dir: &std::path::Path) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        std::fs::create_dir_all(data_dir).expect("create test data_dir");
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "http://localhost",
+                "data_dir": data_dir.to_str().unwrap(),
+                "email_from": "Test <test@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+            }),
+        ));
+
+        let cors = CorsOptions::default()
+            .allowed_origins(AllowedOrigins::all())
+            .allowed_methods(
+                vec![Method::Get, Method::Post, Method::Put]
+                    .into_iter()
+                    .map(From::from)
+                    .collect(),
+            )
+            .allowed_headers(AllowedHeaders::some(&[
+                "Authorization",
+                "Content-Type",
+                "Content-Range",
+                "CryptifyToken",
+                "X-Recovery-Token",
+            ]))
+            .to_cors()
+            .expect("valid cors");
+
+        let rocket = rocket::custom(figment)
+            .attach(cors)
+            .mount("/", routes![upload_init, upload_status])
+            .attach(AdHoc::config::<CryptifyConfig>())
+            .manage(Store::new());
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
     /// Init an upload via the test client and return `(uuid, recovery_token)`.
     async fn init_upload(client: &Client) -> (String, String) {
         let res = client
@@ -1428,6 +1475,136 @@ mod tests {
         assert!(!recovery_tokens_match("abc123", "abc12")); // length mismatch
         assert!(!recovery_tokens_match("", "abc"));
         assert!(recovery_tokens_match("", ""));
+    }
+
+    // Browser preflight regression: design AC for #146 explicitly required
+    // a CORS smoke test so the `X-Recovery-Token` allow-list entry can't
+    // silently regress. Sends an `OPTIONS /fileupload/{uuid}/status`
+    // preflight and asserts the response advertises `X-Recovery-Token`
+    // among `Access-Control-Allow-Headers`.
+    #[rocket::async_test]
+    async fn status_preflight_advertises_x_recovery_token() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client_with_cors(&data_dir).await;
+
+        let res = client
+            .req(
+                rocket::http::Method::Options,
+                "/fileupload/00000000-0000-0000-0000-000000000000/status",
+            )
+            .header(Header::new("Origin", "https://example.com"))
+            .header(Header::new("Access-Control-Request-Method", "GET"))
+            .header(Header::new(
+                "Access-Control-Request-Headers",
+                "X-Recovery-Token",
+            ))
+            .dispatch()
+            .await;
+
+        // rocket_cors echoes successful preflights back as 2xx.
+        assert!(
+            res.status().code < 400,
+            "expected 2xx preflight, got {}",
+            res.status()
+        );
+        let allow_headers = res
+            .headers()
+            .get_one("Access-Control-Allow-Headers")
+            .expect("CORS allow-headers in preflight response");
+        // Header names compare case-insensitively per RFC 7230, but the
+        // standard cors fairing emits the names verbatim from our config.
+        let allow_headers_lc = allow_headers.to_ascii_lowercase();
+        assert!(
+            allow_headers_lc.contains("x-recovery-token"),
+            "Access-Control-Allow-Headers `{}` should include x-recovery-token",
+            allow_headers
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Design AC for #146: a successful `/status` call must reset the idle
+    // eviction deadline (otherwise rehydrate succeeds, then the very next
+    // chunk PUT 404s because the session aged out between the GET and the
+    // PUT). Inspect the deadline directly via the test-only accessor.
+    #[rocket::async_test]
+    async fn status_extends_eviction_deadline() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, recovery_token) = init_upload(&client).await;
+
+        let store = client.rocket().state::<Store>().expect("Store managed");
+        let before = store
+            .deadline_for(&uuid)
+            .expect("session has a deadline after init");
+
+        // tokio::time::Instant has millisecond resolution on most
+        // platforms; sleep enough that a fresh `now() + ttl` is strictly
+        // later than the value captured at init.
+        rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", recovery_token))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+
+        let after = store
+            .deadline_for(&uuid)
+            .expect("session still alive after status call");
+        assert!(
+            after > before,
+            "successful /status should extend the eviction deadline"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Negative complement: failed auth (wrong recovery token) must NOT
+    // extend the deadline. Otherwise an attacker with a known UUID could
+    // keep a session alive past its eviction window just by hitting
+    // `/status` with bogus tokens.
+    #[rocket::async_test]
+    async fn status_does_not_extend_deadline_on_token_mismatch() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client(&data_dir).await;
+
+        let (uuid, _) = init_upload(&client).await;
+
+        let store = client.rocket().state::<Store>().expect("Store managed");
+        let before = store
+            .deadline_for(&uuid)
+            .expect("session has a deadline after init");
+
+        rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = client
+            .get(format!("/fileupload/{}/status", uuid))
+            .header(Header::new("X-Recovery-Token", "00".repeat(32)))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+
+        let after = store
+            .deadline_for(&uuid)
+            .expect("session still alive (token mismatch doesn't evict)");
+        assert_eq!(
+            before, after,
+            "failed-auth /status must not extend the deadline"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     fn empty_filestate(uploaded: u64, current_token: &str) -> FileState {
