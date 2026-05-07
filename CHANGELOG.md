@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26](https://github.com/encryption4all/cryptify/compare/v0.1.25...v0.1.26) - 2026-05-07
+
+### Added
+
+- *(upload)* idempotent retry of the last committed chunk
+- *(upload)* structured 404 body, configurable session TTL
+
+### Fixed
+
+- validate API key against pg-pkg, not a local allowlist (closes #123)
+
+### Other
+
+- *(upload)* apply review feedback from #145
+- Merge pull request #132 from encryption4all/fix/extend-upload-eviction-on-chunk
+- Merge pull request #141 from encryption4all/dependabot/cargo/openssl-0.10.79
+- Merge remote-tracking branch 'origin/main' into fix/upload-init-orphan-files-125
+- update dependencies
+- add Rust quality job (fmt, clippy, test)
+
 ## [0.1.25](https://github.com/encryption4all/cryptify/compare/v0.1.24...v0.1.25) - 2026-05-02
 
 ### Added
