@@ -24,10 +24,9 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 use sha2::Digest;
 use std::fmt::Write;
 
-use rocket::fs::FileServer;
 use rocket::tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncSeekExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
     data::ToByteUnit, fairing::AdHoc, get, http::Header, launch, post, put, request::FromRequest,
@@ -937,6 +936,154 @@ fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResp
     })
 }
 
+/// Parsed byte range derived from an HTTP `Range` header and the resource's
+/// total size. Both endpoints are inclusive, per RFC 7233 §2.1.
+#[derive(Debug, PartialEq, Eq)]
+struct ByteRange {
+    start: u64,
+    end_inclusive: u64,
+}
+
+impl ByteRange {
+    fn len(&self) -> u64 {
+        self.end_inclusive - self.start + 1
+    }
+}
+
+/// Parse a single-range `Range` header against a resource of `total_size`
+/// bytes. Returns `None` for malformed, multi-range, or unsatisfiable
+/// requests — the caller turns that into a 416. Supports `bytes=N-M`,
+/// `bytes=N-`, and the suffix form `bytes=-N`. Multi-range is rejected
+/// deliberately; resume only needs one range and the multipart/byteranges
+/// response is not worth the complexity.
+fn parse_range_header(header: &str, total_size: u64) -> Option<ByteRange> {
+    let rest = header.strip_prefix("bytes=")?.trim();
+    if rest.contains(',') {
+        return None;
+    }
+    let (s, e) = rest.split_once('-')?;
+    let s = s.trim();
+    let e = e.trim();
+    if s.is_empty() {
+        let n: u64 = e.parse().ok()?;
+        if n == 0 || total_size == 0 {
+            return None;
+        }
+        let n = n.min(total_size);
+        return Some(ByteRange {
+            start: total_size - n,
+            end_inclusive: total_size - 1,
+        });
+    }
+    let start: u64 = s.parse().ok()?;
+    if start >= total_size {
+        return None;
+    }
+    let end_inclusive = if e.is_empty() {
+        total_size - 1
+    } else {
+        let v: u64 = e.parse().ok()?;
+        v.min(total_size - 1)
+    };
+    if end_inclusive < start {
+        return None;
+    }
+    Some(ByteRange {
+        start,
+        end_inclusive,
+    })
+}
+
+/// Cryptify stores upload payloads as flat UUID-named files under
+/// `data_dir`. Reject anything that could escape that or address an
+/// unintended path before touching the filesystem.
+fn is_safe_download_segment(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains('\0')
+        && name != ".."
+        && name != "."
+}
+
+/// Captures the inbound `Range` header (if any) without failing the request
+/// when it's absent.
+struct RangeHeader(Option<String>);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for RangeHeader {
+    type Error = std::convert::Infallible;
+    async fn from_request(
+        req: &'r rocket::Request<'_>,
+    ) -> rocket::request::Outcome<Self, Self::Error> {
+        rocket::request::Outcome::Success(RangeHeader(
+            req.headers().get_one("Range").map(|s| s.to_owned()),
+        ))
+    }
+}
+
+/// Wraps a pre-built `rocket::Response` so the route handler below can
+/// return it as a `Responder`.
+struct RawResponse(rocket::Response<'static>);
+
+impl<'r> Responder<'r, 'static> for RawResponse {
+    fn respond_to(self, _req: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
+        Ok(self.0)
+    }
+}
+
+#[get("/filedownload/<filename>")]
+async fn download(
+    filename: &str,
+    range: RangeHeader,
+    config: &State<CryptifyConfig>,
+) -> Result<RawResponse, rocket::http::Status> {
+    use rocket::http::Status;
+    use std::io::SeekFrom;
+
+    if !is_safe_download_segment(filename) {
+        return Err(Status::NotFound);
+    }
+    let path = Path::new(config.data_dir()).join(filename);
+    let mut file = File::open(&path).await.map_err(|_| Status::NotFound)?;
+    let total_size = file.metadata().await.map_err(|_| Status::NotFound)?.len();
+
+    let mut builder = rocket::Response::build();
+    builder.raw_header("Accept-Ranges", "bytes");
+
+    match range.0 {
+        Some(header) => match parse_range_header(&header, total_size) {
+            Some(br) => {
+                file.seek(SeekFrom::Start(br.start))
+                    .await
+                    .map_err(|_| Status::InternalServerError)?;
+                let len = br.len();
+                builder
+                    .status(Status::PartialContent)
+                    .raw_header(
+                        "Content-Range",
+                        format!("bytes {}-{}/{}", br.start, br.end_inclusive, total_size),
+                    )
+                    .raw_header("Content-Length", len.to_string())
+                    .streamed_body(file.take(len));
+            }
+            None => {
+                builder
+                    .status(Status::RangeNotSatisfiable)
+                    .raw_header("Content-Range", format!("bytes */{}", total_size));
+            }
+        },
+        None => {
+            builder
+                .status(Status::Ok)
+                .raw_header("Content-Length", total_size.to_string())
+                .streamed_body(file);
+        }
+    }
+    Ok(RawResponse(builder.finalize()))
+}
+
 #[launch]
 async fn rocket() -> _ {
     // Extract config first so we can use chunk_size for Rocket's body-size limits.
@@ -990,6 +1137,7 @@ async fn rocket() -> _ {
             "Content-Type",
             "Content-Range",
             "CryptifyToken",
+            "Range",
             "X-Recovery-Token",
         ]))
         .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
@@ -1009,10 +1157,10 @@ async fn rocket() -> _ {
                 upload_chunk,
                 upload_finalize,
                 upload_status,
-                usage
+                usage,
+                download
             ],
         )
-        .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::with_idle_ttl(std::time::Duration::from_secs(
             config.session_ttl_secs(),
@@ -1790,5 +1938,286 @@ mod tests {
     fn extract_pg_bearer_rejects_pg_prefix_without_scheme() {
         // The PG- prefix alone (no `Bearer `) is not a valid bearer.
         assert_eq!(extract_pg_bearer(Some("PG-abc123")), None);
+    }
+
+    // ----- Range header parser unit tests -----
+
+    #[test]
+    fn parse_range_full() {
+        let r = parse_range_header("bytes=0-99", 100).unwrap();
+        assert_eq!(
+            r,
+            ByteRange {
+                start: 0,
+                end_inclusive: 99
+            }
+        );
+        assert_eq!(r.len(), 100);
+    }
+
+    #[test]
+    fn parse_range_open_end() {
+        let r = parse_range_header("bytes=50-", 100).unwrap();
+        assert_eq!(
+            r,
+            ByteRange {
+                start: 50,
+                end_inclusive: 99
+            }
+        );
+    }
+
+    #[test]
+    fn parse_range_suffix() {
+        let r = parse_range_header("bytes=-10", 100).unwrap();
+        assert_eq!(
+            r,
+            ByteRange {
+                start: 90,
+                end_inclusive: 99
+            }
+        );
+    }
+
+    #[test]
+    fn parse_range_suffix_larger_than_size_clamps() {
+        let r = parse_range_header("bytes=-500", 100).unwrap();
+        assert_eq!(
+            r,
+            ByteRange {
+                start: 0,
+                end_inclusive: 99
+            }
+        );
+    }
+
+    #[test]
+    fn parse_range_end_past_size_clamps() {
+        let r = parse_range_header("bytes=10-9999", 100).unwrap();
+        assert_eq!(
+            r,
+            ByteRange {
+                start: 10,
+                end_inclusive: 99
+            }
+        );
+    }
+
+    #[test]
+    fn parse_range_rejects_start_past_size() {
+        assert!(parse_range_header("bytes=100-200", 100).is_none());
+    }
+
+    #[test]
+    fn parse_range_rejects_inverted() {
+        assert!(parse_range_header("bytes=50-10", 100).is_none());
+    }
+
+    #[test]
+    fn parse_range_rejects_wrong_unit() {
+        assert!(parse_range_header("items=0-9", 100).is_none());
+    }
+
+    #[test]
+    fn parse_range_rejects_multi_range() {
+        // Multi-range is intentionally unsupported.
+        assert!(parse_range_header("bytes=0-9,20-29", 100).is_none());
+    }
+
+    #[test]
+    fn parse_range_rejects_empty_suffix() {
+        assert!(parse_range_header("bytes=-0", 100).is_none());
+        assert!(parse_range_header("bytes=-", 100).is_none());
+    }
+
+    #[test]
+    fn parse_range_rejects_garbage() {
+        assert!(parse_range_header("nonsense", 100).is_none());
+        assert!(parse_range_header("bytes=abc-def", 100).is_none());
+    }
+
+    #[test]
+    fn safe_segment_rejects_traversal_and_separators() {
+        assert!(is_safe_download_segment("abc-123"));
+        assert!(!is_safe_download_segment(""));
+        assert!(!is_safe_download_segment(".."));
+        assert!(!is_safe_download_segment("."));
+        assert!(!is_safe_download_segment("a/b"));
+        assert!(!is_safe_download_segment("a\\b"));
+        assert!(!is_safe_download_segment("a\0b"));
+    }
+
+    // ----- /filedownload integration tests -----
+
+    async fn download_client(data_dir: &std::path::Path) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        std::fs::create_dir_all(data_dir).expect("create test data_dir");
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "http://localhost",
+                "data_dir": data_dir.to_str().unwrap(),
+                "email_from": "Test <test@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+            }),
+        ));
+
+        let rocket = rocket::custom(figment)
+            .mount("/", routes![download])
+            .attach(AdHoc::config::<CryptifyConfig>());
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    fn fresh_data_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("cryptify-dl-{}", uuid::Uuid::new_v4().hyphenated()))
+    }
+
+    #[rocket::async_test]
+    async fn download_full_returns_200_with_accept_ranges() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        let body: Vec<u8> = (0u8..100).collect();
+        std::fs::write(data_dir.join("file1"), &body).unwrap();
+
+        let res = client.get("/filedownload/file1").dispatch().await;
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(
+            res.headers().get_one("Accept-Ranges"),
+            Some("bytes"),
+            "Accept-Ranges must be advertised so browsers expose the resume button"
+        );
+        assert_eq!(res.headers().get_one("Content-Length"), Some("100"));
+        let bytes = res.into_bytes().await.unwrap();
+        assert_eq!(bytes, body);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_partial_returns_206_with_content_range() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        let body: Vec<u8> = (0u8..100).collect();
+        std::fs::write(data_dir.join("file1"), &body).unwrap();
+
+        let res = client
+            .get("/filedownload/file1")
+            .header(Header::new("Range", "bytes=10-19"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::PartialContent);
+        assert_eq!(
+            res.headers().get_one("Content-Range"),
+            Some("bytes 10-19/100")
+        );
+        assert_eq!(res.headers().get_one("Content-Length"), Some("10"));
+        assert_eq!(res.headers().get_one("Accept-Ranges"), Some("bytes"));
+        let bytes = res.into_bytes().await.unwrap();
+        assert_eq!(bytes, (10u8..20).collect::<Vec<u8>>());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_open_ended_range_resumes_from_offset() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        let body: Vec<u8> = (0u8..100).collect();
+        std::fs::write(data_dir.join("file1"), &body).unwrap();
+
+        let res = client
+            .get("/filedownload/file1")
+            .header(Header::new("Range", "bytes=80-"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::PartialContent);
+        assert_eq!(
+            res.headers().get_one("Content-Range"),
+            Some("bytes 80-99/100")
+        );
+        let bytes = res.into_bytes().await.unwrap();
+        assert_eq!(bytes, (80u8..100).collect::<Vec<u8>>());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_suffix_range_returns_tail() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        let body: Vec<u8> = (0u8..100).collect();
+        std::fs::write(data_dir.join("file1"), &body).unwrap();
+
+        let res = client
+            .get("/filedownload/file1")
+            .header(Header::new("Range", "bytes=-5"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::PartialContent);
+        assert_eq!(
+            res.headers().get_one("Content-Range"),
+            Some("bytes 95-99/100")
+        );
+        let bytes = res.into_bytes().await.unwrap();
+        assert_eq!(bytes, (95u8..100).collect::<Vec<u8>>());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_unsatisfiable_range_returns_416() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        let body: Vec<u8> = (0u8..100).collect();
+        std::fs::write(data_dir.join("file1"), &body).unwrap();
+
+        let res = client
+            .get("/filedownload/file1")
+            .header(Header::new("Range", "bytes=200-300"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::RangeNotSatisfiable);
+        assert_eq!(res.headers().get_one("Content-Range"), Some("bytes */100"));
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_missing_file_returns_404() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+
+        let res = client.get("/filedownload/nope").dispatch().await;
+        assert_eq!(res.status(), Status::NotFound);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[rocket::async_test]
+    async fn download_rejects_path_traversal() {
+        let data_dir = fresh_data_dir();
+        let client = download_client(&data_dir).await;
+        // Plant a "secret" file outside data_dir to make sure traversal
+        // would actually leak something if the guard were bypassed.
+        let secret_dir = data_dir.parent().unwrap().join(format!(
+            "cryptify-dl-secret-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        std::fs::create_dir_all(&secret_dir).unwrap();
+        let secret_path = secret_dir.join("secret");
+        std::fs::write(&secret_path, b"do not leak").unwrap();
+
+        // Rocket's router parses `<filename>` as a single URI segment, so
+        // a literal `..` arrives as `..` and must be rejected by the guard.
+        let res = client.get("/filedownload/..").dispatch().await;
+        assert_eq!(res.status(), Status::NotFound);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let _ = std::fs::remove_dir_all(&secret_dir);
     }
 }
