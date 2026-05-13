@@ -7,7 +7,7 @@ use crate::config::CryptifyConfig;
 use crate::email::send_email;
 use crate::error::{Error, PayloadTooLargeBody};
 use crate::store::{
-    PER_UPLOAD_LIMIT, ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT,
+    API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT, PER_UPLOAD_LIMIT, ROLLING_LIMIT,
     ROLLING_WINDOW_SECS,
 };
 
@@ -31,7 +31,7 @@ use rocket::tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, figment::Figment, http::Header, launch, get, post, put,
+    data::ToByteUnit, fairing::AdHoc, figment::Figment, get, http::Header, launch, post, put,
     request::FromRequest, response::Responder, routes, serde::json::Json, Build, Data, Rocket,
     State,
 };
@@ -308,12 +308,17 @@ async fn upload_chunk(
     }
 
     if end - start > config.chunk_size() {
-        return Err(Error::BadRequest(Some(
-            format!("File chunk too large; the maximum is {} bytes", config.chunk_size()),
-        )));
+        return Err(Error::BadRequest(Some(format!(
+            "File chunk too large; the maximum is {} bytes",
+            config.chunk_size()
+        ))));
     }
 
-    let per_upload_limit = if state.is_api_key { API_KEY_PER_UPLOAD_LIMIT } else { PER_UPLOAD_LIMIT };
+    let per_upload_limit = if state.is_api_key {
+        API_KEY_PER_UPLOAD_LIMIT
+    } else {
+        PER_UPLOAD_LIMIT
+    };
     if end > per_upload_limit {
         return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
             error: format!(
@@ -462,13 +467,21 @@ async fn upload_finalize(
         })
         .collect();
 
-    let rolling_limit = if state.is_api_key { API_KEY_ROLLING_LIMIT } else { ROLLING_LIMIT };
+    let rolling_limit = if state.is_api_key {
+        API_KEY_ROLLING_LIMIT
+    } else {
+        ROLLING_LIMIT
+    };
     let now_secs = chrono::offset::Utc::now().timestamp();
     if let Some(sender_email) = sender.as_deref() {
         let usage = store.get_usage(sender_email, now_secs);
         log::info!(
             "Rolling limit check for {} (api_key={}): used={} + current={} vs limit={}",
-            sender_email, state.is_api_key, usage.used_bytes, state.uploaded, rolling_limit
+            sender_email,
+            state.is_api_key,
+            usage.used_bytes,
+            state.uploaded,
+            rolling_limit
         );
         if usage.used_bytes.saturating_add(state.uploaded) > rolling_limit {
             drop(state);
@@ -587,7 +600,10 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
 
     rocket
         .attach(cors)
-        .mount("/", routes![health, upload_init, upload_chunk, upload_finalize, usage])
+        .mount(
+            "/",
+            routes![health, upload_init, upload_chunk, upload_finalize, usage],
+        )
         .mount("/filedownload", FileServer::from(config.data_dir()))
         .attach(AdHoc::config::<CryptifyConfig>())
         .manage(Store::new())
@@ -609,7 +625,12 @@ async fn rocket() -> _ {
 
     let vk = response
         .json::<Parameters<VerifyingKey>>()
-        .unwrap_or_else(|e| panic!("Failed to parse verification key from {}: {}", pkg_params_url, e));
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to parse verification key from {}: {}",
+                pkg_params_url, e
+            )
+        });
 
     build_rocket(figment, vk)
 }
@@ -624,11 +645,7 @@ mod tests {
     // Echoes the extracted fields so the test can verify successful parsing.
     #[post("/__test/finalize_headers")]
     fn finalize_headers_echo(h: FinalizeHeaders) -> String {
-        format!(
-            "{}|{}",
-            h.cryptify_token,
-            h.content_range.size.unwrap_or(0)
-        )
+        format!("{}|{}", h.cryptify_token, h.content_range.size.unwrap_or(0))
     }
 
     async fn headers_client() -> Client {
@@ -794,8 +811,8 @@ mod integration {
     /// disables outgoing email. Each test gets its own directory so they can
     /// run in parallel without clobbering each other's files.
     fn test_figment() -> (rocket::figment::Figment, std::path::PathBuf) {
-        let dir = std::env::temp_dir()
-            .join(format!("cryptify-it-{}", uuid::Uuid::new_v4().hyphenated()));
+        let dir =
+            std::env::temp_dir().join(format!("cryptify-it-{}", uuid::Uuid::new_v4().hyphenated()));
         std::fs::create_dir_all(&dir).expect("create temp data_dir");
 
         let figment = default_figment()
@@ -819,16 +836,11 @@ mod integration {
         let signing_key = &setup.signing_keys[2]; // Bob: email + name
         let mut input = futures::io::Cursor::new(payload.to_vec());
         let mut sealed = Vec::new();
-        Sealer::<_, SealerStreamConfig>::new(
-            &setup.ibe_pk,
-            &setup.policy,
-            signing_key,
-            &mut rng,
-        )
-        .expect("build sealer")
-        .seal(&mut input, &mut sealed)
-        .await
-        .expect("seal payload");
+        Sealer::<_, SealerStreamConfig>::new(&setup.ibe_pk, &setup.policy, signing_key, &mut rng)
+            .expect("build sealer")
+            .seal(&mut input, &mut sealed)
+            .await
+            .expect("seal payload");
         sealed
     }
 
@@ -870,7 +882,10 @@ mod integration {
         let body = res.into_string().await.unwrap_or_default();
         let uuid = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
-            .and_then(|v| v.get("uuid").and_then(|u| u.as_str().map(|s| s.to_string())))
+            .and_then(|v| {
+                v.get("uuid")
+                    .and_then(|u| u.as_str().map(|s| s.to_string()))
+            })
             .unwrap_or_default();
         (uuid, token, status)
     }
@@ -903,19 +918,11 @@ mod integration {
         (status, next)
     }
 
-    async fn do_finalize(
-        client: &Client,
-        uuid: &str,
-        token: &str,
-        total: u64,
-    ) -> Status {
+    async fn do_finalize(client: &Client, uuid: &str, token: &str, total: u64) -> Status {
         client
             .post(format!("/fileupload/finalize/{}", uuid))
             .header(Header::new("CryptifyToken", token.to_string()))
-            .header(Header::new(
-                "Content-Range",
-                format!("bytes */{}", total),
-            ))
+            .header(Header::new("Content-Range", format!("bytes */{}", total)))
             .dispatch()
             .await
             .status()
@@ -951,7 +958,9 @@ mod integration {
         // multiple PUTs. Keeps payload well under CHUNK_SIZE.
         let mut rng = rand08::thread_rng();
         let setup = TestSetup::new(&mut rng);
-        let payload: Vec<u8> = (0..(2 * 1024 * 1024 + 17)).map(|i| (i % 251) as u8).collect();
+        let payload: Vec<u8> = (0..(2 * 1024 * 1024 + 17))
+            .map(|i| (i % 251) as u8)
+            .collect();
         let sealed = seal_payload(&setup, &payload).await;
 
         let (client, dir) = test_client(&setup).await;
@@ -963,14 +972,7 @@ mod integration {
         assert_eq!(s1, Status::Ok);
         token = next1;
 
-        let (s2, next2) = do_chunk(
-            &client,
-            &uuid,
-            &token,
-            &sealed[split..],
-            split as u64,
-        )
-        .await;
+        let (s2, next2) = do_chunk(&client, &uuid, &token, &sealed[split..], split as u64).await;
         assert_eq!(s2, Status::Ok);
         token = next2;
 

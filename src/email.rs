@@ -253,7 +253,7 @@ pub async fn send_email(
     if state.confirm {
         // also send confirmation email to sender
         let sender = state.sender.clone().unwrap();
-        
+
         let base = Url::parse(config.server_url())?;
         let mut url = base.join("/download")?;
         url.query_pairs_mut()
