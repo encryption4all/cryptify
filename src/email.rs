@@ -193,6 +193,10 @@ pub async fn send_email(
     state: &FileState,
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    if config.staging_mode() {
+        return Ok(staging_log_email(config, state, uuid));
+    }
+
     // setup SMTP connection
     log::info!(
         "Setting up SMTP: host={}, port={}, tls={}, credentials={}",
@@ -281,6 +285,57 @@ pub async fn send_email(
     Ok("Email successfully sent".to_owned())
 }
 
+/// Staging-mode replacement for actual SMTP delivery. Logs a clearly
+/// marked record of the email that *would* have been sent (recipients,
+/// sender, attributes, expiry, download URL) so operators of a staging
+/// deployment can observe the full flow without contacting an SMTP
+/// server. Returns a summary string in the same `Result::Ok` shape as
+/// real sends.
+fn staging_log_email(config: &CryptifyConfig, state: &FileState, uuid: &str) -> String {
+    let sender = state.sender.as_deref().unwrap_or("<unknown>");
+    let lang = match state.mail_lang {
+        Language::En => "EN",
+        Language::Nl => "NL",
+    };
+    let recipients: Vec<String> = state
+        .recipients
+        .iter()
+        .map(|m| m.email.to_string())
+        .collect();
+    let attrs: Vec<String> = state
+        .sender_attributes
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+
+    let base = Url::parse(config.server_url()).ok();
+    let download_url = base
+        .and_then(|b| b.join("/download").ok())
+        .map(|mut u| {
+            u.query_pairs_mut().append_pair("uuid", uuid);
+            u.to_string()
+        })
+        .unwrap_or_else(|| format!("(unparseable server_url={})", config.server_url()));
+
+    let summary = format!(
+        "[STAGING] Email NOT sent (staging_mode=true). Would have notified recipients={:?} \
+         from sender={} (attributes=[{}]) lang={} expires={} confirm={} notify_recipients={} \
+         download_url={} uuid={}",
+        recipients,
+        sender,
+        attrs.join(", "),
+        lang,
+        state.expires,
+        state.confirm,
+        state.notify_recipients,
+        download_url,
+        uuid,
+    );
+
+    log::info!("{}", summary);
+    summary
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,6 +399,52 @@ mod tests {
     #[test]
     fn format_file_size_tebibytes() {
         assert_eq!(format_file_size(1024_u64.pow(4)), "1.0 TB");
+    }
+
+    fn staging_filestate() -> FileState {
+        use lettre::message::{Mailbox, Mailboxes};
+        let mut mboxes = Mailboxes::new();
+        mboxes.push("alice@example.com".parse::<Mailbox>().unwrap());
+        mboxes.push("bob@example.com".parse::<Mailbox>().unwrap());
+        FileState {
+            uploaded: 1234,
+            cryptify_token: String::new(),
+            expires: 1_700_000_000,
+            recipients: mboxes,
+            mail_content: String::new(),
+            mail_lang: Language::En,
+            sender: Some("sender@example.com".to_owned()),
+            sender_attributes: vec![
+                ("orgName".to_owned(), "Acme".to_owned()),
+                ("phone".to_owned(), "+31123".to_owned()),
+            ],
+            confirm: true,
+            notify_recipients: true,
+            api_key_tenant: None,
+            api_key_validation_failed: false,
+            last_chunk: None,
+            recovery_token: String::new(),
+        }
+    }
+
+    #[rocket::async_test]
+    async fn staging_mode_skips_smtp_and_returns_summary() {
+        let config = CryptifyConfig::for_test("https://staging.example.com/", true);
+        let state = staging_filestate();
+        let res = send_email(&config, &state, "uuid-abc")
+            .await
+            .expect("staging mode should return Ok without contacting SMTP");
+        assert!(res.starts_with("[STAGING]"), "got: {}", res);
+        assert!(res.contains("alice@example.com"), "got: {}", res);
+        assert!(res.contains("bob@example.com"), "got: {}", res);
+        assert!(res.contains("sender@example.com"), "got: {}", res);
+        assert!(res.contains("orgName=Acme"), "got: {}", res);
+        assert!(res.contains("uuid=uuid-abc"), "got: {}", res);
+        assert!(
+            res.contains("https://staging.example.com/download?uuid=uuid-abc"),
+            "got: {}",
+            res
+        );
     }
 
     #[test]
