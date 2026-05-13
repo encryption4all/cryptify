@@ -65,6 +65,11 @@ paths:
                     type: "boolean"
                     example: true
                     description: "Whether to send a confirmation email to the sender"
+                  notifyRecipients:
+                    type: "boolean"
+                    default: true
+                    example: true
+                    description: "Whether to email each recipient with a download link. Optional; defaults to true. Set to false to upload silently when the encrypted payload reaches recipients through another channel and a Cryptify-sent notification would be a duplicate."
         responses:
           "200":
             description: "Successful operation"
@@ -78,22 +83,51 @@ paths:
               application/json:
                 schema:
                   type: "object"
+                  required:
+                    - uuid
+                    - recovery_token
                   properties:
                     uuid:
                       type: "string"
                       format: "uuid"
                       description: "Unique identifier for the file upload"
+                    recovery_token:
+                      type: "string"
+                      description:
+                        "Bearer credential for the cross-refresh-resume
+                        status endpoint (`GET /fileupload/{uuid}/status`).
+                        The client should store this alongside the UUID
+                        (e.g. in IndexedDB) and present it in an
+                        `X-Recovery-Token` header to recover from a
+                        page refresh, tab crash, or navigate-away-and-back.
+                        Hex-encoded 32-byte random."
   /fileupload/{uuid}:
     put:
       tags:
       - "File upload"
       summary: "Upload a file part"
+      description:
+        "Append a single chunk to the upload identified by `uuid`.\n\n
+        **Idempotent retry contract.** A chunk PUT whose response was lost
+        in flight can be safely retried with the *previous* `cryptifytoken`
+        value (the one the client sent on the failed attempt) at the same
+        `Content-Range` offset and with the same body. The server detects
+        this case — the request matches the cached `(prev_token, offset,
+        length, sha256)` of the most recently committed chunk — and
+        replays the previously returned `cryptifytoken` without
+        re-writing the file or double-counting against quotas. If the
+        request looks like a retry but the body bytes differ, the server
+        responds 400; clients must not retry the same offset with
+        different bytes.\n\n
+        Retries are only honoured for the *most recently committed*
+        chunk. If a client falls behind by more than one chunk it must
+        start a new upload."
       operationId: "uploadFilePart"
       parameters:
       - in: "header"
         name: "cryptifytoken"
         description:
-          "Identifies the version of the upload file parts. Part of the header from the last fileupload response."
+          "Identifies the version of the upload file parts. Part of the header from the last fileupload response. On a retry of a chunk whose response was lost, send the *previous* token (the one originally sent on the failed PUT)."
         schema:
           type: "string"
         required: true
@@ -145,9 +179,18 @@ paths:
                     message:
                       type: "string"
         "404":
-          description: "Partially uploaded file does not exist."
+          description:
+            "The upload session is not known to the server. Either the
+            client never called `/fileupload/init`, the session was idle
+            past the configured TTL and got evicted, or the on-disk file
+            has been removed. Clients should not retry — start a new
+            upload via `/fileupload/init`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
         "413":
-          description: "The upload exceeds the per-upload size limit (5 GB)."
+          description: "The upload exceeds the per-upload size limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
             application/json:
               schema:
@@ -195,15 +238,85 @@ paths:
                     message:
                       type: "string"
         "404":
-          description: "Partially upload file does not exist."
+          description:
+            "The upload session is not known to the server (see
+            `/fileupload/{uuid}` 404 for details). Clients should not
+            retry — start a new upload via `/fileupload/init`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
         "413":
-          description: "The sender has exceeded the rolling 14-day upload limit (15 GB)."
+          description: "The sender has exceeded the rolling 14-day upload limit (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PayloadTooLarge"
         "422":
           description: "Data is missing to form complete file."
+
+  /fileupload/{uuid}/status:
+    get:
+      tags:
+      - "File upload"
+      summary: "Read upload state for cross-refresh resume"
+      description:
+        "Returns the rolling-token state of an in-flight upload so a
+        client that lost track of the session (page refresh, tab crash,
+        navigate-away-and-back) can rehydrate and feed the next chunk
+        PUT through the idempotent-retry path
+        (`PUT /fileupload/{uuid}`). Authenticates via the
+        `X-Recovery-Token` header issued at `upload_init`. **Behaviour
+        on resume conflict:** if two clients hold the same UUID and
+        recovery token (e.g. two tabs), the first chunk PUT to land
+        wins and the second sees a 4xx as soon as it tries to advance
+        past the now-stale state — single-active-resumer semantics, no
+        lease enforcement on the server side. A successful call also
+        resets the session's idle eviction deadline so the very next
+        chunk PUT does not 404 because the rehydrate window aged out."
+      operationId: "uploadStatus"
+      parameters:
+      - in: "header"
+        name: "X-Recovery-Token"
+        description:
+          "Bearer credential issued in the `recovery_token` field of
+          the `upload_init` response. Compared in constant time on the
+          server. Missing / empty → 401."
+        schema:
+          type: "string"
+        required: true
+      - in: "path"
+        name: "uuid"
+        required: true
+        description: "The unique identifier received when initializing file upload."
+        schema:
+          type: "string"
+          format: "uuid"
+      responses:
+        "200":
+          description: "Successful operation."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatus"
+        "401":
+          description:
+            "Missing or empty `X-Recovery-Token` header. Note: a
+            *valid-format* token that simply does not match the stored
+            value returns 404 with the same body shape as an evicted
+            session, deliberately, so attackers cannot probe for live
+            UUIDs by varying the token."
+        "404":
+          description:
+            "The upload session is not known to the server, OR the
+            recovery token does not match the stored value. The two
+            cases are deliberately collapsed — same response shape as
+            `PUT /fileupload/{uuid}` — to avoid leaking session
+            existence."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSessionNotFound"
 
   /usage:
     get:
@@ -247,14 +360,14 @@ paths:
                   limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Rolling-window upload limit in bytes (15 GB)."
+                    description: "Rolling-window upload limit in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
                   window_days:
                     type: "integer"
                     description: "Length of the rolling window in days."
                   per_upload_limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Maximum size of a single upload in bytes (5 GB)."
+                    description: "Maximum size of a single upload in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
                   resets_at:
                     type: "string"
                     format: "date-time"
@@ -328,3 +441,66 @@ components:
           type: "integer"
           format: "int64"
           description: "The limit value in bytes."
+    UploadSessionNotFound:
+      type: "object"
+      required:
+        - error
+        - uuid
+        - reason
+      properties:
+        error:
+          type: "string"
+          enum:
+            - "upload_session_not_found"
+          description: "Stable machine-readable error code for clients."
+        uuid:
+          type: "string"
+          format: "uuid"
+          description: "The upload UUID the request targeted."
+        reason:
+          type: "string"
+          enum:
+            - "expired_or_unknown"
+            - "invalid_uuid"
+            - "file_missing"
+          description:
+            "Why the session is not retrievable. `expired_or_unknown`
+            means the session was either evicted after its idle TTL or
+            never existed (clients cannot tell these apart, by design).
+            `invalid_uuid` means the path UUID is malformed.
+            `file_missing` means the in-memory session exists but the
+            on-disk file is gone (server-state inconsistency)."
+    UploadStatus:
+      type: "object"
+      required:
+        - uploaded
+        - cryptify_token
+      properties:
+        uploaded:
+          type: "integer"
+          format: "int64"
+          description:
+            "Total bytes the server has committed for this upload so far.
+            The client should resume from this offset."
+        cryptify_token:
+          type: "string"
+          description:
+            "Current value of the rolling token. The client must send this
+            as `cryptifytoken` on the next chunk PUT."
+        prev_token:
+          type: "string"
+          description:
+            "Token the client sent on the most recently committed chunk
+            (i.e. the value of `cryptify_token` *before* that chunk
+            advanced it). Combined with `prev_offset`, lets the client
+            re-issue the most recent chunk on the idempotent-retry path
+            (PUT `/fileupload/{uuid}`) if it is unsure whether the chunk
+            was committed. Omitted until at least one chunk has been
+            committed."
+        prev_offset:
+          type: "integer"
+          format: "int64"
+          description:
+            "Byte offset where the most recently committed chunk started
+            (i.e. `uploaded - chunk_len`). Omitted until at least one
+            chunk has been committed."

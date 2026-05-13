@@ -15,3 +15,5 @@ usage_db = "/app/data/usage.db"
 # pkg_url = "https://pkg.staging.yivi.app"
 pkg_url = "http://postguard-pkg:8087"
 chunk_size = 5000000
+# When true, finalize logs the email it WOULD have sent and skips SMTP.
+# staging_mode = true

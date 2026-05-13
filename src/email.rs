@@ -193,14 +193,10 @@ pub async fn send_email(
     state: &FileState,
     uuid: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if config.email_stub() {
-        log::info!(
-            "email_stub is enabled; not sending email for upload {} ({} recipients)",
-            uuid,
-            state.recipients.iter().count()
-        );
-        return Ok("Email send stubbed".to_owned());
+    if config.staging_mode() {
+        return Ok(staging_log_email(config, state, uuid));
     }
+
     // setup SMTP connection
     log::info!(
         "Setting up SMTP: host={}, port={}, tls={}, credentials={}",
@@ -223,31 +219,39 @@ pub async fn send_email(
         mailer_builder = mailer_builder.credentials(credentials);
     }
 
-    for recipient in state.recipients.iter() {
-        // combine URL with mail variables into template
-        let base = Url::parse(config.server_url())?;
-        let mut url = base.join("/download")?;
-        url.query_pairs_mut()
-            .append_pair("uuid", uuid)
-            .append_pair("recipient", &format!("{}", recipient.email));
+    if state.notify_recipients {
+        for recipient in state.recipients.iter() {
+            // combine URL with mail variables into template
+            let base = Url::parse(config.server_url())?;
+            let mut url = base.join("/download")?;
+            url.query_pairs_mut()
+                .append_pair("uuid", uuid)
+                .append_pair("recipient", &format!("{}", recipient.email));
 
-        let (email, subject) = email_templates(state, url.as_str());
-        let email = Message::builder()
-            .header(ContentType::TEXT_HTML)
-            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
-            .from(config.email_from()) // checked in config
-            .to(recipient.clone())
-            .subject(subject)
-            .body(email)?;
+            let (email, subject) = email_templates(state, url.as_str());
+            let email = Message::builder()
+                .header(ContentType::TEXT_HTML)
+                .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+                .from(config.email_from()) // checked in config
+                .to(recipient.clone())
+                .subject(subject)
+                .body(email)?;
 
-        // send email
-        log::info!("Sending email to {}", recipient.email);
-        let mailer = mailer_builder.clone().build();
-        mailer.send(&email).map_err(|e| {
-            log::error!("Failed to send email to {}: {}", recipient.email, e);
-            e
-        })?;
-        log::info!("Email sent to {}", recipient.email);
+            // send email
+            log::info!("Sending email to {}", recipient.email);
+            let mailer = mailer_builder.clone().build();
+            mailer.send(&email).map_err(|e| {
+                log::error!("Failed to send email to {}: {}", recipient.email, e);
+                e
+            })?;
+            log::info!("Email sent to {}", recipient.email);
+        }
+    } else {
+        log::info!(
+            "notify_recipients disabled — skipping notification mail for {} recipient(s) on upload {}",
+            state.recipients.iter().count(),
+            uuid
+        );
     }
 
     if state.confirm {
@@ -258,7 +262,7 @@ pub async fn send_email(
         let mut url = base.join("/download")?;
         url.query_pairs_mut()
             .append_pair("uuid", uuid)
-            .append_pair("recipient", &format!("{}", &sender));
+            .append_pair("recipient", &sender);
 
         let (email, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
@@ -279,6 +283,57 @@ pub async fn send_email(
     }
 
     Ok("Email successfully sent".to_owned())
+}
+
+/// Staging-mode replacement for actual SMTP delivery. Logs a clearly
+/// marked record of the email that *would* have been sent (recipients,
+/// sender, attributes, expiry, download URL) so operators of a staging
+/// deployment can observe the full flow without contacting an SMTP
+/// server. Returns a summary string in the same `Result::Ok` shape as
+/// real sends.
+fn staging_log_email(config: &CryptifyConfig, state: &FileState, uuid: &str) -> String {
+    let sender = state.sender.as_deref().unwrap_or("<unknown>");
+    let lang = match state.mail_lang {
+        Language::En => "EN",
+        Language::Nl => "NL",
+    };
+    let recipients: Vec<String> = state
+        .recipients
+        .iter()
+        .map(|m| m.email.to_string())
+        .collect();
+    let attrs: Vec<String> = state
+        .sender_attributes
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+
+    let base = Url::parse(config.server_url()).ok();
+    let download_url = base
+        .and_then(|b| b.join("/download").ok())
+        .map(|mut u| {
+            u.query_pairs_mut().append_pair("uuid", uuid);
+            u.to_string()
+        })
+        .unwrap_or_else(|| format!("(unparseable server_url={})", config.server_url()));
+
+    let summary = format!(
+        "[STAGING] Email NOT sent (staging_mode=true). Would have notified recipients={:?} \
+         from sender={} (attributes=[{}]) lang={} expires={} confirm={} notify_recipients={} \
+         download_url={} uuid={}",
+        recipients,
+        sender,
+        attrs.join(", "),
+        lang,
+        state.expires,
+        state.confirm,
+        state.notify_recipients,
+        download_url,
+        uuid,
+    );
+
+    log::info!("{}", summary);
+    summary
 }
 
 #[cfg(test)]
@@ -344,6 +399,52 @@ mod tests {
     #[test]
     fn format_file_size_tebibytes() {
         assert_eq!(format_file_size(1024_u64.pow(4)), "1.0 TB");
+    }
+
+    fn staging_filestate() -> FileState {
+        use lettre::message::{Mailbox, Mailboxes};
+        let mut mboxes = Mailboxes::new();
+        mboxes.push("alice@example.com".parse::<Mailbox>().unwrap());
+        mboxes.push("bob@example.com".parse::<Mailbox>().unwrap());
+        FileState {
+            uploaded: 1234,
+            cryptify_token: String::new(),
+            expires: 1_700_000_000,
+            recipients: mboxes,
+            mail_content: String::new(),
+            mail_lang: Language::En,
+            sender: Some("sender@example.com".to_owned()),
+            sender_attributes: vec![
+                ("orgName".to_owned(), "Acme".to_owned()),
+                ("phone".to_owned(), "+31123".to_owned()),
+            ],
+            confirm: true,
+            notify_recipients: true,
+            api_key_tenant: None,
+            api_key_validation_failed: false,
+            last_chunk: None,
+            recovery_token: String::new(),
+        }
+    }
+
+    #[rocket::async_test]
+    async fn staging_mode_skips_smtp_and_returns_summary() {
+        let config = CryptifyConfig::for_test("https://staging.example.com/", true);
+        let state = staging_filestate();
+        let res = send_email(&config, &state, "uuid-abc")
+            .await
+            .expect("staging mode should return Ok without contacting SMTP");
+        assert!(res.starts_with("[STAGING]"), "got: {}", res);
+        assert!(res.contains("alice@example.com"), "got: {}", res);
+        assert!(res.contains("bob@example.com"), "got: {}", res);
+        assert!(res.contains("sender@example.com"), "got: {}", res);
+        assert!(res.contains("orgName=Acme"), "got: {}", res);
+        assert!(res.contains("uuid=uuid-abc"), "got: {}", res);
+        assert!(
+            res.contains("https://staging.example.com/download?uuid=uuid-abc"),
+            "got: {}",
+            res
+        );
     }
 
     #[test]

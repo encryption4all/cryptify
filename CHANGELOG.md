@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26](https://github.com/encryption4all/cryptify/compare/v0.1.25...v0.1.26) - 2026-05-07
+
+### Added
+
+- *(upload)* idempotent retry of the last committed chunk
+- *(upload)* structured 404 body, configurable session TTL
+
+### Fixed
+
+- validate API key against pg-pkg, not a local allowlist (closes #123)
+
+### Other
+
+- *(upload)* apply review feedback from #145
+- Merge pull request #132 from encryption4all/fix/extend-upload-eviction-on-chunk
+- Merge pull request #141 from encryption4all/dependabot/cargo/openssl-0.10.79
+- Merge remote-tracking branch 'origin/main' into fix/upload-init-orphan-files-125
+- update dependencies
+- add Rust quality job (fmt, clippy, test)
+
+## [0.1.25](https://github.com/encryption4all/cryptify/compare/v0.1.24...v0.1.25) - 2026-05-02
+
+### Added
+
+- *(upload)* add notifyRecipients toggle on /fileupload/init
+
+### Other
+
+- Merge pull request #135 from encryption4all/feat/notify-recipients-toggle
+
+## [0.1.24](https://github.com/encryption4all/cryptify/compare/v0.1.23...v0.1.24) - 2026-04-30
+
+### Other
+
+- Merge pull request #113 from encryption4all/dependabot/cargo/rustls-webpki-0.103.13
+- Merge pull request #128 from encryption4all/dependabot/cargo/openssl-0.10.78
+- Merge remote-tracking branch 'origin/main' into chore/strum-0.28
+- Merge remote-tracking branch 'origin/main' into dobby/reqwest-0.13
+- Merge pull request #121 from encryption4all/dobby/sha2-rand
+- Merge pull request #122 from encryption4all/dobby/pg-core-0.5
+- *(deps)* bump pg-core to 0.5
+
+## [0.1.23](https://github.com/encryption4all/cryptify/compare/v0.1.22...v0.1.23) - 2026-04-26
+
+### Other
+
+- *(api)* align upload limit descriptions with current constants
+
 ## [0.1.22](https://github.com/encryption4all/cryptify/compare/v0.1.21...v0.1.22) - 2026-04-24
 
 ### Added
