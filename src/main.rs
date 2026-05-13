@@ -29,8 +29,9 @@ use rocket::tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 use rocket::{
-    data::ToByteUnit, fairing::AdHoc, get, http::Header, launch, post, put, request::FromRequest,
-    response::Responder, routes, serde::json::Json, Data, State,
+    data::ToByteUnit, fairing::AdHoc, figment::Figment, get, http::Header, launch, post, put,
+    request::FromRequest, response::Responder, routes, serde::json::Json, Build, Data, Rocket,
+    State,
 };
 
 use rocket::http::Method;
@@ -1084,10 +1085,21 @@ async fn download(
     Ok(RawResponse(builder.finalize()))
 }
 
-#[launch]
-async fn rocket() -> _ {
-    // Extract config first so we can use chunk_size for Rocket's body-size limits.
-    let config = rocket::Config::figment()
+/// Base Rocket figment shared by the production launch path and the integration
+/// test harness. Body-size limits are applied later in [`build_rocket`] once
+/// the merged config has been extracted (chunk_size is now configurable via
+/// TOML, so it isn't known at this point in the test path).
+pub fn default_figment() -> Figment {
+    rocket::Config::figment()
+}
+
+/// Build a Rocket instance from a pre-loaded config figment and verifying key.
+///
+/// Extracted so integration tests can inject their own figment (temp data_dir,
+/// stubbed email sending) and their own `VerifyingKey` (from
+/// `pg_core::test::TestSetup`) without needing a live PKG at startup.
+pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Build> {
+    let config = figment
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
 
@@ -1102,23 +1114,7 @@ async fn rocket() -> _ {
         .limit("data-form", (chunk_size + 1024 * 1024).bytes())
         .limit("file", (chunk_size + 1024 * 1024).bytes());
 
-    let figment = rocket::Config::figment().merge(("limits", limits));
-    let rocket = rocket::custom(figment);
-
-    let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
-    let response = minreq::get(&pkg_params_url)
-        .with_timeout(10)
-        .send()
-        .unwrap_or_else(|e| panic!("Failed to reach PKG at {}: {}", pkg_params_url, e));
-
-    let vk = response
-        .json::<Parameters<VerifyingKey>>()
-        .unwrap_or_else(|e| {
-            panic!(
-                "Failed to parse verification key from {}: {}",
-                pkg_params_url, e
-            )
-        });
+    let rocket = rocket::custom(figment.merge(("limits", limits)));
 
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
@@ -1167,6 +1163,31 @@ async fn rocket() -> _ {
         )))
         .manage(vk)
         .manage(pkg_client)
+}
+
+#[launch]
+async fn rocket() -> _ {
+    let figment = default_figment();
+    let config = figment
+        .extract::<CryptifyConfig>()
+        .expect("Missing configuration");
+
+    let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
+    let response = minreq::get(&pkg_params_url)
+        .with_timeout(10)
+        .send()
+        .unwrap_or_else(|e| panic!("Failed to reach PKG at {}: {}", pkg_params_url, e));
+
+    let vk = response
+        .json::<Parameters<VerifyingKey>>()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to parse verification key from {}: {}",
+                pkg_params_url, e
+            )
+        });
+
+    build_rocket(figment, vk)
 }
 
 #[cfg(test)]
@@ -2219,5 +2240,311 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&data_dir);
         let _ = std::fs::remove_dir_all(&secret_dir);
+    }
+}
+
+/// End-to-end integration tests for the upload pipeline
+/// (`POST /fileupload/init` → `PUT /fileupload/<uuid>` →
+/// `POST /fileupload/finalize/<uuid>`).
+///
+/// These tests boot a full Rocket instance via [`build_rocket`] with an
+/// injected `VerifyingKey` from `pg_core::test::TestSetup`, so they exercise
+/// the real extractors, state machine, token chain, and `Unsealer`-based
+/// attribute extraction. SMTP is short-circuited by `staging_mode = true` so
+/// the finalize happy-path does not require a live mail server.
+#[cfg(test)]
+mod integration {
+    use super::*;
+    use pg_core::client::rust::stream::SealerStreamConfig;
+    use pg_core::client::Sealer;
+    use pg_core::test::TestSetup;
+    use rocket::http::{ContentType, Header, Status};
+    use rocket::local::asynchronous::Client;
+
+    // One of the test policies from `pg_core::test::TestSetup` includes
+    // `pbdf.sidn-pbdf.email.email = "bob@example.com"`, and the encryption
+    // policy seals for Bob & Charlie. Finalize's attribute extraction looks
+    // for exactly this attribute type.
+    const SENDER_EMAIL: &str = "bob@example.com";
+
+    /// Build a figment that points at a freshly-created temp `data_dir` and
+    /// disables outgoing email. Each test gets its own directory so they can
+    /// run in parallel without clobbering each other's files.
+    fn test_figment() -> (rocket::figment::Figment, std::path::PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("cryptify-it-{}", uuid::Uuid::new_v4().hyphenated()));
+        std::fs::create_dir_all(&dir).expect("create temp data_dir");
+
+        let figment = default_figment()
+            .merge(("server_url", "http://localhost:8000"))
+            .merge(("data_dir", dir.to_string_lossy().to_string()))
+            .merge(("email_from", "test@example.com"))
+            .merge(("smtp_url", "localhost"))
+            .merge(("smtp_port", 2525u16))
+            .merge(("smtp_tls", false))
+            .merge(("staging_mode", true))
+            .merge(("allowed_origins", ".*"))
+            .merge(("pkg_url", "http://localhost:8080"));
+
+        (figment, dir)
+    }
+
+    /// Seal `payload` for the encryption policy from `TestSetup`, producing a
+    /// byte stream that `Unsealer` (and therefore `upload_finalize`) accepts.
+    async fn seal_payload(setup: &TestSetup, payload: &[u8]) -> Vec<u8> {
+        let mut rng = rand08::thread_rng();
+        let signing_key = &setup.signing_keys[2]; // Bob: email + name
+        let mut input = futures::io::Cursor::new(payload.to_vec());
+        let mut sealed = Vec::new();
+        Sealer::<_, SealerStreamConfig>::new(&setup.ibe_pk, &setup.policy, signing_key, &mut rng)
+            .expect("build sealer")
+            .seal(&mut input, &mut sealed)
+            .await
+            .expect("seal payload");
+        sealed
+    }
+
+    /// Boot Rocket with the test figment and a verifying key from `TestSetup`.
+    async fn test_client(setup: &TestSetup) -> (Client, std::path::PathBuf) {
+        let (figment, dir) = test_figment();
+        let vk = Parameters {
+            format_version: 0,
+            public_key: VerifyingKey(setup.ibs_pk.0.clone()),
+        };
+        let rocket = build_rocket(figment, vk);
+        let client = Client::tracked(rocket).await.expect("valid rocket");
+        (client, dir)
+    }
+
+    fn init_body_json(recipient: &str) -> String {
+        serde_json::json!({
+            "recipient": recipient,
+            "mailContent": "hello",
+            "mailLang": "EN",
+            "confirm": false,
+        })
+        .to_string()
+    }
+
+    async fn do_init(client: &Client, recipient: &str) -> (String, String, Status) {
+        let res = client
+            .post("/fileupload/init")
+            .header(ContentType::JSON)
+            .body(init_body_json(recipient))
+            .dispatch()
+            .await;
+        let status = res.status();
+        let token = res
+            .headers()
+            .get_one("cryptifytoken")
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let body = res.into_string().await.unwrap_or_default();
+        let uuid = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                v.get("uuid")
+                    .and_then(|u| u.as_str().map(|s| s.to_string()))
+            })
+            .unwrap_or_default();
+        (uuid, token, status)
+    }
+
+    /// PUT one chunk and return the response status plus the advanced token.
+    async fn do_chunk(
+        client: &Client,
+        uuid: &str,
+        token: &str,
+        chunk: &[u8],
+        start: u64,
+    ) -> (Status, String) {
+        let end = start + chunk.len() as u64;
+        let res = client
+            .put(format!("/fileupload/{}", uuid))
+            .header(Header::new("CryptifyToken", token.to_string()))
+            .header(Header::new(
+                "Content-Range",
+                format!("bytes {}-{}/*", start, end),
+            ))
+            .body(chunk)
+            .dispatch()
+            .await;
+        let status = res.status();
+        let next = res
+            .headers()
+            .get_one("cryptifytoken")
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        (status, next)
+    }
+
+    async fn do_finalize(client: &Client, uuid: &str, token: &str, total: u64) -> Status {
+        client
+            .post(format!("/fileupload/finalize/{}", uuid))
+            .header(Header::new("CryptifyToken", token.to_string()))
+            .header(Header::new("Content-Range", format!("bytes */{}", total)))
+            .dispatch()
+            .await
+            .status()
+    }
+
+    #[rocket::async_test]
+    async fn upload_happy_path_init_chunk_finalize() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let sealed = seal_payload(&setup, b"hello integration test").await;
+
+        let (client, dir) = test_client(&setup).await;
+
+        let (uuid, mut token, status) = do_init(&client, SENDER_EMAIL).await;
+        assert_eq!(status, Status::Ok);
+        assert!(!uuid.is_empty());
+        assert!(!token.is_empty());
+
+        // Upload in a single chunk (payload is well under CHUNK_SIZE).
+        let (chunk_status, next) = do_chunk(&client, &uuid, &token, &sealed, 0).await;
+        assert_eq!(chunk_status, Status::Ok);
+        token = next;
+
+        let final_status = do_finalize(&client, &uuid, &token, sealed.len() as u64).await;
+        assert_eq!(final_status, Status::Ok);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_happy_path_multi_chunk() {
+        // Two chunks >1 MiB to exercise the rolling token chain across
+        // multiple PUTs. Keeps payload well under CHUNK_SIZE.
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let payload: Vec<u8> = (0..(2 * 1024 * 1024 + 17))
+            .map(|i| (i % 251) as u8)
+            .collect();
+        let sealed = seal_payload(&setup, &payload).await;
+
+        let (client, dir) = test_client(&setup).await;
+
+        let (uuid, mut token, _) = do_init(&client, SENDER_EMAIL).await;
+
+        let split = sealed.len() / 2;
+        let (s1, next1) = do_chunk(&client, &uuid, &token, &sealed[..split], 0).await;
+        assert_eq!(s1, Status::Ok);
+        token = next1;
+
+        let (s2, next2) = do_chunk(&client, &uuid, &token, &sealed[split..], split as u64).await;
+        assert_eq!(s2, Status::Ok);
+        token = next2;
+
+        let final_status = do_finalize(&client, &uuid, &token, sealed.len() as u64).await;
+        assert_eq!(final_status, Status::Ok);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_init_rejects_invalid_email() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        let res = client
+            .post("/fileupload/init")
+            .header(ContentType::JSON)
+            .body(init_body_json("not-a-valid-email"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::BadRequest);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_chunk_rejects_wrong_cryptify_token() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+        let (uuid, _token, _) = do_init(&client, SENDER_EMAIL).await;
+
+        let (status, _) = do_chunk(&client, &uuid, "bogus-token", b"xxxx", 0).await;
+        assert_eq!(status, Status::BadRequest);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_chunk_unknown_uuid_returns_404() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        let fake = uuid::Uuid::new_v4().hyphenated().to_string();
+        let (status, _) = do_chunk(&client, &fake, "any-token", b"xxxx", 0).await;
+        assert_eq!(status, Status::NotFound);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_finalize_rejects_wrong_cryptify_token() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let sealed = seal_payload(&setup, b"hello").await;
+        let (client, dir) = test_client(&setup).await;
+
+        let (uuid, token, _) = do_init(&client, SENDER_EMAIL).await;
+        let (_, new_token) = do_chunk(&client, &uuid, &token, &sealed, 0).await;
+        assert!(!new_token.is_empty());
+
+        // Finalize with a bogus token — must be rejected before Unsealer runs.
+        let status = do_finalize(&client, &uuid, "not-the-token", sealed.len() as u64).await;
+        assert_eq!(status, Status::BadRequest);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_finalize_rejects_size_mismatch() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let sealed = seal_payload(&setup, b"hello").await;
+        let (client, dir) = test_client(&setup).await;
+
+        let (uuid, token, _) = do_init(&client, SENDER_EMAIL).await;
+        let (_, new_token) = do_chunk(&client, &uuid, &token, &sealed, 0).await;
+
+        // Claim the wrong total size in Content-Range.
+        let wrong_total = (sealed.len() as u64).saturating_sub(1);
+        let status = do_finalize(&client, &uuid, &new_token, wrong_total).await;
+        assert_eq!(status, Status::UnprocessableEntity);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_finalize_unknown_uuid_returns_404() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        let fake = uuid::Uuid::new_v4().hyphenated().to_string();
+        let status = do_finalize(&client, &fake, "any-token", 0).await;
+        assert_eq!(status, Status::NotFound);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_chunk_rejects_content_range_misalignment() {
+        // Start must equal state.uploaded (currently 0).
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+        let (uuid, token, _) = do_init(&client, SENDER_EMAIL).await;
+
+        let (status, _) = do_chunk(&client, &uuid, &token, b"xxxx", 100).await;
+        assert_eq!(status, Status::BadRequest);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
