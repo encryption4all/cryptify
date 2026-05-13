@@ -14,6 +14,7 @@ pub struct RawCryptifyConfig {
     pkg_url: String,
     chunk_size: Option<u64>,
     session_ttl_secs: Option<u64>,
+    staging_mode: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +32,7 @@ pub struct CryptifyConfig {
     pkg_url: String,
     chunk_size: u64,
     session_ttl_secs: u64,
+    staging_mode: bool,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -51,6 +53,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             pkg_url: config.pkg_url,
             chunk_size: config.chunk_size.unwrap_or(5_000_000),
             session_ttl_secs: config.session_ttl_secs.unwrap_or(3600),
+            staging_mode: config.staging_mode.unwrap_or(false),
         }
     }
 }
@@ -102,5 +105,28 @@ impl CryptifyConfig {
 
     pub fn session_ttl_secs(&self) -> u64 {
         self.session_ttl_secs
+    }
+
+    pub fn staging_mode(&self) -> bool {
+        self.staging_mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(server_url: &str, staging_mode: bool) -> Self {
+        CryptifyConfig {
+            server_url: server_url.to_owned(),
+            data_dir: "/tmp".to_owned(),
+            email_from: "noreply@test.invalid".parse().unwrap(),
+            smtp_url: "localhost".to_owned(),
+            smtp_port: 25,
+            smtp_username: None,
+            smtp_password: None,
+            smtp_tls: false,
+            allowed_origins: String::new(),
+            pkg_url: String::new(),
+            chunk_size: 5_000_000,
+            session_ttl_secs: 3600,
+            staging_mode,
+        }
     }
 }
