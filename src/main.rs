@@ -451,15 +451,15 @@ async fn upload_chunk(
     headers: UploadHeaders,
     data: Data<'_>,
 ) -> Result<UploadResponder, Error> {
+    if uuid::Uuid::parse_str(uuid).is_err() {
+        return Err(Error::upload_session_not_found(uuid, "invalid_uuid"));
+    }
+
     let state = match store.get(uuid) {
         Some(v) => v,
         None => return Err(Error::upload_session_not_found(uuid, "expired_or_unknown")),
     };
     let mut state = state.lock().await;
-
-    if uuid::Uuid::parse_str(uuid).is_err() {
-        return Err(Error::upload_session_not_found(uuid, "invalid_uuid"));
-    }
 
     let start = headers
         .content_range
@@ -468,7 +468,7 @@ async fn upload_chunk(
     let end = headers
         .content_range
         .end
-        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
+        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range end".to_owned())))?;
 
     if start >= end {
         return Err(Error::BadRequest(Some(
