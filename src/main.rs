@@ -2486,6 +2486,29 @@ mod integration {
     }
 
     #[rocket::async_test]
+    async fn upload_chunk_invalid_uuid_reports_invalid_uuid_reason() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        let res = client
+            .put("/fileupload/not-a-uuid")
+            .header(Header::new("CryptifyToken", "any-token"))
+            .header(Header::new("Content-Range", "bytes 0-4/*"))
+            .body(b"xxxx" as &[u8])
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+        let body = res.into_string().await.unwrap_or_default();
+        assert!(
+            body.contains("\"reason\":\"invalid_uuid\""),
+            "expected invalid_uuid reason, got: {body}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
     async fn upload_finalize_rejects_wrong_cryptify_token() {
         let mut rng = rand08::thread_rng();
         let setup = TestSetup::new(&mut rng);
