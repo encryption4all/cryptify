@@ -451,15 +451,15 @@ async fn upload_chunk(
     headers: UploadHeaders,
     data: Data<'_>,
 ) -> Result<UploadResponder, Error> {
+    if uuid::Uuid::parse_str(uuid).is_err() {
+        return Err(Error::upload_session_not_found(uuid, "invalid_uuid"));
+    }
+
     let state = match store.get(uuid) {
         Some(v) => v,
         None => return Err(Error::upload_session_not_found(uuid, "expired_or_unknown")),
     };
     let mut state = state.lock().await;
-
-    if uuid::Uuid::parse_str(uuid).is_err() {
-        return Err(Error::upload_session_not_found(uuid, "invalid_uuid"));
-    }
 
     let start = headers
         .content_range
@@ -468,7 +468,7 @@ async fn upload_chunk(
     let end = headers
         .content_range
         .end
-        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range start".to_owned())))?;
+        .ok_or_else(|| Error::BadRequest(Some("Could not read Content-Range end".to_owned())))?;
 
     if start >= end {
         return Err(Error::BadRequest(Some(
@@ -2481,6 +2481,29 @@ mod integration {
         let fake = uuid::Uuid::new_v4().hyphenated().to_string();
         let (status, _) = do_chunk(&client, &fake, "any-token", b"xxxx", 0).await;
         assert_eq!(status, Status::NotFound);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_chunk_invalid_uuid_reports_invalid_uuid_reason() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        let res = client
+            .put("/fileupload/not-a-uuid")
+            .header(Header::new("CryptifyToken", "any-token"))
+            .header(Header::new("Content-Range", "bytes 0-4/*"))
+            .body(b"xxxx" as &[u8])
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+        let body = res.into_string().await.unwrap_or_default();
+        assert!(
+            body.contains("\"reason\":\"invalid_uuid\""),
+            "expected invalid_uuid reason, got: {body}"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
