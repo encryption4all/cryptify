@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27](https://github.com/encryption4all/cryptify/compare/v0.1.26...v0.1.27) - 2026-05-16
+
+### Added
+
+- staging_mode config that logs instead of sending email
+- *(upload)* GET /fileupload/{uuid}/status for cross-refresh resume
+
+### Fixed
+
+- address dead UUID check and copy-paste error in upload_chunk
+- add HTTP Range support to /filedownload
+
+### Other
+
+- add regression test for invalid_uuid reason on upload_chunk
+- resolve conflicts with main (download route)
+- *(upload)* cover /status preflight + deadline-extension AC
+
 ## [0.1.26](https://github.com/encryption4all/cryptify/compare/v0.1.25...v0.1.26) - 2026-05-07
 
 ### Added
