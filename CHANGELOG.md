@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28](https://github.com/encryption4all/cryptify/compare/v0.1.27...v0.1.28) - 2026-05-17
+
+### Other
+
+- add semantic PR title check workflow ([#162](https://github.com/encryption4all/cryptify/pull/162))
+
 ## [0.1.27](https://github.com/encryption4all/cryptify/compare/v0.1.26...v0.1.27) - 2026-05-16
 
 ### Added
