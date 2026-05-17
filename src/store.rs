@@ -175,7 +175,10 @@ impl SharedState {
                 // An entry that still had no `sender` set was never finalized.
                 // (`sender` is populated by `upload_finalize` once the file has
                 // been unsealed.)
-                let was_unfinalized = entry.try_lock().map(|g| g.sender.is_none()).unwrap_or(false);
+                let was_unfinalized = entry
+                    .try_lock()
+                    .map(|g| g.sender.is_none())
+                    .unwrap_or(false);
                 if was_unfinalized {
                     self.metrics.record_expired();
                 }

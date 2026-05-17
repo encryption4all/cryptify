@@ -38,12 +38,12 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
                 e.unwrap_or_else(|| "".to_owned()),
             )
             .respond_to(request),
-            Error::PayloadTooLarge(body) => response::Response::build_from(
-                Json(body).respond_to(request)?,
-            )
-            .status(rocket::http::Status::PayloadTooLarge)
-            .header(ContentType::JSON)
-            .ok(),
+            Error::PayloadTooLarge(body) => {
+                response::Response::build_from(Json(body).respond_to(request)?)
+                    .status(rocket::http::Status::PayloadTooLarge)
+                    .header(ContentType::JSON)
+                    .ok()
+            }
         }
     }
 }

@@ -63,41 +63,84 @@ impl Metrics {
     pub fn render(&self) -> String {
         let mut out = String::new();
 
-        let _ = writeln!(out, "# HELP cryptify_uploads_total Total finalized uploads per channel.");
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_uploads_total Total finalized uploads per channel."
+        );
         let _ = writeln!(out, "# TYPE cryptify_uploads_total counter");
         let uploads = self.uploads.lock().unwrap();
         if uploads.is_empty() {
-            let _ = writeln!(out, "cryptify_uploads_total{{channel=\"{}\"}} 0", CHANNEL_UNKNOWN);
+            let _ = writeln!(
+                out,
+                "cryptify_uploads_total{{channel=\"{}\"}} 0",
+                CHANNEL_UNKNOWN
+            );
         } else {
             for (channel, count) in uploads.iter() {
-                let _ = writeln!(out, "cryptify_uploads_total{{channel=\"{}\"}} {}", channel, count);
+                let _ = writeln!(
+                    out,
+                    "cryptify_uploads_total{{channel=\"{}\"}} {}",
+                    channel, count
+                );
             }
         }
         drop(uploads);
 
-        let _ = writeln!(out, "# HELP cryptify_upload_bytes_total Total bytes uploaded per channel.");
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_upload_bytes_total Total bytes uploaded per channel."
+        );
         let _ = writeln!(out, "# TYPE cryptify_upload_bytes_total counter");
         let bytes = self.upload_bytes.lock().unwrap();
         if bytes.is_empty() {
-            let _ = writeln!(out, "cryptify_upload_bytes_total{{channel=\"{}\"}} 0", CHANNEL_UNKNOWN);
+            let _ = writeln!(
+                out,
+                "cryptify_upload_bytes_total{{channel=\"{}\"}} 0",
+                CHANNEL_UNKNOWN
+            );
         } else {
             for (channel, b) in bytes.iter() {
-                let _ = writeln!(out, "cryptify_upload_bytes_total{{channel=\"{}\"}} {}", channel, b);
+                let _ = writeln!(
+                    out,
+                    "cryptify_upload_bytes_total{{channel=\"{}\"}} {}",
+                    channel, b
+                );
             }
         }
         drop(bytes);
 
-        let _ = writeln!(out, "# HELP cryptify_storage_bytes Current bytes of uploads held on disk.");
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_storage_bytes Current bytes of uploads held on disk."
+        );
         let _ = writeln!(out, "# TYPE cryptify_storage_bytes gauge");
-        let _ = writeln!(out, "cryptify_storage_bytes {}", self.storage_bytes.load(Ordering::Relaxed));
+        let _ = writeln!(
+            out,
+            "cryptify_storage_bytes {}",
+            self.storage_bytes.load(Ordering::Relaxed)
+        );
 
-        let _ = writeln!(out, "# HELP cryptify_active_files Number of upload files currently on disk.");
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_active_files Number of upload files currently on disk."
+        );
         let _ = writeln!(out, "# TYPE cryptify_active_files gauge");
-        let _ = writeln!(out, "cryptify_active_files {}", self.active_files.load(Ordering::Relaxed));
+        let _ = writeln!(
+            out,
+            "cryptify_active_files {}",
+            self.active_files.load(Ordering::Relaxed)
+        );
 
-        let _ = writeln!(out, "# HELP cryptify_expired_files_total Uploads that expired before being finalized.");
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_expired_files_total Uploads that expired before being finalized."
+        );
         let _ = writeln!(out, "# TYPE cryptify_expired_files_total counter");
-        let _ = writeln!(out, "cryptify_expired_files_total {}", self.expired_files.load(Ordering::Relaxed));
+        let _ = writeln!(
+            out,
+            "cryptify_expired_files_total {}",
+            self.expired_files.load(Ordering::Relaxed)
+        );
 
         out
     }
