@@ -31,8 +31,8 @@ scrape_configs:
         labels:
           environment: staging
       - targets: ['cryptify.postguard.eu:8000']
-          labels:
-            environment: production
+        labels:
+          environment: production
 ```
 
 The `/metrics` endpoint is unauthenticated — restrict access to the Prometheus
