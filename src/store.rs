@@ -1,4 +1,5 @@
 use crate::email;
+use crate::metrics::Metrics;
 
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
@@ -31,6 +32,9 @@ pub struct FileState {
     pub sender: Option<String>,
     pub sender_attributes: Vec<(String, String)>,
     pub confirm: bool,
+    /// Traffic source this upload originated from ("website", "outlook",
+    /// "thunderbird", "api", ...). Used only for metrics labelling.
+    pub source_channel: String,
     /// When false, the recipient notification email is suppressed (the
     /// recipients still appear in the parsed list, but the SMTP delivery
     /// loop in `send_email` is skipped). The sender confirmation, if
@@ -110,6 +114,7 @@ struct SharedState {
     state: std::sync::Mutex<StoreState>,
     notify: Notify,
     idle_ttl: Duration,
+    metrics: Arc<Metrics>,
 }
 
 pub struct Store {
@@ -118,13 +123,14 @@ pub struct Store {
 
 impl Store {
     #[cfg(test)]
-    pub fn new() -> Self {
-        Self::with_idle_ttl(Duration::from_secs(
-            DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS,
-        ))
+    pub fn new(metrics: Arc<Metrics>) -> Self {
+        Self::with_idle_ttl(
+            Duration::from_secs(DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS),
+            metrics,
+        )
     }
 
-    pub fn with_idle_ttl(idle_ttl: Duration) -> Self {
+    pub fn with_idle_ttl(idle_ttl: Duration, metrics: Arc<Metrics>) -> Self {
         let result = Store {
             shared: Arc::new(SharedState {
                 state: std::sync::Mutex::new(StoreState {
@@ -137,6 +143,7 @@ impl Store {
                 }),
                 notify: Notify::new(),
                 idle_ttl,
+                metrics,
             }),
         };
 
@@ -277,8 +284,20 @@ impl SharedState {
                 return Some(when);
             }
 
-            state.files.remove(id);
-            state.expiration_keys.remove(id);
+            let id = id.clone();
+            if let Some(entry) = state.files.remove(&id) {
+                // An entry that still had no `sender` set was never finalized.
+                // (`sender` is populated by `upload_finalize` once the file has
+                // been unsealed.)
+                let was_unfinalized = entry
+                    .try_lock()
+                    .map(|g| g.sender.is_none())
+                    .unwrap_or(false);
+                if was_unfinalized {
+                    self.metrics.record_expired();
+                }
+            }
+            state.expiration_keys.remove(&id);
             state.expirations.remove(&(when, removal_id));
         }
 
@@ -309,7 +328,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn usage_is_zero_for_unknown_email() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         assert_eq!(
             store.get_usage("unknown@example.com", 1_000_000).used_bytes,
             0
@@ -318,7 +337,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn usage_sums_records_in_window() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         let now: i64 = 2_000_000;
         store.record_upload("a@example.com".into(), 1_000_000_000, now - 3600);
         store.record_upload("a@example.com".into(), 2_000_000_000, now - 60);
@@ -332,7 +351,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn usage_excludes_records_outside_window() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         let now: i64 = 2_000_000;
         store.record_upload(
             "b@example.com".into(),
@@ -348,7 +367,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn usage_is_isolated_per_email() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         let now: i64 = 2_000_000;
         store.record_upload("a@example.com".into(), 1_000, now);
         store.record_upload("b@example.com".into(), 2_000, now);
@@ -367,6 +386,7 @@ mod tests {
             sender: None,
             sender_attributes: Vec::new(),
             confirm: false,
+            source_channel: String::new(),
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,
@@ -377,7 +397,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn touch_extends_eviction_deadline() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         store.create("u1".into(), dummy_filestate());
 
         let original = {
@@ -408,7 +428,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn touch_on_unknown_id_is_noop() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         store.touch("nope");
         let s = store.shared.state.lock().unwrap();
         assert!(s.expirations.is_empty());
@@ -417,7 +437,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn remove_cleans_up_expirations() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         store.create("u2".into(), dummy_filestate());
         store.remove("u2");
         let s = store.shared.state.lock().unwrap();
@@ -428,7 +448,7 @@ mod tests {
 
     #[rocket::async_test]
     async fn pruning_removes_only_expired_records() {
-        let store = Store::new();
+        let store = Store::new(Arc::new(Metrics::new()));
         let now: i64 = 2_000_000;
         store.record_upload(
             "c@example.com".into(),

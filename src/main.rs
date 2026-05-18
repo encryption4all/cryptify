@@ -1,11 +1,16 @@
 mod config;
 mod email;
 mod error;
+mod metrics;
 mod store;
+
+use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config::CryptifyConfig;
 use crate::email::send_email;
 use crate::error::{Error, PayloadTooLargeBody};
+use crate::metrics::{detect_channel, storage_sampler, Metrics};
 use crate::store::{
     API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT, PER_UPLOAD_LIMIT, ROLLING_LIMIT,
     ROLLING_WINDOW_SECS,
@@ -38,7 +43,6 @@ use rocket::http::Method;
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use store::{FileState, LastChunkRecord, Store};
 
 #[derive(Serialize, Deserialize)]
@@ -89,9 +93,33 @@ struct InitResponder {
     cryptify_token: CryptifyToken,
 }
 
+/// Request guard that derives the traffic source channel from the request
+/// headers for metrics labelling.
+struct ClientHeaders {
+    channel: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ClientHeaders {
+    type Error = std::convert::Infallible;
+
+    async fn from_request(
+        request: &'r rocket::Request<'_>,
+    ) -> rocket::request::Outcome<Self, Self::Error> {
+        rocket::request::Outcome::Success(ClientHeaders {
+            channel: detect_channel(request.headers()),
+        })
+    }
+}
+
 #[get("/health")]
 fn health() -> &'static str {
     "OK"
+}
+
+#[get("/metrics")]
+fn metrics_endpoint(metrics: &State<Arc<Metrics>>) -> rocket::response::content::RawText<String> {
+    rocket::response::content::RawText(metrics.render())
 }
 
 /// Extract a `PG-…` bearer token from an Authorization header value, or
@@ -258,6 +286,7 @@ async fn upload_init(
     store: &State<Store>,
     api_key: ApiKey,
     request: Json<InitBody>,
+    client_headers: ClientHeaders,
 ) -> Result<InitResponder, Error> {
     let current_time = chrono::offset::Utc::now().timestamp();
 
@@ -288,6 +317,7 @@ async fn upload_init(
             sender: None,
             sender_attributes: Vec::new(),
             confirm: request.confirm,
+            source_channel: client_headers.channel,
             notify_recipients: request.notify_recipients,
             api_key_tenant: api_key.tenant,
             api_key_validation_failed: api_key.validation_failed,
@@ -694,6 +724,7 @@ async fn upload_finalize(
     config: &State<CryptifyConfig>,
     store: &State<Store>,
     vk: &State<Parameters<VerifyingKey>>,
+    metrics: &State<Arc<Metrics>>,
     headers: FinalizeHeaders,
     uuid: &str,
 ) -> Result<(), Error> {
@@ -791,6 +822,8 @@ async fn upload_finalize(
         log::error!("{}", e);
         Error::InternalServerError(Some("could not send email".to_owned()))
     })?;
+
+    metrics.record_upload(&state.source_channel, state.uploaded);
 
     if let Some(key) = accounting_key {
         store.record_upload(key, state.uploaded, now_secs);
@@ -1141,6 +1174,13 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
         .to_cors()
         .expect("unable to configure CORS");
 
+    let metrics = Arc::new(Metrics::new());
+    rocket::tokio::spawn(storage_sampler(
+        metrics.clone(),
+        std::path::PathBuf::from(config.data_dir()),
+        Duration::from_secs(config.metrics_scan_interval_secs()),
+    ));
+
     let pkg_client = PkgClient::new(config.pkg_url().to_string());
 
     rocket
@@ -1149,6 +1189,7 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
             "/",
             routes![
                 health,
+                metrics_endpoint,
                 upload_init,
                 upload_chunk,
                 upload_finalize,
@@ -1158,11 +1199,13 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
             ],
         )
         .attach(AdHoc::config::<CryptifyConfig>())
-        .manage(Store::with_idle_ttl(std::time::Duration::from_secs(
-            config.session_ttl_secs(),
-        )))
+        .manage(Store::with_idle_ttl(
+            std::time::Duration::from_secs(config.session_ttl_secs()),
+            metrics.clone(),
+        ))
         .manage(vk)
         .manage(pkg_client)
+        .manage(metrics)
 }
 
 #[launch]
@@ -1361,7 +1404,7 @@ mod tests {
         let rocket = rocket::custom(figment)
             .mount("/", routes![upload_init])
             .attach(AdHoc::config::<CryptifyConfig>())
-            .manage(Store::new());
+            .manage(Store::new(Arc::new(Metrics::new())));
 
         Client::tracked(rocket).await.expect("valid rocket")
     }
@@ -1450,7 +1493,7 @@ mod tests {
         let rocket = rocket::custom(figment)
             .mount("/", routes![upload_init, upload_status])
             .attach(AdHoc::config::<CryptifyConfig>())
-            .manage(Store::new());
+            .manage(Store::new(Arc::new(Metrics::new())));
 
         Client::tracked(rocket).await.expect("valid rocket")
     }
@@ -1497,7 +1540,7 @@ mod tests {
             .attach(cors)
             .mount("/", routes![upload_init, upload_status])
             .attach(AdHoc::config::<CryptifyConfig>())
-            .manage(Store::new());
+            .manage(Store::new(Arc::new(Metrics::new())));
 
         Client::tracked(rocket).await.expect("valid rocket")
     }
@@ -1787,6 +1830,7 @@ mod tests {
             sender: None,
             sender_attributes: Vec::new(),
             confirm: false,
+            source_channel: String::new(),
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,

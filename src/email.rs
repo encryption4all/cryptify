@@ -419,6 +419,7 @@ mod tests {
                 ("phone".to_owned(), "+31123".to_owned()),
             ],
             confirm: true,
+            source_channel: String::new(),
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,

@@ -12,6 +12,7 @@ pub struct RawCryptifyConfig {
     smtp_tls: Option<bool>,
     allowed_origins: String,
     pkg_url: String,
+    metrics_scan_interval_secs: Option<u64>,
     chunk_size: Option<u64>,
     session_ttl_secs: Option<u64>,
     staging_mode: Option<bool>,
@@ -30,6 +31,7 @@ pub struct CryptifyConfig {
     smtp_tls: bool,
     allowed_origins: String,
     pkg_url: String,
+    metrics_scan_interval_secs: u64,
     chunk_size: u64,
     session_ttl_secs: u64,
     staging_mode: bool,
@@ -51,6 +53,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             smtp_tls: config.smtp_tls.unwrap_or(true),
             allowed_origins: config.allowed_origins,
             pkg_url: config.pkg_url,
+            metrics_scan_interval_secs: config.metrics_scan_interval_secs.unwrap_or(60),
             chunk_size: config.chunk_size.unwrap_or(5_000_000),
             session_ttl_secs: config.session_ttl_secs.unwrap_or(3600),
             staging_mode: config.staging_mode.unwrap_or(false),
@@ -99,6 +102,10 @@ impl CryptifyConfig {
         &self.pkg_url
     }
 
+    pub fn metrics_scan_interval_secs(&self) -> u64 {
+        self.metrics_scan_interval_secs
+    }
+
     pub fn chunk_size(&self) -> u64 {
         self.chunk_size
     }
@@ -124,6 +131,7 @@ impl CryptifyConfig {
             smtp_tls: false,
             allowed_origins: String::new(),
             pkg_url: String::new(),
+            metrics_scan_interval_secs: 60,
             chunk_size: 5_000_000,
             session_ttl_secs: 3600,
             staging_mode,
