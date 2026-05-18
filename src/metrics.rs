@@ -20,6 +20,20 @@ use rocket::http::HeaderMap;
 /// Channel label used when no other source information is present.
 pub const CHANNEL_UNKNOWN: &str = "unknown";
 
+/// Channels pre-seeded at value 0 on startup so dashboards see the full
+/// label set from the first scrape, rather than each channel popping into
+/// existence the first time a request from it lands. Without this, PromQL
+/// `increase()` over a window can read `0` for a channel whose first
+/// observed sample is already non-zero — see #102 follow-up discussion.
+pub const KNOWN_CHANNELS: &[&str] = &[
+    "website",
+    "staging-website",
+    "outlook",
+    "thunderbird",
+    "api",
+    CHANNEL_UNKNOWN,
+];
+
 /// Header clients can set to identify themselves (`outlook`, `thunderbird`,
 /// `api`, ...). Leading whitespace is trimmed and the value is lowercased
 /// and restricted to `[a-z0-9_-]` so it cannot inject Prometheus syntax.
@@ -36,7 +50,16 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn new() -> Self {
-        Self::default()
+        let m = Self::default();
+        {
+            let mut uploads = m.uploads.lock().unwrap();
+            let mut bytes = m.upload_bytes.lock().unwrap();
+            for c in KNOWN_CHANNELS {
+                uploads.insert((*c).to_string(), 0);
+                bytes.insert((*c).to_string(), 0);
+            }
+        }
+        m
     }
 
     /// Record a successfully finalized upload.
@@ -325,11 +348,19 @@ mod tests {
     }
 
     #[test]
-    fn render_emits_zero_counters_when_empty() {
+    fn render_preseeds_known_channels_at_zero() {
         let m = Metrics::new();
         let text = m.render();
-        assert!(text.contains("cryptify_uploads_total{channel=\"unknown\"} 0"));
-        assert!(text.contains("cryptify_upload_bytes_total{channel=\"unknown\"} 0"));
+        for c in KNOWN_CHANNELS {
+            assert!(
+                text.contains(&format!("cryptify_uploads_total{{channel=\"{c}\"}} 0")),
+                "missing zero-seed for uploads channel={c} in:\n{text}"
+            );
+            assert!(
+                text.contains(&format!("cryptify_upload_bytes_total{{channel=\"{c}\"}} 0")),
+                "missing zero-seed for upload_bytes channel={c} in:\n{text}"
+            );
+        }
         assert!(text.contains("cryptify_storage_bytes 0"));
         assert!(text.contains("cryptify_active_files 0"));
         assert!(text.contains("cryptify_expired_files_total 0"));
