@@ -39,7 +39,6 @@ pub const KNOWN_CHANNELS: &[&str] = &[
 /// and restricted to `[a-z0-9_-]` so it cannot inject Prometheus syntax.
 pub const SOURCE_HEADER: &str = "X-Cryptify-Source";
 
-#[derive(Default)]
 pub struct Metrics {
     uploads: Mutex<BTreeMap<String, u64>>,
     upload_bytes: Mutex<BTreeMap<String, u64>>,
@@ -48,18 +47,32 @@ pub struct Metrics {
     expired_files: AtomicU64,
 }
 
+// `Default` is implemented manually (not derived) so it goes through
+// `Metrics::new()` and pre-seeds `KNOWN_CHANNELS`. A derived `Default`
+// would silently produce an empty-channel object, which diverges from
+// `new()` and re-introduces the missing-baseline problem this module
+// exists to solve.
+impl Default for Metrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Metrics {
     pub fn new() -> Self {
-        let m = Self::default();
-        {
-            let mut uploads = m.uploads.lock().unwrap();
-            let mut bytes = m.upload_bytes.lock().unwrap();
-            for c in KNOWN_CHANNELS {
-                uploads.insert((*c).to_string(), 0);
-                bytes.insert((*c).to_string(), 0);
-            }
+        let mut uploads = BTreeMap::new();
+        let mut bytes = BTreeMap::new();
+        for c in KNOWN_CHANNELS {
+            uploads.insert((*c).to_string(), 0u64);
+            bytes.insert((*c).to_string(), 0u64);
         }
-        m
+        Self {
+            uploads: Mutex::new(uploads),
+            upload_bytes: Mutex::new(bytes),
+            storage_bytes: AtomicI64::new(0),
+            active_files: AtomicI64::new(0),
+            expired_files: AtomicU64::new(0),
+        }
     }
 
     /// Record a successfully finalized upload.
