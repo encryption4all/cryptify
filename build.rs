@@ -21,7 +21,11 @@ fn main() {
                 None
             }
         })
-        .expect("pg-core entry not found in Cargo.lock");
+        .expect(
+            "pg-core entry not found in Cargo.lock — PG_CORE_VERSION feeds the \
+             X-PostGuard mail header that the Outlook add-in's OnMessageRead \
+             launch event filters on (see src/email.rs::XPostGuard).",
+        );
 
     println!("cargo:rustc-env=PG_CORE_VERSION={}", version);
 }

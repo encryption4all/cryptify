@@ -57,10 +57,17 @@ impl Header for AutoSubmitted {
     }
 }
 
-/// IRMA/Yivi attribute identifier for the signer's full name. When this
-/// attribute appears in `FileState.sender_attributes` we render the name
-/// in place of the bare email everywhere the sender is shown in the body.
-const FULLNAME_ATYPE: &str = "pbdf.gemeente.personalData.fullname";
+/// Suffix that identifies the signer's full-name attribute across IRMA
+/// schemes — prod (`pbdf.gemeente.personalData.fullname`) and demo
+/// (`irma-demo.gemeente.personalData.fullname`) both end with this. When
+/// such an attribute appears in `FileState.sender_attributes` we render
+/// the disclosed name in place of the bare email everywhere the sender
+/// is shown in the body.
+const FULLNAME_ATYPE_SUFFIX: &str = ".gemeente.personalData.fullname";
+
+fn is_fullname_atype(atype: &str) -> bool {
+    atype.ends_with(FULLNAME_ATYPE_SUFFIX)
+}
 
 /// Embedded PostGuard logo, served inline via a `Content-ID: <pg-logo>`
 /// MIME part rather than fetched from postguard.eu. Removes the
@@ -157,11 +164,6 @@ struct EmailTextTemplate<'a> {
     sender_attributes: &'a [(String, String)],
 }
 
-/// Resolve the display string and remaining attribute pills for the
-/// sender. When the signer disclosed their full name, the name takes the
-/// place of the bare email everywhere it would otherwise appear in the
-/// body, and is removed from the attribute pill list so it doesn't render
-/// twice.
 /// Assemble the MIME body: a `multipart/alternative` whose HTML branch is
 /// itself a `multipart/related` carrying the HTML part plus the PostGuard
 /// logo as an inline image referenced via `cid:pg-logo`. This shape avoids
@@ -180,12 +182,19 @@ fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::erro
         .multipart(related))
 }
 
+/// Resolve the display string and remaining attribute pills for the
+/// sender. When the signer disclosed their full name, the name takes the
+/// place of the bare email everywhere it would otherwise appear in the
+/// body, and is removed from the attribute pill list so it doesn't render
+/// twice. An empty disclosed value is treated as not disclosed, so we
+/// fall through to the email instead of rendering a blank.
 fn sender_display(state: &FileState) -> (String, Vec<(String, String)>) {
     let mut attrs = state.sender_attributes.clone();
     let name = attrs
         .iter()
-        .position(|(t, _)| t == FULLNAME_ATYPE)
-        .map(|i| attrs.remove(i).1);
+        .position(|(t, _)| is_fullname_atype(t))
+        .map(|i| attrs.remove(i).1)
+        .filter(|n| !n.is_empty());
     let display = name
         .or_else(|| state.sender.clone())
         .unwrap_or_else(|| "Someone".to_string());
@@ -359,12 +368,15 @@ pub async fn send_email(
                 .from(config.email_from()) // checked in config
                 .to(recipient.clone())
                 .subject(subject);
-            if let Some(reply_to) = state
-                .sender
-                .as_deref()
-                .and_then(|s| s.parse::<Mailbox>().ok())
-            {
-                builder = builder.reply_to(reply_to);
+            if let Some(sender) = state.sender.as_deref() {
+                match sender.parse::<Mailbox>() {
+                    Ok(mailbox) => builder = builder.reply_to(mailbox),
+                    Err(e) => log::warn!(
+                        "Skipping Reply-To: sender `{}` did not parse as Mailbox: {}",
+                        sender,
+                        e
+                    ),
+                }
             }
             let email = builder.multipart(build_body(html, text)?)?;
 
@@ -497,7 +509,10 @@ mod tests {
     #[test]
     fn sender_display_promotes_disclosed_name() {
         let state = filestate_with_attrs(vec![
-            (FULLNAME_ATYPE.to_owned(), "Jan Jansen".to_owned()),
+            (
+                "pbdf.gemeente.personalData.fullname".to_owned(),
+                "Jan Jansen".to_owned(),
+            ),
             ("orgName".to_owned(), "Acme".to_owned()),
         ]);
         let (display, remaining) = sender_display(&state);
@@ -506,11 +521,40 @@ mod tests {
     }
 
     #[test]
+    fn sender_display_promotes_disclosed_name_from_demo_scheme() {
+        let state = filestate_with_attrs(vec![(
+            "irma-demo.gemeente.personalData.fullname".to_owned(),
+            "Jan Jansen".to_owned(),
+        )]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_treats_empty_disclosed_name_as_not_disclosed() {
+        let state = filestate_with_attrs(vec![(
+            "pbdf.gemeente.personalData.fullname".to_owned(),
+            String::new(),
+        )]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "sender@example.com");
+    }
+
+    #[test]
     fn sender_display_falls_back_to_email_when_no_name_disclosed() {
         let state = filestate_with_attrs(vec![("orgName".to_owned(), "Acme".to_owned())]);
         let (display, remaining) = sender_display(&state);
         assert_eq!(display, "sender@example.com");
         assert_eq!(remaining, vec![("orgName".to_owned(), "Acme".to_owned())]);
+    }
+
+    #[test]
+    fn sender_display_uses_someone_when_no_sender_and_no_name() {
+        let mut state = filestate_with_attrs(vec![]);
+        state.sender = None;
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Someone");
+        assert!(remaining.is_empty());
     }
 
     #[test]
