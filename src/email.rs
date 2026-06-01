@@ -65,8 +65,46 @@ impl Header for AutoSubmitted {
 /// is shown in the body.
 const FULLNAME_ATYPE_SUFFIX: &str = ".gemeente.personalData.fullname";
 
+/// Per-credential suffixes for the `(firstName, lastName)` pairs the
+/// signer may disclose instead of the gemeente fullname (postguard#239
+/// follow-up). Each entry's `.firstName` / `.lastName` pair, when both
+/// are present and non-empty, is concatenated into a single display name.
+/// Suffix-matching catches both `pbdf.pbdf.*` and `irma-demo.pbdf.*`.
+const NAME_PAIR_CREDENTIAL_SUFFIXES: &[&str] = &[
+    ".pbdf.passport",
+    ".pbdf.idcard",
+    ".pbdf.drivinglicence",
+];
+
 fn is_fullname_atype(atype: &str) -> bool {
     atype.ends_with(FULLNAME_ATYPE_SUFFIX)
+}
+
+/// If `attrs` contains `<cred>.firstName` and `<cred>.lastName` for one of
+/// the supported credentials and both are non-empty, remove them and
+/// return `"<firstName> <lastName>"`. Otherwise leave `attrs` untouched.
+fn take_firstname_lastname_pair(attrs: &mut Vec<(String, String)>) -> Option<String> {
+    for cred in NAME_PAIR_CREDENTIAL_SUFFIXES {
+        let first_suffix = format!("{}.firstName", cred);
+        let last_suffix = format!("{}.lastName", cred);
+
+        let first_idx = attrs.iter().position(|(t, _)| t.ends_with(&first_suffix));
+        let last_idx = attrs.iter().position(|(t, _)| t.ends_with(&last_suffix));
+
+        if let (Some(fi), Some(li)) = (first_idx, last_idx) {
+            let first_val = attrs[fi].1.clone();
+            let last_val = attrs[li].1.clone();
+            if !first_val.is_empty() && !last_val.is_empty() {
+                // Remove the higher index first so the second remove is
+                // still valid.
+                let (hi, lo) = if fi > li { (fi, li) } else { (li, fi) };
+                attrs.remove(hi);
+                attrs.remove(lo);
+                return Some(format!("{} {}", first_val, last_val));
+            }
+        }
+    }
+    None
 }
 
 /// Embedded PostGuard logo, served inline via a `Content-ID: <pg-logo>`
@@ -190,11 +228,17 @@ fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::erro
 /// fall through to the email instead of rendering a blank.
 fn sender_display(state: &FileState) -> (String, Vec<(String, String)>) {
     let mut attrs = state.sender_attributes.clone();
+
+    // 1. Prefer gemeente.personalData.fullname (Dutch municipality credential).
     let name = attrs
         .iter()
         .position(|(t, _)| is_fullname_atype(t))
         .map(|i| attrs.remove(i).1)
-        .filter(|n| !n.is_empty());
+        .filter(|n| !n.is_empty())
+        // 2. Otherwise concatenate firstName + lastName from passport / id /
+        //    driving licence (postguard#239 follow-up).
+        .or_else(|| take_firstname_lastname_pair(&mut attrs));
+
     let display = name
         .or_else(|| state.sender.clone())
         .unwrap_or_else(|| "Someone".to_string());
@@ -546,6 +590,126 @@ mod tests {
         let (display, remaining) = sender_display(&state);
         assert_eq!(display, "sender@example.com");
         assert_eq!(remaining, vec![("orgName".to_owned(), "Acme".to_owned())]);
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_passport() {
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.pbdf.passport.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            ("pbdf.pbdf.passport.lastName".to_owned(), "Jansen".to_owned()),
+            ("orgName".to_owned(), "Acme".to_owned()),
+        ]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+        assert_eq!(
+            remaining,
+            vec![("orgName".to_owned(), "Acme".to_owned())],
+            "both name attrs consumed; unrelated attrs kept"
+        );
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_idcard() {
+        let state = filestate_with_attrs(vec![
+            ("pbdf.pbdf.idcard.firstName".to_owned(), "Jan".to_owned()),
+            ("pbdf.pbdf.idcard.lastName".to_owned(), "Jansen".to_owned()),
+        ]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_drivinglicence() {
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.pbdf.drivinglicence.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            (
+                "pbdf.pbdf.drivinglicence.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_demo_scheme() {
+        let state = filestate_with_attrs(vec![
+            (
+                "irma-demo.pbdf.passport.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            (
+                "irma-demo.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_prefers_gemeente_fullname_over_passport_pair() {
+        // If both are disclosed (unlikely in practice), gemeente wins
+        // because that path runs first.
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.gemeente.personalData.fullname".to_owned(),
+                "Marie Smit".to_owned(),
+            ),
+            (
+                "pbdf.pbdf.passport.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            (
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Marie Smit");
+    }
+
+    #[test]
+    fn sender_display_falls_through_when_firstname_present_without_lastname() {
+        let state = filestate_with_attrs(vec![(
+            "pbdf.pbdf.passport.firstName".to_owned(),
+            "Jan".to_owned(),
+        )]);
+        let (display, remaining) = sender_display(&state);
+        // No lastName → no concatenation; the orphan firstName stays as a
+        // pill so the recipient at least sees it instead of having it
+        // silently dropped.
+        assert_eq!(display, "sender@example.com");
+        assert_eq!(
+            remaining,
+            vec![(
+                "pbdf.pbdf.passport.firstName".to_owned(),
+                "Jan".to_owned()
+            )]
+        );
+    }
+
+    #[test]
+    fn sender_display_treats_empty_firstname_lastname_as_not_disclosed() {
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.pbdf.passport.firstName".to_owned(),
+                String::new(),
+            ),
+            (
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "sender@example.com");
     }
 
     #[test]
