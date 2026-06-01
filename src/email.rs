@@ -167,10 +167,7 @@ struct EmailTextTemplate<'a> {
 /// logo as an inline image referenced via `cid:pg-logo`. This shape avoids
 /// the HTML-only + remote-image spam signal flagged in postguard#197 while
 /// keeping graceful degradation for text-only clients.
-fn build_body(
-    html: String,
-    text: String,
-) -> Result<MultiPart, Box<dyn std::error::Error>> {
+fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::error::Error>> {
     let logo = Attachment::new_inline("pg-logo".to_string())
         .body(LOGO_PNG.to_vec(), "image/png".parse::<ContentType>()?);
 
