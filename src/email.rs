@@ -70,11 +70,8 @@ const FULLNAME_ATYPE_SUFFIX: &str = ".gemeente.personalData.fullname";
 /// follow-up). Each entry's `.firstName` / `.lastName` pair, when both
 /// are present and non-empty, is concatenated into a single display name.
 /// Suffix-matching catches both `pbdf.pbdf.*` and `irma-demo.pbdf.*`.
-const NAME_PAIR_CREDENTIAL_SUFFIXES: &[&str] = &[
-    ".pbdf.passport",
-    ".pbdf.idcard",
-    ".pbdf.drivinglicence",
-];
+const NAME_PAIR_CREDENTIAL_SUFFIXES: &[&str] =
+    &[".pbdf.passport", ".pbdf.idcard", ".pbdf.drivinglicence"];
 
 fn is_fullname_atype(atype: &str) -> bool {
     atype.ends_with(FULLNAME_ATYPE_SUFFIX)
@@ -592,11 +589,11 @@ mod tests {
     #[test]
     fn sender_display_concatenates_firstname_lastname_from_passport() {
         let state = filestate_with_attrs(vec![
+            ("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned()),
             (
-                "pbdf.pbdf.passport.firstName".to_owned(),
-                "Jan".to_owned(),
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
             ),
-            ("pbdf.pbdf.passport.lastName".to_owned(), "Jansen".to_owned()),
             ("orgName".to_owned(), "Acme".to_owned()),
         ]);
         let (display, remaining) = sender_display(&state);
@@ -660,10 +657,7 @@ mod tests {
                 "pbdf.gemeente.personalData.fullname".to_owned(),
                 "Marie Smit".to_owned(),
             ),
-            (
-                "pbdf.pbdf.passport.firstName".to_owned(),
-                "Jan".to_owned(),
-            ),
+            ("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned()),
             (
                 "pbdf.pbdf.passport.lastName".to_owned(),
                 "Jansen".to_owned(),
@@ -686,20 +680,14 @@ mod tests {
         assert_eq!(display, "PostGuard");
         assert_eq!(
             remaining,
-            vec![(
-                "pbdf.pbdf.passport.firstName".to_owned(),
-                "Jan".to_owned()
-            )]
+            vec![("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned())]
         );
     }
 
     #[test]
     fn sender_display_treats_empty_firstname_lastname_as_not_disclosed() {
         let state = filestate_with_attrs(vec![
-            (
-                "pbdf.pbdf.passport.firstName".to_owned(),
-                String::new(),
-            ),
+            ("pbdf.pbdf.passport.firstName".to_owned(), String::new()),
             (
                 "pbdf.pbdf.passport.lastName".to_owned(),
                 "Jansen".to_owned(),
