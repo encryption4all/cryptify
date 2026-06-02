@@ -11,6 +11,7 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
+COPY build.rs   ./build.rs
 COPY src        ./src
 COPY templates  ./templates
 RUN cargo chef prepare --recipe-path recipe.json
@@ -25,6 +26,7 @@ RUN cargo chef cook --profile ${CARGO_PROFILE} --recipe-path recipe.json
 # Copy sources and build the application binary
 COPY Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
+COPY build.rs   ./build.rs
 COPY src        ./src
 COPY templates  ./templates
 RUN cargo build --profile ${CARGO_PROFILE} --bin cryptify

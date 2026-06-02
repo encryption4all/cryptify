@@ -6,7 +6,10 @@ use askama::Template;
 use chrono::{format::Locale, TimeZone};
 
 use lettre::{
-    message::header::{ContentType, Header, HeaderName, HeaderValue},
+    message::{
+        header::{ContentType, Header, HeaderName, HeaderValue},
+        Attachment, Mailbox, MultiPart, SinglePart,
+    },
     transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
 };
@@ -31,7 +34,80 @@ impl Header for XPostGuard {
     }
 }
 
-const X_POSTGUARD_VERSION: &str = "0.1.0";
+const X_POSTGUARD_VERSION: &str = env!("PG_CORE_VERSION");
+
+/// `Auto-Submitted: auto-generated` per RFC 3834. Signals to receiving MTAs
+/// and mail clients that this is a machine-generated transactional message,
+/// suppresses vacation-responder loops, and is one of the deliverability
+/// signals Gmail's bulk-sender heuristics look for.
+#[derive(Clone, Debug)]
+struct AutoSubmitted;
+
+impl Header for AutoSubmitted {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("Auto-Submitted")
+    }
+
+    fn parse(_s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(AutoSubmitted)
+    }
+
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), "auto-generated".to_owned())
+    }
+}
+
+/// Suffix that identifies the signer's full-name attribute across IRMA
+/// schemes — prod (`pbdf.gemeente.personalData.fullname`) and demo
+/// (`irma-demo.gemeente.personalData.fullname`) both end with this. When
+/// such an attribute appears in `FileState.sender_attributes` we render
+/// the disclosed name in place of the bare email everywhere the sender
+/// is shown in the body.
+const FULLNAME_ATYPE_SUFFIX: &str = ".gemeente.personalData.fullname";
+
+/// Per-credential suffixes for the `(firstName, lastName)` pairs the
+/// signer may disclose instead of the gemeente fullname (postguard#239
+/// follow-up). Each entry's `.firstName` / `.lastName` pair, when both
+/// are present and non-empty, is concatenated into a single display name.
+/// Suffix-matching catches both `pbdf.pbdf.*` and `irma-demo.pbdf.*`.
+const NAME_PAIR_CREDENTIAL_SUFFIXES: &[&str] =
+    &[".pbdf.passport", ".pbdf.idcard", ".pbdf.drivinglicence"];
+
+fn is_fullname_atype(atype: &str) -> bool {
+    atype.ends_with(FULLNAME_ATYPE_SUFFIX)
+}
+
+/// If `attrs` contains `<cred>.firstName` and `<cred>.lastName` for one of
+/// the supported credentials and both are non-empty, remove them and
+/// return `"<firstName> <lastName>"`. Otherwise leave `attrs` untouched.
+fn take_firstname_lastname_pair(attrs: &mut Vec<(String, String)>) -> Option<String> {
+    for cred in NAME_PAIR_CREDENTIAL_SUFFIXES {
+        let first_suffix = format!("{}.firstName", cred);
+        let last_suffix = format!("{}.lastName", cred);
+
+        let first_idx = attrs.iter().position(|(t, _)| t.ends_with(&first_suffix));
+        let last_idx = attrs.iter().position(|(t, _)| t.ends_with(&last_suffix));
+
+        if let (Some(fi), Some(li)) = (first_idx, last_idx) {
+            let first_val = attrs[fi].1.clone();
+            let last_val = attrs[li].1.clone();
+            if !first_val.is_empty() && !last_val.is_empty() {
+                // Remove the higher index first so the second remove is
+                // still valid.
+                let (hi, lo) = if fi > li { (fi, li) } else { (li, fi) };
+                attrs.remove(hi);
+                attrs.remove(lo);
+                return Some(format!("{} {}", first_val, last_val));
+            }
+        }
+    }
+    None
+}
+
+/// Embedded PostGuard logo, served inline via a `Content-ID: <pg-logo>`
+/// MIME part rather than fetched from postguard.eu. Removes the
+/// HTML-only-plus-remote-image spam signal flagged in postguard#197.
+const LOGO_PNG: &[u8] = include_bytes!("../templates/email/pg_logo.png");
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -57,7 +133,7 @@ struct MailStrings<'a> {
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
-    subject_str: "heeft je een bestand gestuurd via PostGuard",
+    subject_str: "heeft je bestanden gestuurd",
     sender_str: "heeft je bestanden gestuurd",
     expires_str: "Verloopt op",
     download_str: "Download jouw bestanden",
@@ -69,7 +145,7 @@ const NL_STRINGS: MailStrings = MailStrings {
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
-    subject_str: "sent you files via PostGuard",
+    subject_str: "sent you files",
     sender_str: "sent you files",
     expires_str: "Expires on",
     download_str: "Download your files",
@@ -105,6 +181,64 @@ struct EmailTemplate<'a> {
     sender_attributes: &'a [(String, String)],
 }
 
+#[derive(Template)]
+#[template(path = "email/email.txt", escape = "none")]
+struct EmailTextTemplate<'a> {
+    header: &'a str,
+    subheader: &'a str,
+    expires_str: &'a str,
+    download_str: &'a str,
+    link_str: &'a str,
+    file_size: &'a str,
+    expiry_date: &'a str,
+    html_content: &'a str,
+    url: &'a str,
+    confirm: &'a str,
+    files_from: &'a str,
+    sender_email: &'a str,
+    sender_attributes: &'a [(String, String)],
+}
+
+/// Assemble the MIME body: a `multipart/alternative` whose HTML branch is
+/// itself a `multipart/related` carrying the HTML part plus the PostGuard
+/// logo as an inline image referenced via `cid:pg-logo`. This shape avoids
+/// the HTML-only + remote-image spam signal flagged in postguard#197 while
+/// keeping graceful degradation for text-only clients.
+fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::error::Error>> {
+    let logo = Attachment::new_inline("pg-logo".to_string())
+        .body(LOGO_PNG.to_vec(), "image/png".parse::<ContentType>()?);
+
+    let related = MultiPart::related()
+        .singlepart(SinglePart::html(html))
+        .singlepart(logo);
+
+    Ok(MultiPart::alternative()
+        .singlepart(SinglePart::plain(text))
+        .multipart(related))
+}
+
+/// Resolve the display string and remaining attribute pills for the
+/// sender. When the signer disclosed a name it is used as the display;
+/// the name attribute is removed from the pill list so it doesn't render
+/// twice. An empty disclosed value is treated as not disclosed. When no
+/// name is available the display falls back to "PostGuard".
+fn sender_display(state: &FileState) -> (String, Vec<(String, String)>) {
+    let mut attrs = state.sender_attributes.clone();
+
+    // 1. Prefer gemeente.personalData.fullname (Dutch municipality credential).
+    let name = attrs
+        .iter()
+        .position(|(t, _)| is_fullname_atype(t))
+        .map(|i| attrs.remove(i).1)
+        .filter(|n| !n.is_empty())
+        // 2. Otherwise concatenate firstName + lastName from passport / id /
+        //    driving licence (postguard#239 follow-up).
+        .or_else(|| take_firstname_lastname_pair(&mut attrs));
+
+    let display = name.unwrap_or_else(|| "PostGuard".to_string());
+    (display, attrs)
+}
+
 fn format_file_size(size: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
     if size == 0 {
@@ -128,55 +262,92 @@ fn format_date(date: i64, lang: &Language) -> String {
     dt.format_localized("%e %B %Y", locale).to_string()
 }
 
-fn email_templates(state: &FileState, url: &str) -> (String, String) {
+fn email_templates(state: &FileState, url: &str) -> (String, String, String) {
     let strings = match state.mail_lang {
         Language::En => EN_STRINGS,
         Language::Nl => NL_STRINGS,
     };
 
-    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
-    let email = EmailTemplate {
-        header: &sender_str,
+    let (display, attrs) = sender_display(state);
+    let file_size = format_file_size(state.uploaded);
+    let expiry_date = format_date(state.expires, &state.mail_lang);
+
+    let html = EmailTemplate {
+        header: &display,
         subheader: strings.sender_str,
         expires_str: strings.expires_str,
         download_str: strings.download_str,
         link_str: strings.link_str,
-        file_size: &format_file_size(state.uploaded),
-        expiry_date: &format_date(state.expires, &state.mail_lang),
+        file_size: &file_size,
+        expiry_date: &expiry_date,
         html_content: &state.mail_content,
         confirm: "",
         files_from: strings.files_from,
-        sender_email: &sender_str,
-        sender_attributes: &state.sender_attributes,
+        sender_email: &display,
+        sender_attributes: &attrs,
+        url,
+    };
+    let text = EmailTextTemplate {
+        header: &display,
+        subheader: strings.sender_str,
+        expires_str: strings.expires_str,
+        download_str: strings.download_str,
+        link_str: strings.link_str,
+        file_size: &file_size,
+        expiry_date: &expiry_date,
+        html_content: &state.mail_content,
+        confirm: "",
+        files_from: strings.files_from,
+        sender_email: &display,
+        sender_attributes: &attrs,
         url,
     };
     let subject = SubjectTemplate {
         subject_str: strings.subject_str,
-        sender: &sender_str,
+        sender: &display,
     };
-    (email.to_string(), subject.to_string())
+    (html.to_string(), text.to_string(), subject.to_string())
 }
 
-fn email_confirm(state: &FileState, url: &str) -> (String, String) {
+fn email_confirm(state: &FileState, url: &str) -> (String, String, String) {
     let strings = match state.mail_lang {
         Language::En => EN_STRINGS,
         Language::Nl => NL_STRINGS,
     };
 
-    let sender_str = state.sender.clone().unwrap_or("Someone".to_string());
-    let email = EmailTemplate {
+    let (display, attrs) = sender_display(state);
+    let file_size = format_file_size(state.uploaded);
+    let expiry_date = format_date(state.expires, &state.mail_lang);
+    let recipients = state.recipients.to_string();
+
+    let html = EmailTemplate {
         header: strings.header_confirm,
-        subheader: &state.recipients.to_string(),
+        subheader: &recipients,
         expires_str: strings.expires_str,
         link_str: strings.link_str,
-        file_size: &format_file_size(state.uploaded),
-        expiry_date: &format_date(state.expires, &state.mail_lang),
+        file_size: &file_size,
+        expiry_date: &expiry_date,
         html_content: &state.mail_content,
         download_str: strings.download_str,
         confirm: strings.confirm,
         files_from: strings.files_from,
-        sender_email: &sender_str,
-        sender_attributes: &state.sender_attributes,
+        sender_email: &display,
+        sender_attributes: &attrs,
+        url,
+    };
+    let text = EmailTextTemplate {
+        header: strings.header_confirm,
+        subheader: &recipients,
+        expires_str: strings.expires_str,
+        link_str: strings.link_str,
+        file_size: &file_size,
+        expiry_date: &expiry_date,
+        html_content: &state.mail_content,
+        download_str: strings.download_str,
+        confirm: strings.confirm,
+        files_from: strings.files_from,
+        sender_email: &display,
+        sender_attributes: &attrs,
         url,
     };
 
@@ -185,7 +356,7 @@ fn email_confirm(state: &FileState, url: &str) -> (String, String) {
         sender: "",
     };
 
-    (email.to_string(), subject.to_string())
+    (html.to_string(), text.to_string(), subject.to_string())
 }
 
 pub async fn send_email(
@@ -228,14 +399,24 @@ pub async fn send_email(
                 .append_pair("uuid", uuid)
                 .append_pair("recipient", &format!("{}", recipient.email));
 
-            let (email, subject) = email_templates(state, url.as_str());
-            let email = Message::builder()
-                .header(ContentType::TEXT_HTML)
+            let (html, text, subject) = email_templates(state, url.as_str());
+            let mut builder = Message::builder()
                 .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+                .header(AutoSubmitted)
                 .from(config.email_from()) // checked in config
                 .to(recipient.clone())
-                .subject(subject)
-                .body(email)?;
+                .subject(subject);
+            if let Some(sender) = state.sender.as_deref() {
+                match sender.parse::<Mailbox>() {
+                    Ok(mailbox) => builder = builder.reply_to(mailbox),
+                    Err(e) => log::warn!(
+                        "Skipping Reply-To: sender `{}` did not parse as Mailbox: {}",
+                        sender,
+                        e
+                    ),
+                }
+            }
+            let email = builder.multipart(build_body(html, text)?)?;
 
             // send email
             log::info!("Sending email to {}", recipient.email);
@@ -264,14 +445,14 @@ pub async fn send_email(
             .append_pair("uuid", uuid)
             .append_pair("recipient", &sender);
 
-        let (email, subject) = email_confirm(state, url.as_str());
+        let (html, text, subject) = email_confirm(state, url.as_str());
         let email = Message::builder()
-            .header(ContentType::TEXT_HTML)
             .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+            .header(AutoSubmitted)
             .from(config.email_from())
             .to(sender.parse()?)
             .subject(subject)
-            .body(email)?;
+            .multipart(build_body(html, text)?)?;
 
         log::info!("Sending confirmation email to {}", sender);
         let mailer = mailer_builder.build();
@@ -346,9 +527,189 @@ mod tests {
     }
 
     #[test]
+    fn auto_submitted_header_emits_auto_generated() {
+        use lettre::message::Mailbox;
+        let msg = Message::builder()
+            .from("noreply@example.com".parse::<Mailbox>().unwrap())
+            .to("to@example.com".parse::<Mailbox>().unwrap())
+            .subject("t")
+            .header(AutoSubmitted)
+            .body(String::from("hi"))
+            .expect("build");
+        let raw = String::from_utf8(msg.formatted()).expect("utf8");
+        assert!(
+            raw.contains("Auto-Submitted: auto-generated"),
+            "expected Auto-Submitted header, got: {}",
+            raw
+        );
+    }
+
+    #[test]
+    fn sender_display_promotes_disclosed_name() {
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.gemeente.personalData.fullname".to_owned(),
+                "Jan Jansen".to_owned(),
+            ),
+            ("orgName".to_owned(), "Acme".to_owned()),
+        ]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+        assert_eq!(remaining, vec![("orgName".to_owned(), "Acme".to_owned())]);
+    }
+
+    #[test]
+    fn sender_display_promotes_disclosed_name_from_demo_scheme() {
+        let state = filestate_with_attrs(vec![(
+            "irma-demo.gemeente.personalData.fullname".to_owned(),
+            "Jan Jansen".to_owned(),
+        )]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_treats_empty_disclosed_name_as_not_disclosed() {
+        let state = filestate_with_attrs(vec![(
+            "pbdf.gemeente.personalData.fullname".to_owned(),
+            String::new(),
+        )]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "PostGuard");
+    }
+
+    #[test]
+    fn sender_display_falls_back_to_postguard_when_no_name_disclosed() {
+        let state = filestate_with_attrs(vec![("orgName".to_owned(), "Acme".to_owned())]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "PostGuard");
+        assert_eq!(remaining, vec![("orgName".to_owned(), "Acme".to_owned())]);
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_passport() {
+        let state = filestate_with_attrs(vec![
+            ("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned()),
+            (
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+            ("orgName".to_owned(), "Acme".to_owned()),
+        ]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+        assert_eq!(
+            remaining,
+            vec![("orgName".to_owned(), "Acme".to_owned())],
+            "both name attrs consumed; unrelated attrs kept"
+        );
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_idcard() {
+        let state = filestate_with_attrs(vec![
+            ("pbdf.pbdf.idcard.firstName".to_owned(), "Jan".to_owned()),
+            ("pbdf.pbdf.idcard.lastName".to_owned(), "Jansen".to_owned()),
+        ]);
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_drivinglicence() {
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.pbdf.drivinglicence.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            (
+                "pbdf.pbdf.drivinglicence.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_concatenates_firstname_lastname_from_demo_scheme() {
+        let state = filestate_with_attrs(vec![
+            (
+                "irma-demo.pbdf.passport.firstName".to_owned(),
+                "Jan".to_owned(),
+            ),
+            (
+                "irma-demo.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Jan Jansen");
+    }
+
+    #[test]
+    fn sender_display_prefers_gemeente_fullname_over_passport_pair() {
+        // If both are disclosed (unlikely in practice), gemeente wins
+        // because that path runs first.
+        let state = filestate_with_attrs(vec![
+            (
+                "pbdf.gemeente.personalData.fullname".to_owned(),
+                "Marie Smit".to_owned(),
+            ),
+            ("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned()),
+            (
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "Marie Smit");
+    }
+
+    #[test]
+    fn sender_display_falls_through_when_firstname_present_without_lastname() {
+        let state = filestate_with_attrs(vec![(
+            "pbdf.pbdf.passport.firstName".to_owned(),
+            "Jan".to_owned(),
+        )]);
+        let (display, remaining) = sender_display(&state);
+        // No lastName → no concatenation; the orphan firstName stays as a
+        // pill so the recipient at least sees it instead of having it
+        // silently dropped.
+        assert_eq!(display, "PostGuard");
+        assert_eq!(
+            remaining,
+            vec![("pbdf.pbdf.passport.firstName".to_owned(), "Jan".to_owned())]
+        );
+    }
+
+    #[test]
+    fn sender_display_treats_empty_firstname_lastname_as_not_disclosed() {
+        let state = filestate_with_attrs(vec![
+            ("pbdf.pbdf.passport.firstName".to_owned(), String::new()),
+            (
+                "pbdf.pbdf.passport.lastName".to_owned(),
+                "Jansen".to_owned(),
+            ),
+        ]);
+        let (display, _) = sender_display(&state);
+        assert_eq!(display, "PostGuard");
+    }
+
+    #[test]
+    fn sender_display_uses_postguard_when_no_name_disclosed() {
+        let mut state = filestate_with_attrs(vec![]);
+        state.sender = None;
+        let (display, remaining) = sender_display(&state);
+        assert_eq!(display, "PostGuard");
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
     fn x_postguard_header_round_trips() {
-        let parsed = XPostGuard::parse("0.1.0").expect("parse");
-        assert_eq!(parsed.0, "0.1.0");
+        let parsed = XPostGuard::parse(X_POSTGUARD_VERSION).expect("parse");
+        assert_eq!(parsed.0, X_POSTGUARD_VERSION);
     }
 
     #[test]
@@ -362,9 +723,11 @@ mod tests {
             .body(String::from("hi"))
             .expect("build");
         let raw = String::from_utf8(msg.formatted()).expect("utf8");
+        let expected = format!("X-PostGuard: {}", X_POSTGUARD_VERSION);
         assert!(
-            raw.contains("X-PostGuard: 0.1.0"),
-            "expected X-PostGuard header in message, got: {}",
+            raw.contains(&expected),
+            "expected `{}` header in message, got: {}",
+            expected,
             raw
         );
     }
@@ -399,6 +762,12 @@ mod tests {
     #[test]
     fn format_file_size_tebibytes() {
         assert_eq!(format_file_size(1024_u64.pow(4)), "1.0 TB");
+    }
+
+    fn filestate_with_attrs(attrs: Vec<(String, String)>) -> FileState {
+        let mut state = staging_filestate();
+        state.sender_attributes = attrs;
+        state
     }
 
     fn staging_filestate() -> FileState {
