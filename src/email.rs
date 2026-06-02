@@ -136,7 +136,7 @@ struct MailStrings<'a> {
 }
 
 const NL_STRINGS: MailStrings = MailStrings {
-    subject_str: "heeft je een bestand gestuurd via PostGuard",
+    subject_str: "heeft je bestanden gestuurd",
     sender_str: "heeft je bestanden gestuurd",
     expires_str: "Verloopt op",
     download_str: "Download jouw bestanden",
@@ -148,7 +148,7 @@ const NL_STRINGS: MailStrings = MailStrings {
 };
 
 const EN_STRINGS: MailStrings = MailStrings {
-    subject_str: "sent you files via PostGuard",
+    subject_str: "sent you files",
     sender_str: "sent you files",
     expires_str: "Expires on",
     download_str: "Download your files",
@@ -221,11 +221,10 @@ fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::erro
 }
 
 /// Resolve the display string and remaining attribute pills for the
-/// sender. When the signer disclosed their full name, the name takes the
-/// place of the bare email everywhere it would otherwise appear in the
-/// body, and is removed from the attribute pill list so it doesn't render
-/// twice. An empty disclosed value is treated as not disclosed, so we
-/// fall through to the email instead of rendering a blank.
+/// sender. When the signer disclosed a name it is used as the display;
+/// the name attribute is removed from the pill list so it doesn't render
+/// twice. An empty disclosed value is treated as not disclosed. When no
+/// name is available the display falls back to "PostGuard".
 fn sender_display(state: &FileState) -> (String, Vec<(String, String)>) {
     let mut attrs = state.sender_attributes.clone();
 
@@ -239,9 +238,7 @@ fn sender_display(state: &FileState) -> (String, Vec<(String, String)>) {
         //    driving licence (postguard#239 follow-up).
         .or_else(|| take_firstname_lastname_pair(&mut attrs));
 
-    let display = name
-        .or_else(|| state.sender.clone())
-        .unwrap_or_else(|| "Someone".to_string());
+    let display = name.unwrap_or_else(|| "PostGuard".to_string());
     (display, attrs)
 }
 
@@ -581,14 +578,14 @@ mod tests {
             String::new(),
         )]);
         let (display, _) = sender_display(&state);
-        assert_eq!(display, "sender@example.com");
+        assert_eq!(display, "PostGuard");
     }
 
     #[test]
-    fn sender_display_falls_back_to_email_when_no_name_disclosed() {
+    fn sender_display_falls_back_to_postguard_when_no_name_disclosed() {
         let state = filestate_with_attrs(vec![("orgName".to_owned(), "Acme".to_owned())]);
         let (display, remaining) = sender_display(&state);
-        assert_eq!(display, "sender@example.com");
+        assert_eq!(display, "PostGuard");
         assert_eq!(remaining, vec![("orgName".to_owned(), "Acme".to_owned())]);
     }
 
@@ -686,7 +683,7 @@ mod tests {
         // No lastName → no concatenation; the orphan firstName stays as a
         // pill so the recipient at least sees it instead of having it
         // silently dropped.
-        assert_eq!(display, "sender@example.com");
+        assert_eq!(display, "PostGuard");
         assert_eq!(
             remaining,
             vec![(
@@ -709,15 +706,15 @@ mod tests {
             ),
         ]);
         let (display, _) = sender_display(&state);
-        assert_eq!(display, "sender@example.com");
+        assert_eq!(display, "PostGuard");
     }
 
     #[test]
-    fn sender_display_uses_someone_when_no_sender_and_no_name() {
+    fn sender_display_uses_postguard_when_no_name_disclosed() {
         let mut state = filestate_with_attrs(vec![]);
         state.sender = None;
         let (display, remaining) = sender_display(&state);
-        assert_eq!(display, "Someone");
+        assert_eq!(display, "PostGuard");
         assert!(remaining.is_empty());
     }
 
