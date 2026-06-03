@@ -970,8 +970,6 @@ fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResp
     })
 }
 
-/// Parsed byte range derived from an HTTP `Range` header and the resource's
-/// total size. Both endpoints are inclusive, per RFC 7233 §2.1.
 /// Staging-only endpoint that returns the rendered notification email(s)
 /// cryptify *would* deliver for an upload, so developers on the staging
 /// website can preview the message without an SMTP transport. Gated on
@@ -1031,6 +1029,8 @@ async fn staging_preview(
     }))
 }
 
+/// Parsed byte range derived from an HTTP `Range` header and the resource's
+/// total size. Both endpoints are inclusive, per RFC 7233 §2.1.
 #[derive(Debug, PartialEq, Eq)]
 struct ByteRange {
     start: u64,
@@ -2344,6 +2344,114 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&data_dir);
         let _ = std::fs::remove_dir_all(&secret_dir);
+    }
+
+    /// Build a minimal rocket exposing only the `staging_preview` route,
+    /// with `staging_mode` controlled by the caller. The returned UUID
+    /// (when `seed_uuid` is `Some`) is pre-inserted into the store so the
+    /// happy-path test has something to render.
+    async fn staging_preview_client(staging_mode: bool, seed_uuid: Option<&str>) -> Client {
+        use rocket::figment::{providers::Serialized, Figment};
+
+        let figment = Figment::from(rocket::Config::default()).merge(Serialized::defaults(
+            serde_json::json!({
+                "server_url": "https://staging.example.com",
+                "data_dir": std::env::temp_dir().to_str().unwrap(),
+                "email_from": "Test <noreply@example.com>",
+                "smtp_url": "localhost",
+                "smtp_port": 1025u16,
+                "allowed_origins": ".*",
+                "pkg_url": "http://localhost",
+                "staging_mode": staging_mode,
+            }),
+        ));
+
+        let store = Store::new(Arc::new(Metrics::new()));
+        if let Some(uuid) = seed_uuid {
+            let mut mboxes = lettre::message::Mailboxes::new();
+            mboxes.push("alice@example.com".parse().unwrap());
+            mboxes.push("bob@example.com".parse().unwrap());
+            let state = FileState {
+                uploaded: 1234,
+                cryptify_token: String::new(),
+                expires: 1_700_000_000,
+                recipients: mboxes,
+                mail_content: String::new(),
+                mail_lang: email::Language::En,
+                sender: Some("sender@example.com".to_owned()),
+                sender_attributes: Vec::new(),
+                confirm: true,
+                source_channel: String::new(),
+                notify_recipients: true,
+                api_key_tenant: None,
+                api_key_validation_failed: false,
+                last_chunk: None,
+                recovery_token: String::new(),
+            };
+            store.create(uuid.to_owned(), state);
+        }
+
+        let rocket = rocket::custom(figment)
+            .mount("/", routes![staging_preview])
+            .attach(AdHoc::config::<CryptifyConfig>())
+            .manage(store);
+
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    #[rocket::async_test]
+    async fn staging_preview_returns_404_in_production_mode() {
+        let client = staging_preview_client(false, Some("uuid-known")).await;
+        let res = client.get("/staging/preview/uuid-known").dispatch().await;
+        assert_eq!(
+            res.status(),
+            Status::NotFound,
+            "the staging_mode gate must hide the route in production"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn staging_preview_returns_404_for_unknown_uuid() {
+        let client = staging_preview_client(true, None).await;
+        let res = client
+            .get("/staging/preview/uuid-does-not-exist")
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
+    }
+
+    #[rocket::async_test]
+    async fn staging_preview_renders_recipients_and_confirmation() {
+        let client = staging_preview_client(true, Some("uuid-known")).await;
+        let res = client.get("/staging/preview/uuid-known").dispatch().await;
+        assert_eq!(res.status(), Status::Ok);
+
+        let body = res.into_string().await.expect("body");
+        let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+
+        let recipients = v
+            .get("recipients")
+            .and_then(|r| r.as_array())
+            .expect("recipients array");
+        let emails: Vec<&str> = recipients
+            .iter()
+            .filter_map(|r| r.get("recipient").and_then(|s| s.as_str()))
+            .collect();
+        assert_eq!(emails, vec!["alice@example.com", "bob@example.com"]);
+        for r in recipients {
+            assert!(r.get("subject").and_then(|s| s.as_str()).is_some());
+            assert!(r.get("html").and_then(|s| s.as_str()).is_some());
+            assert!(r.get("text").and_then(|s| s.as_str()).is_some());
+        }
+
+        let confirmation = v.get("confirmation").expect("confirmation key present");
+        assert_eq!(
+            confirmation
+                .get("recipient")
+                .and_then(|s| s.as_str())
+                .expect("confirmation.recipient"),
+            "sender@example.com"
+        );
     }
 }
 

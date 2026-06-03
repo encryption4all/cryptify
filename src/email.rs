@@ -512,30 +512,37 @@ pub async fn send_email(
     }
 
     if state.confirm {
-        // `state.confirm` is only set when a sender address was captured,
-        // so render_confirmation_email returns Some here. Fall through
-        // silently if that invariant ever loosens.
-        if let Some(rendered) = render_confirmation_email(state, config, uuid)? {
-            let to_mailbox: Mailbox = rendered.recipient.parse()?;
-            let email = Message::builder()
-                .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
-                .header(AutoSubmitted)
-                .from(config.email_from())
-                .to(to_mailbox)
-                .subject(&rendered.subject)
-                .multipart(build_body(rendered.html, rendered.text)?)?;
+        // `state.confirm` is only set on uploads that captured a sender
+        // address, so render_confirmation_email returns `Some` here. Log
+        // loudly on the `None` arm so a future invariant breach surfaces
+        // instead of silently dropping the sender's confirmation copy.
+        match render_confirmation_email(state, config, uuid)? {
+            None => log::error!(
+                "state.confirm=true but no sender on FileState for upload {} — confirmation email dropped",
+                uuid
+            ),
+            Some(rendered) => {
+                let to_mailbox: Mailbox = rendered.recipient.parse()?;
+                let email = Message::builder()
+                    .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+                    .header(AutoSubmitted)
+                    .from(config.email_from())
+                    .to(to_mailbox)
+                    .subject(&rendered.subject)
+                    .multipart(build_body(rendered.html, rendered.text)?)?;
 
-            log::info!("Sending confirmation email to {}", rendered.recipient);
-            let mailer = mailer_builder.build();
-            mailer.send(&email).map_err(|e| {
-                log::error!(
-                    "Failed to send confirmation email to {}: {}",
-                    rendered.recipient,
+                log::info!("Sending confirmation email to {}", rendered.recipient);
+                let mailer = mailer_builder.build();
+                mailer.send(&email).map_err(|e| {
+                    log::error!(
+                        "Failed to send confirmation email to {}: {}",
+                        rendered.recipient,
+                        e
+                    );
                     e
-                );
-                e
-            })?;
-            log::info!("Confirmation email sent to {}", rendered.recipient);
+                })?;
+                log::info!("Confirmation email sent to {}", rendered.recipient);
+            }
         }
     }
 
