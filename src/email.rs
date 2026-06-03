@@ -262,6 +262,87 @@ fn format_date(date: i64, lang: &Language) -> String {
     dt.format_localized("%e %B %Y", locale).to_string()
 }
 
+/// One rendered notification email, in the shape `send_email` would
+/// hand to the SMTP layer. Returned by [`render_recipient_email`] and
+/// [`render_confirmation_email`]; consumed by `send_email` for real
+/// delivery and by the staging `/staging/preview/<uuid>` endpoint so
+/// developers can inspect what cryptify would have sent without
+/// reaching for the logs.
+#[derive(Serialize, Clone, Debug)]
+pub struct RenderedEmail {
+    /// The recipient address this rendering targets (the per-recipient
+    /// notification's `To`, or the sender's address for confirmation).
+    pub recipient: String,
+    pub subject: String,
+    /// Formatted `Name <email>` form of the configured `email_from`.
+    pub from: String,
+    /// Set on per-recipient notifications (so replies go to the sender);
+    /// `None` on the sender's own confirmation copy.
+    pub reply_to: Option<String>,
+    pub html: String,
+    pub text: String,
+}
+
+/// Build the `/download?uuid=…&recipient=…` link cryptify embeds in the
+/// notification body. Extracted from `send_email` so the preview endpoint
+/// constructs URLs the same way and they cannot drift.
+fn build_download_url(
+    config: &CryptifyConfig,
+    uuid: &str,
+    recipient: &str,
+) -> Result<String, url::ParseError> {
+    let base = Url::parse(config.server_url())?;
+    let mut url = base.join("/download")?;
+    url.query_pairs_mut()
+        .append_pair("uuid", uuid)
+        .append_pair("recipient", recipient);
+    Ok(url.to_string())
+}
+
+/// Render the per-recipient notification email (subject + HTML + text)
+/// for a single recipient on an upload. Pure: no SMTP, no IO beyond URL
+/// parsing.
+pub fn render_recipient_email(
+    state: &FileState,
+    config: &CryptifyConfig,
+    recipient_email: &str,
+    uuid: &str,
+) -> Result<RenderedEmail, url::ParseError> {
+    let url = build_download_url(config, uuid, recipient_email)?;
+    let (html, text, subject) = email_templates(state, &url);
+    Ok(RenderedEmail {
+        recipient: recipient_email.to_owned(),
+        subject,
+        from: config.email_from().to_string(),
+        reply_to: state.sender.clone(),
+        html,
+        text,
+    })
+}
+
+/// Render the sender's confirmation copy (only emitted when
+/// `state.confirm` is set on upload). Returns `Ok(None)` when no sender
+/// address is known — confirmation has nowhere to go.
+pub fn render_confirmation_email(
+    state: &FileState,
+    config: &CryptifyConfig,
+    uuid: &str,
+) -> Result<Option<RenderedEmail>, url::ParseError> {
+    let Some(sender_email) = state.sender.clone() else {
+        return Ok(None);
+    };
+    let url = build_download_url(config, uuid, &sender_email)?;
+    let (html, text, subject) = email_confirm(state, &url);
+    Ok(Some(RenderedEmail {
+        recipient: sender_email,
+        subject,
+        from: config.email_from().to_string(),
+        reply_to: None,
+        html,
+        text,
+    }))
+}
+
 fn email_templates(state: &FileState, url: &str) -> (String, String, String) {
     let strings = match state.mail_lang {
         Language::En => EN_STRINGS,
@@ -392,21 +473,16 @@ pub async fn send_email(
 
     if state.notify_recipients {
         for recipient in state.recipients.iter() {
-            // combine URL with mail variables into template
-            let base = Url::parse(config.server_url())?;
-            let mut url = base.join("/download")?;
-            url.query_pairs_mut()
-                .append_pair("uuid", uuid)
-                .append_pair("recipient", &format!("{}", recipient.email));
+            let recipient_email = recipient.email.to_string();
+            let rendered = render_recipient_email(state, config, &recipient_email, uuid)?;
 
-            let (html, text, subject) = email_templates(state, url.as_str());
             let mut builder = Message::builder()
                 .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
                 .header(AutoSubmitted)
                 .from(config.email_from()) // checked in config
                 .to(recipient.clone())
-                .subject(subject);
-            if let Some(sender) = state.sender.as_deref() {
+                .subject(&rendered.subject);
+            if let Some(sender) = rendered.reply_to.as_deref() {
                 match sender.parse::<Mailbox>() {
                     Ok(mailbox) => builder = builder.reply_to(mailbox),
                     Err(e) => log::warn!(
@@ -416,7 +492,7 @@ pub async fn send_email(
                     ),
                 }
             }
-            let email = builder.multipart(build_body(html, text)?)?;
+            let email = builder.multipart(build_body(rendered.html, rendered.text)?)?;
 
             // send email
             log::info!("Sending email to {}", recipient.email);
@@ -436,31 +512,31 @@ pub async fn send_email(
     }
 
     if state.confirm {
-        // also send confirmation email to sender
-        let sender = state.sender.clone().unwrap();
+        // `state.confirm` is only set when a sender address was captured,
+        // so render_confirmation_email returns Some here. Fall through
+        // silently if that invariant ever loosens.
+        if let Some(rendered) = render_confirmation_email(state, config, uuid)? {
+            let to_mailbox: Mailbox = rendered.recipient.parse()?;
+            let email = Message::builder()
+                .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
+                .header(AutoSubmitted)
+                .from(config.email_from())
+                .to(to_mailbox)
+                .subject(&rendered.subject)
+                .multipart(build_body(rendered.html, rendered.text)?)?;
 
-        let base = Url::parse(config.server_url())?;
-        let mut url = base.join("/download")?;
-        url.query_pairs_mut()
-            .append_pair("uuid", uuid)
-            .append_pair("recipient", &sender);
-
-        let (html, text, subject) = email_confirm(state, url.as_str());
-        let email = Message::builder()
-            .header(XPostGuard(X_POSTGUARD_VERSION.to_owned()))
-            .header(AutoSubmitted)
-            .from(config.email_from())
-            .to(sender.parse()?)
-            .subject(subject)
-            .multipart(build_body(html, text)?)?;
-
-        log::info!("Sending confirmation email to {}", sender);
-        let mailer = mailer_builder.build();
-        mailer.send(&email).map_err(|e| {
-            log::error!("Failed to send confirmation email to {}: {}", sender, e);
-            e
-        })?;
-        log::info!("Confirmation email sent to {}", sender);
+            log::info!("Sending confirmation email to {}", rendered.recipient);
+            let mailer = mailer_builder.build();
+            mailer.send(&email).map_err(|e| {
+                log::error!(
+                    "Failed to send confirmation email to {}: {}",
+                    rendered.recipient,
+                    e
+                );
+                e
+            })?;
+            log::info!("Confirmation email sent to {}", rendered.recipient);
+        }
     }
 
     Ok("Email successfully sent".to_owned())
@@ -815,6 +891,62 @@ mod tests {
             "got: {}",
             res
         );
+    }
+
+    #[test]
+    fn render_recipient_email_embeds_download_url_with_uuid_and_recipient() {
+        let config = CryptifyConfig::for_test("https://staging.example.com/", true);
+        let state = staging_filestate();
+        let rendered = render_recipient_email(&state, &config, "alice@example.com", "uuid-abc")
+            .expect("render");
+        assert_eq!(rendered.recipient, "alice@example.com");
+        assert_eq!(
+            rendered.reply_to.as_deref(),
+            Some("sender@example.com"),
+            "reply_to should mirror state.sender"
+        );
+        // HTML escapes `&` to `&amp;`; the plain-text branch is the
+        // cleanest place to assert URL composition.
+        assert!(
+            rendered.text.contains(
+                "https://staging.example.com/download?uuid=uuid-abc&recipient=alice%40example.com"
+            ),
+            "text missing download URL: {}",
+            rendered.text
+        );
+        assert!(
+            rendered.subject.contains("sent you files"),
+            "subject: {}",
+            rendered.subject
+        );
+    }
+
+    #[test]
+    fn render_confirmation_email_targets_sender_and_drops_reply_to() {
+        let config = CryptifyConfig::for_test("https://staging.example.com/", true);
+        let state = staging_filestate();
+        let rendered = render_confirmation_email(&state, &config, "uuid-xyz")
+            .expect("render")
+            .expect("confirmation present when state.sender is Some");
+        assert_eq!(rendered.recipient, "sender@example.com");
+        assert!(
+            rendered.reply_to.is_none(),
+            "confirmation should not set Reply-To"
+        );
+        assert!(
+            rendered.html.contains("uuid=uuid-xyz"),
+            "html missing uuid: {}",
+            rendered.html
+        );
+    }
+
+    #[test]
+    fn render_confirmation_email_returns_none_without_sender() {
+        let config = CryptifyConfig::for_test("https://staging.example.com/", true);
+        let mut state = staging_filestate();
+        state.sender = None;
+        let rendered = render_confirmation_email(&state, &config, "uuid-xyz").expect("render");
+        assert!(rendered.is_none());
     }
 
     #[test]

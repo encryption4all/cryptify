@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::CryptifyConfig;
-use crate::email::send_email;
+use crate::email::{render_confirmation_email, render_recipient_email, send_email, RenderedEmail};
 use crate::error::{Error, PayloadTooLargeBody};
 use crate::metrics::{detect_channel, storage_sampler, Metrics};
 use crate::store::{
@@ -972,6 +972,65 @@ fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResp
 
 /// Parsed byte range derived from an HTTP `Range` header and the resource's
 /// total size. Both endpoints are inclusive, per RFC 7233 §2.1.
+/// Staging-only endpoint that returns the rendered notification email(s)
+/// cryptify *would* deliver for an upload, so developers on the staging
+/// website can preview the message without an SMTP transport. Gated on
+/// `staging_mode = true`; returns `404 Not Found` everywhere else so
+/// production reveals no surface.
+#[derive(serde::Serialize)]
+struct StagingPreviewResponse {
+    recipients: Vec<RenderedEmail>,
+    confirmation: Option<RenderedEmail>,
+}
+
+#[get("/staging/preview/<uuid>")]
+async fn staging_preview(
+    config: &State<CryptifyConfig>,
+    store: &State<Store>,
+    uuid: &str,
+) -> Result<Json<StagingPreviewResponse>, rocket::http::Status> {
+    if !config.staging_mode() {
+        return Err(rocket::http::Status::NotFound);
+    }
+    let state_arc = store.get(uuid).ok_or(rocket::http::Status::NotFound)?;
+    let state = state_arc.lock().await;
+
+    let mut recipients = Vec::with_capacity(state.recipients.iter().count());
+    for mailbox in state.recipients.iter() {
+        let email = mailbox.email.to_string();
+        match render_recipient_email(&state, config, &email, uuid) {
+            Ok(r) => recipients.push(r),
+            Err(e) => log::warn!(
+                "staging_preview: failed to render recipient {} for {}: {}",
+                email,
+                uuid,
+                e
+            ),
+        }
+    }
+
+    let confirmation = if state.confirm {
+        match render_confirmation_email(&state, config, uuid) {
+            Ok(opt) => opt,
+            Err(e) => {
+                log::warn!(
+                    "staging_preview: failed to render confirmation for {}: {}",
+                    uuid,
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(Json(StagingPreviewResponse {
+        recipients,
+        confirmation,
+    }))
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ByteRange {
     start: u64,
@@ -1195,7 +1254,8 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
                 upload_finalize,
                 upload_status,
                 usage,
-                download
+                download,
+                staging_preview
             ],
         )
         .attach(AdHoc::config::<CryptifyConfig>())
