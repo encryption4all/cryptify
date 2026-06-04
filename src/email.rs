@@ -109,6 +109,11 @@ fn take_firstname_lastname_pair(attrs: &mut Vec<(String, String)>) -> Option<Str
 /// HTML-only-plus-remote-image spam signal flagged in postguard#197.
 const LOGO_PNG: &[u8] = include_bytes!("../templates/email/pg_logo.png");
 
+/// Inline checkmark glyph used inside the signer-verified circle in the
+/// HTML email, referenced via `cid:pg-check`. Replaces the previous
+/// unicode `&#10003;` so the mark renders consistently across clients.
+const CHECK_PNG: &[u8] = include_bytes!("../templates/email/check.png");
+
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -207,10 +212,13 @@ struct EmailTextTemplate<'a> {
 fn build_body(html: String, text: String) -> Result<MultiPart, Box<dyn std::error::Error>> {
     let logo = Attachment::new_inline("pg-logo".to_string())
         .body(LOGO_PNG.to_vec(), "image/png".parse::<ContentType>()?);
+    let check = Attachment::new_inline("pg-check".to_string())
+        .body(CHECK_PNG.to_vec(), "image/png".parse::<ContentType>()?);
 
     let related = MultiPart::related()
         .singlepart(SinglePart::html(html))
-        .singlepart(logo);
+        .singlepart(logo)
+        .singlepart(check);
 
     Ok(MultiPart::alternative()
         .singlepart(SinglePart::plain(text))
