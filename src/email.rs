@@ -109,7 +109,7 @@ fn take_firstname_lastname_pair(attrs: &mut Vec<(String, String)>) -> Option<Str
 /// HTML-only-plus-remote-image spam signal flagged in postguard#197.
 const LOGO_PNG: &[u8] = include_bytes!("../templates/email/pg_logo.png");
 
-/// Inline checkmark glyph used inside the signer-verified circle in the
+/// Inline checkmark glyph shown next to the signer-verified email in the
 /// HTML email, referenced via `cid:pg-check`. Replaces the previous
 /// unicode `&#10003;` so the mark renders consistently across clients.
 const CHECK_PNG: &[u8] = include_bytes!("../templates/email/check.png");
