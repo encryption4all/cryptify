@@ -34,14 +34,55 @@ pub const KNOWN_CHANNELS: &[&str] = &[
     CHANNEL_UNKNOWN,
 ];
 
+/// Client apps pre-seeded at value 0 on startup so dashboards see the full
+/// label set from the first scrape (same rationale as `KNOWN_CHANNELS`).
+/// These are the `app` field of the `X-POSTGUARD-CLIENT-VERSION` header.
+pub const KNOWN_APPS: &[&str] = &["pg-js", "pg-dotnet", "pg4ol", "pg4tb", CHANNEL_UNKNOWN];
+
 /// Header clients can set to identify themselves (`outlook`, `thunderbird`,
 /// `api`, ...). Leading whitespace is trimmed and the value is lowercased
 /// and restricted to `[a-z0-9_-]` so it cannot inject Prometheus syntax.
 pub const SOURCE_HEADER: &str = "X-Cryptify-Source";
 
+/// Structured client-identity header shared with pg-pkg. Value format is
+/// `host,host_version,app,app_version` (e.g. `node,22.1.0,pg-js,1.2.3` or
+/// `Outlook,1.0,pg4ol,0.0.1`). Captured for logging (the full raw value) and
+/// for the per-app upload metric (the `app` field only).
+pub const CLIENT_VERSION_HEADER: &str = "X-POSTGUARD-CLIENT-VERSION";
+
+/// Parsed form of the `X-POSTGUARD-CLIENT-VERSION` header. All four fields
+/// are kept for completeness and logging/inspection; only `app` is consumed
+/// for the metric label today.
+#[allow(dead_code)]
+pub struct ClientVersion {
+    pub host: String,
+    pub host_version: String,
+    pub app: String,
+    pub app_version: String,
+}
+
+/// Parse the 4-field client-version header. Returns `None` unless the value
+/// has exactly four comma-separated fields (matching pg-pkg's strict
+/// destructuring). Fields are trimmed but otherwise left raw — callers that
+/// want a metric label must `sanitize_label` the `app` field themselves.
+pub fn parse_client_version(raw: &str) -> Option<ClientVersion> {
+    let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
+    if let [host, host_version, app, app_version] = parts[..] {
+        Some(ClientVersion {
+            host: host.to_string(),
+            host_version: host_version.to_string(),
+            app: app.to_string(),
+            app_version: app_version.to_string(),
+        })
+    } else {
+        None
+    }
+}
+
 pub struct Metrics {
     uploads: Mutex<BTreeMap<String, u64>>,
     upload_bytes: Mutex<BTreeMap<String, u64>>,
+    uploads_by_app: Mutex<BTreeMap<String, u64>>,
     storage_bytes: AtomicI64,
     active_files: AtomicI64,
     expired_files: AtomicU64,
@@ -66,9 +107,14 @@ impl Metrics {
             uploads.insert((*c).to_string(), 0u64);
             bytes.insert((*c).to_string(), 0u64);
         }
+        let mut by_app = BTreeMap::new();
+        for a in KNOWN_APPS {
+            by_app.insert((*a).to_string(), 0u64);
+        }
         Self {
             uploads: Mutex::new(uploads),
             upload_bytes: Mutex::new(bytes),
+            uploads_by_app: Mutex::new(by_app),
             storage_bytes: AtomicI64::new(0),
             active_files: AtomicI64::new(0),
             expired_files: AtomicU64::new(0),
@@ -82,6 +128,16 @@ impl Metrics {
         *uploads.entry(channel.clone()).or_insert(0) += 1;
         let mut bytes_map = self.upload_bytes.lock().unwrap();
         *bytes_map.entry(channel).or_insert(0) += bytes;
+    }
+
+    /// Record a finalized upload against the client `app` that sent it (the
+    /// `app` field of `X-POSTGUARD-CLIENT-VERSION`). Cardinality-safe: the
+    /// full version is never a label (it lives in logs); only the sanitized
+    /// app name is used here.
+    pub fn record_upload_app(&self, app: &str) {
+        let app = sanitize_label(app);
+        let mut by_app = self.uploads_by_app.lock().unwrap();
+        *by_app.entry(app).or_insert(0) += 1;
     }
 
     /// Record an upload that expired / was purged without finalizing.
@@ -144,6 +200,29 @@ impl Metrics {
             }
         }
         drop(bytes);
+
+        let _ = writeln!(
+            out,
+            "# HELP cryptify_uploads_by_app_total Total finalized uploads per client app."
+        );
+        let _ = writeln!(out, "# TYPE cryptify_uploads_by_app_total counter");
+        let by_app = self.uploads_by_app.lock().unwrap();
+        if by_app.is_empty() {
+            let _ = writeln!(
+                out,
+                "cryptify_uploads_by_app_total{{app=\"{}\"}} 0",
+                CHANNEL_UNKNOWN
+            );
+        } else {
+            for (app, count) in by_app.iter() {
+                let _ = writeln!(
+                    out,
+                    "cryptify_uploads_by_app_total{{app=\"{}\"}} {}",
+                    app, count
+                );
+            }
+        }
+        drop(by_app);
 
         let _ = writeln!(
             out,
@@ -358,6 +437,55 @@ mod tests {
         assert_eq!(sanitize_label("   "), "unknown");
         let long = "a".repeat(100);
         assert_eq!(sanitize_label(&long).len(), 32);
+    }
+
+    #[test]
+    fn parse_client_version_happy_path() {
+        let cv = parse_client_version("Outlook,1.0,pg4ol,0.0.1").unwrap();
+        assert_eq!(cv.host, "Outlook");
+        assert_eq!(cv.host_version, "1.0");
+        assert_eq!(cv.app, "pg4ol");
+        assert_eq!(cv.app_version, "0.0.1");
+    }
+
+    #[test]
+    fn parse_client_version_trims_fields() {
+        let cv = parse_client_version(" node , 22.1.0 , pg-js , 1.2.3 ").unwrap();
+        assert_eq!(cv.host, "node");
+        assert_eq!(cv.app, "pg-js");
+        assert_eq!(cv.app_version, "1.2.3");
+    }
+
+    #[test]
+    fn parse_client_version_rejects_wrong_field_count() {
+        assert!(parse_client_version("").is_none());
+        assert!(parse_client_version("a,b,c").is_none());
+        assert!(parse_client_version("a,b,c,d,e").is_none());
+    }
+
+    #[test]
+    fn record_upload_app_aggregates_and_sanitizes() {
+        let m = Metrics::new();
+        m.record_upload_app("pg-js");
+        m.record_upload_app("pg-js");
+        m.record_upload_app("pg-dotnet");
+        // Unsafe input is sanitized to the same label as the clean form.
+        m.record_upload_app("pg-js\n\"}");
+        let text = m.render();
+        assert!(text.contains("cryptify_uploads_by_app_total{app=\"pg-js\"} 3"));
+        assert!(text.contains("cryptify_uploads_by_app_total{app=\"pg-dotnet\"} 1"));
+    }
+
+    #[test]
+    fn render_preseeds_known_apps_at_zero() {
+        let m = Metrics::new();
+        let text = m.render();
+        for a in KNOWN_APPS {
+            assert!(
+                text.contains(&format!("cryptify_uploads_by_app_total{{app=\"{a}\"}} 0")),
+                "missing zero-seed for app={a} in:\n{text}"
+            );
+        }
     }
 
     #[test]
