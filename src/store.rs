@@ -99,6 +99,98 @@ struct UploadRecord {
     bytes: u64,
 }
 
+/// SQLite-backed persistence for the rolling-quota usage state.
+///
+/// The in-memory `StoreState.usage` map is only a cache: this database is
+/// the source of truth, so per-sender quota survives pod restarts and
+/// redeploys. On startup the full table is loaded back into the cache
+/// ([`UsageDb::load_all`]); every accounted upload is written through here
+/// ([`UsageDb::record`]) before the cache is updated.
+///
+/// The connection is wrapped in a `Mutex` because `rusqlite::Connection`
+/// is `Send` but not `Sync`, and `SharedState` is shared across the purge
+/// task via an `Arc`.
+struct UsageDb {
+    conn: std::sync::Mutex<rusqlite::Connection>,
+}
+
+impl UsageDb {
+    /// Open (creating if necessary) the SQLite database at `path` and ensure
+    /// the schema exists.
+    fn open(path: &str) -> rusqlite::Result<Self> {
+        let conn = rusqlite::Connection::open(path)?;
+        // WAL keeps writes from blocking the (rare) concurrent reads and
+        // survives an unclean pod kill better than the default rollback
+        // journal.
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage (
+                 email     TEXT    NOT NULL,
+                 timestamp INTEGER NOT NULL,
+                 bytes     INTEGER NOT NULL
+             )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usage_email_ts ON usage (email, timestamp)",
+            [],
+        )?;
+        Ok(UsageDb {
+            conn: std::sync::Mutex::new(conn),
+        })
+    }
+
+    /// Load every persisted record into an in-memory map, grouped by email
+    /// and ordered oldest-first so the resulting `VecDeque`s match what the
+    /// in-memory path would have built. Stale records are intentionally not
+    /// pruned here: pruning is relative to the caller-supplied `now`, which
+    /// only the request path knows.
+    fn load_all(&self) -> rusqlite::Result<HashMap<String, VecDeque<UploadRecord>>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT email, timestamp, bytes FROM usage ORDER BY timestamp ASC")?;
+        let rows = stmt.query_map([], |row| {
+            let email: String = row.get(0)?;
+            let timestamp: i64 = row.get(1)?;
+            let bytes: i64 = row.get(2)?;
+            Ok((email, timestamp, bytes))
+        })?;
+
+        let mut map: HashMap<String, VecDeque<UploadRecord>> = HashMap::new();
+        for row in rows {
+            let (email, timestamp, bytes) = row?;
+            map.entry(email).or_default().push_back(UploadRecord {
+                timestamp,
+                bytes: bytes as u64,
+            });
+        }
+        Ok(map)
+    }
+
+    /// Persist one accounted upload and drop any rows for the same email that
+    /// have fallen outside the rolling window, keeping the table bounded for
+    /// active senders. Errors are logged rather than propagated: a database
+    /// hiccup must not fail an otherwise-successful upload, and the in-memory
+    /// cache still reflects the record for the lifetime of the process.
+    fn record(&self, email: &str, bytes: u64, now: i64) {
+        let conn = self.conn.lock().unwrap();
+        if let Err(e) = conn.execute(
+            "INSERT INTO usage (email, timestamp, bytes) VALUES (?1, ?2, ?3)",
+            rusqlite::params![email, now, bytes as i64],
+        ) {
+            log::error!("Failed to persist usage record for {}: {}", email, e);
+            return;
+        }
+        let cutoff = now - ROLLING_WINDOW_SECS;
+        if let Err(e) = conn.execute(
+            "DELETE FROM usage WHERE email = ?1 AND timestamp < ?2",
+            rusqlite::params![email, cutoff],
+        ) {
+            log::error!("Failed to prune usage records for {}: {}", email, e);
+        }
+    }
+}
+
 struct StoreState {
     files: HashMap<String, Arc<rocket::tokio::sync::Mutex<FileState>>>,
     expirations: BTreeMap<(Instant, u64), String>,
@@ -115,6 +207,10 @@ struct SharedState {
     notify: Notify,
     idle_ttl: Duration,
     metrics: Arc<Metrics>,
+    /// SQLite source of truth for rolling-quota usage. `None` keeps usage in
+    /// memory only (the pre-persistence behaviour, used by unit tests and
+    /// when `usage_db` is unset in config).
+    usage_db: Option<UsageDb>,
 }
 
 pub struct Store {
@@ -127,23 +223,56 @@ impl Store {
         Self::with_idle_ttl(
             Duration::from_secs(DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS),
             metrics,
+            None,
         )
     }
 
-    pub fn with_idle_ttl(idle_ttl: Duration, metrics: Arc<Metrics>) -> Self {
+    /// Construct a store with the given idle-eviction window. When
+    /// `usage_db` is `Some(path)` the rolling-quota state is backed by a
+    /// SQLite database at that path: existing usage is loaded from disk on
+    /// startup and every accounted upload is written through, so quota
+    /// survives process restarts. A configured-but-unopenable database is a
+    /// deployment error and panics here, the same way a malformed config
+    /// does — better a loud startup failure than silently losing quota
+    /// persistence.
+    pub fn with_idle_ttl(
+        idle_ttl: Duration,
+        metrics: Arc<Metrics>,
+        usage_db: Option<&str>,
+    ) -> Self {
+        let (usage_db, usage) = match usage_db {
+            Some(path) => {
+                let db = UsageDb::open(path)
+                    .unwrap_or_else(|e| panic!("Failed to open usage database at {}: {}", path, e));
+                let usage = db.load_all().unwrap_or_else(|e| {
+                    panic!("Failed to load usage records from {}: {}", path, e)
+                });
+                let records: usize = usage.values().map(VecDeque::len).sum();
+                log::info!(
+                    "Loaded {} usage record(s) for {} sender(s) from {}",
+                    records,
+                    usage.len(),
+                    path
+                );
+                (Some(db), usage)
+            }
+            None => (None, HashMap::new()),
+        };
+
         let result = Store {
             shared: Arc::new(SharedState {
                 state: std::sync::Mutex::new(StoreState {
                     files: HashMap::new(),
                     expirations: BTreeMap::new(),
                     expiration_keys: HashMap::new(),
-                    usage: HashMap::new(),
+                    usage,
                     next_id: 0,
                     shutdown: false,
                 }),
                 notify: Notify::new(),
                 idle_ttl,
                 metrics,
+                usage_db,
             }),
         };
 
@@ -213,6 +342,12 @@ impl Store {
     }
 
     pub fn record_upload(&self, email: String, bytes: u64, now: i64) {
+        // Persist to the source of truth first so a crash between the two
+        // updates loses nothing: the cache is rebuilt from the database on
+        // the next startup anyway.
+        if let Some(db) = &self.shared.usage_db {
+            db.record(&email, bytes, now);
+        }
         let mut state = self.shared.state.lock().unwrap();
         let entry = state.usage.entry(email).or_default();
         prune_records(entry, now);
@@ -444,6 +579,139 @@ mod tests {
         assert!(s.files.is_empty());
         assert!(s.expirations.is_empty());
         assert!(s.expiration_keys.is_empty());
+    }
+
+    /// Unique temp path for a test database, cleaned up by [`TempDbPath`].
+    struct TempDbPath {
+        path: std::path::PathBuf,
+    }
+
+    impl TempDbPath {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("cryptify-usage-{}.db", uuid::Uuid::new_v4()));
+            TempDbPath { path }
+        }
+
+        fn as_str(&self) -> &str {
+            self.path.to_str().unwrap()
+        }
+    }
+
+    impl Drop for TempDbPath {
+        fn drop(&mut self) {
+            // Remove the database file and any WAL/SHM sidecars.
+            let _ = std::fs::remove_file(&self.path);
+            for ext in ["-wal", "-shm"] {
+                let mut p = self.path.clone().into_os_string();
+                p.push(ext);
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+
+    fn store_with_db(path: &str) -> Store {
+        Store::with_idle_ttl(
+            Duration::from_secs(DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS),
+            Arc::new(Metrics::new()),
+            Some(path),
+        )
+    }
+
+    #[rocket::async_test]
+    async fn usage_survives_simulated_restart() {
+        let db = TempDbPath::new();
+        let now: i64 = 2_000_000;
+
+        {
+            let store = store_with_db(db.as_str());
+            store.record_upload("a@example.com".into(), 1_000_000_000, now - 3600);
+            store.record_upload("a@example.com".into(), 2_000_000_000, now - 60);
+            store.record_upload("b@example.com".into(), 500, now - 10);
+            // store dropped here — simulates the pod going away.
+        }
+
+        // Fresh Store opening the same database file — simulates restart.
+        let store = store_with_db(db.as_str());
+        let snap = store.get_usage("a@example.com", now);
+        assert_eq!(
+            snap.used_bytes, 3_000_000_000,
+            "usage for a@ must be reloaded from the database after restart"
+        );
+        assert_eq!(
+            snap.oldest_expires_at,
+            Some(now - 3600 + ROLLING_WINDOW_SECS)
+        );
+        assert_eq!(
+            store.get_usage("b@example.com", now).used_bytes,
+            500,
+            "per-sender usage stays isolated across a restart"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn restart_continues_accumulating() {
+        let db = TempDbPath::new();
+        let now: i64 = 2_000_000;
+
+        {
+            let store = store_with_db(db.as_str());
+            store.record_upload("a@example.com".into(), 1_000, now - 100);
+        }
+
+        let store = store_with_db(db.as_str());
+        // A record made after the restart must add to the reloaded total.
+        store.record_upload("a@example.com".into(), 2_000, now);
+        assert_eq!(store.get_usage("a@example.com", now).used_bytes, 3_000);
+    }
+
+    #[rocket::async_test]
+    async fn rolling_window_eviction_persists_across_restart() {
+        let db = TempDbPath::new();
+        let now: i64 = 2_000_000;
+
+        {
+            let store = store_with_db(db.as_str());
+            // One record well outside the window, one inside.
+            store.record_upload(
+                "c@example.com".into(),
+                9_000,
+                now - ROLLING_WINDOW_SECS - 10,
+            );
+            store.record_upload("c@example.com".into(), 1_000, now - 60);
+            // A later record at `now` triggers the database-side prune of the
+            // stale row (DELETE WHERE timestamp < now - window).
+            store.record_upload("c@example.com".into(), 2_000, now);
+        }
+
+        // After restart only the two in-window records should remain — the
+        // expired one must have been evicted from the database, not just the
+        // in-memory cache.
+        let store = store_with_db(db.as_str());
+        assert_eq!(
+            store.get_usage("c@example.com", now).used_bytes,
+            3_000,
+            "stale record must not resurrect from the database after restart"
+        );
+    }
+
+    #[rocket::async_test]
+    async fn rolling_window_evicts_in_memory_after_reload() {
+        let db = TempDbPath::new();
+        let now: i64 = 2_000_000;
+
+        {
+            let store = store_with_db(db.as_str());
+            // Record that is in-window now but will fall out by `later`.
+            store.record_upload("d@example.com".into(), 4_000, now);
+        }
+
+        let store = store_with_db(db.as_str());
+        // Immediately after reload the record counts.
+        assert_eq!(store.get_usage("d@example.com", now).used_bytes, 4_000);
+        // Far in the future it has rolled out of the window.
+        let later = now + ROLLING_WINDOW_SECS + 1;
+        assert_eq!(store.get_usage("d@example.com", later).used_bytes, 0);
     }
 
     #[rocket::async_test]

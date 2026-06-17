@@ -32,6 +32,7 @@ url = "2.5.7"
 tokio-util = { version = "0.7.17", features = ["compat"] }
 pg-core = { version = "0.6.1", features = ["rust", "stream"] }
 minreq = { version = "2.14.1", features = ["json-using-serde", "https-native"]}
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 
 [dev-dependencies]
 # Enables `pg_core::test::TestSetup` for building real verifying keys and
