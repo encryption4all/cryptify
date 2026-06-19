@@ -8,4 +8,4 @@ smtp_port = 1025
 # smtp_username = "user"
 # smtp_password = "pw"
 allowed_origins = "^https://postguard.(eu|nl)$"
-pkg_url = "https://postguard-main.cs.ru.nl/pkg" 
+pkg_url = "https://pkg.postguard.eu/"
