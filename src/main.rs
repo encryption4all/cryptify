@@ -137,8 +137,51 @@ fn health() -> &'static str {
     "OK"
 }
 
+/// Request guard protecting `/metrics`. When `metrics_token` is configured,
+/// the endpoint requires `Authorization: Bearer <token>` (constant-time
+/// compared); otherwise it stays open (a startup warning is logged). This
+/// auth lives in the app rather than the ingress so the protection travels
+/// with cryptify to every deployment, including external hosts we can't
+/// firewall.
+struct MetricsAuth;
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for MetricsAuth {
+    type Error = ();
+    async fn from_request(request: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
+        let expected = request
+            .rocket()
+            .state::<CryptifyConfig>()
+            .and_then(CryptifyConfig::metrics_token);
+
+        // No token configured → metrics is open (warned about at startup).
+        let Some(expected) = expected else {
+            return rocket::request::Outcome::Success(MetricsAuth);
+        };
+
+        let presented = request
+            .headers()
+            .get_one("Authorization")
+            .and_then(|h| {
+                h.strip_prefix("Bearer ")
+                    .or_else(|| h.strip_prefix("bearer "))
+            })
+            .map(str::trim);
+
+        match presented {
+            Some(token) if constant_time_eq(token, expected) => {
+                rocket::request::Outcome::Success(MetricsAuth)
+            }
+            _ => rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, ())),
+        }
+    }
+}
+
 #[get("/metrics")]
-fn metrics_endpoint(metrics: &State<Arc<Metrics>>) -> rocket::response::content::RawText<String> {
+fn metrics_endpoint(
+    _auth: MetricsAuth,
+    metrics: &State<Arc<Metrics>>,
+) -> rocket::response::content::RawText<String> {
     rocket::response::content::RawText(metrics.render())
 }
 
@@ -888,11 +931,11 @@ struct UploadStatusResponse {
     prev_offset: Option<u64>,
 }
 
-/// Constant-time compare of the recovery token. Hex-encoded equal-length
-/// strings, but `subtle::ConstantTimeEq` makes the timing independent of
-/// where the bytes start to differ — defeats timing oracles even though
-/// 32 bytes of high-entropy random aren't realistically guessable.
-fn recovery_tokens_match(presented: &str, expected: &str) -> bool {
+/// Constant-time string equality. `subtle::ConstantTimeEq` makes the timing
+/// independent of where the bytes start to differ — defeats timing oracles
+/// on secret comparisons. Used for the recovery token and the `/metrics`
+/// bearer token. A length difference returns early (lengths aren't secret).
+fn constant_time_eq(presented: &str, expected: &str) -> bool {
     use subtle::ConstantTimeEq;
     if presented.len() != expected.len() {
         return false;
@@ -918,7 +961,7 @@ async fn upload_status(
         .ok_or_else(|| Error::upload_session_not_found(uuid, "expired_or_unknown"))?;
     let state = state.lock().await;
 
-    if !recovery_tokens_match(&recovery_token.0, &state.recovery_token) {
+    if !constant_time_eq(&recovery_token.0, &state.recovery_token) {
         // Same body shape as evicted/unknown so the response doesn't leak
         // session existence to a token-guessing attacker.
         return Err(Error::upload_session_not_found(uuid, "expired_or_unknown"));
@@ -1317,6 +1360,13 @@ async fn rocket() -> _ {
     let config = figment
         .extract::<CryptifyConfig>()
         .expect("Missing configuration");
+
+    if config.metrics_token().is_none() {
+        log::warn!(
+            "metrics_token is not set — /metrics is publicly accessible without authentication. \
+             Set `metrics_token` in config (or ROCKET_METRICS_TOKEN) to require a Bearer token."
+        );
+    }
 
     let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
     let response = minreq::get(&pkg_params_url)
@@ -1780,16 +1830,16 @@ mod tests {
     }
 
     #[rocket::async_test]
-    async fn recovery_tokens_match_constant_time_helper() {
+    async fn constant_time_eq_helper() {
         // The function under test is the constant-time wrapper itself —
         // we can't observe timing in a unit test, but we can pin the
         // value-equality semantics so a future refactor doesn't silently
         // turn it into `presented == expected`.
-        assert!(recovery_tokens_match("abc123", "abc123"));
-        assert!(!recovery_tokens_match("abc123", "abc124"));
-        assert!(!recovery_tokens_match("abc123", "abc12")); // length mismatch
-        assert!(!recovery_tokens_match("", "abc"));
-        assert!(recovery_tokens_match("", ""));
+        assert!(constant_time_eq("abc123", "abc123"));
+        assert!(!constant_time_eq("abc123", "abc124"));
+        assert!(!constant_time_eq("abc123", "abc12")); // length mismatch
+        assert!(!constant_time_eq("", "abc"));
+        assert!(constant_time_eq("", ""));
     }
 
     // Browser preflight regression: design AC for #146 explicitly required
@@ -2724,6 +2774,66 @@ mod integration {
         );
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // Minimal Rocket exposing only /metrics, with the given config managed so
+    // the MetricsAuth guard can read `metrics_token`. Avoids needing a real
+    // VerifyingKey / TestSetup.
+    fn metrics_only_config(with_token: bool) -> CryptifyConfig {
+        let (figment, _dir) = test_figment();
+        let figment = if with_token {
+            figment.merge(("metrics_token", "s3cret"))
+        } else {
+            figment
+        };
+        figment.extract::<CryptifyConfig>().expect("extract config")
+    }
+
+    async fn metrics_only_client(config: CryptifyConfig) -> Client {
+        let rocket = rocket::build()
+            .mount("/", routes![metrics_endpoint])
+            .manage(config)
+            .manage(std::sync::Arc::new(Metrics::new()));
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    #[rocket::async_test]
+    async fn metrics_requires_bearer_when_token_configured() {
+        let client = metrics_only_client(metrics_only_config(true)).await;
+
+        // No Authorization header → 401.
+        assert_eq!(
+            client.get("/metrics").dispatch().await.status(),
+            Status::Unauthorized
+        );
+        // Wrong token → 401.
+        assert_eq!(
+            client
+                .get("/metrics")
+                .header(Header::new("Authorization", "Bearer wrong"))
+                .dispatch()
+                .await
+                .status(),
+            Status::Unauthorized
+        );
+        // Correct token → 200 with the metrics body.
+        let ok = client
+            .get("/metrics")
+            .header(Header::new("Authorization", "Bearer s3cret"))
+            .dispatch()
+            .await;
+        assert_eq!(ok.status(), Status::Ok);
+        assert!(ok
+            .into_string()
+            .await
+            .unwrap_or_default()
+            .contains("cryptify_uploads_total"));
+    }
+
+    #[rocket::async_test]
+    async fn metrics_open_when_token_unset() {
+        let client = metrics_only_client(metrics_only_config(false)).await;
+        assert_eq!(client.get("/metrics").dispatch().await.status(), Status::Ok);
     }
 
     #[rocket::async_test]
