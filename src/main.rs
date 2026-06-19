@@ -10,7 +10,10 @@ use std::time::Duration;
 use crate::config::CryptifyConfig;
 use crate::email::{render_confirmation_email, render_recipient_email, send_email, RenderedEmail};
 use crate::error::{Error, PayloadTooLargeBody};
-use crate::metrics::{detect_channel, storage_sampler, Metrics};
+use crate::metrics::{
+    detect_channel, parse_client_version, storage_sampler, Metrics, CHANNEL_UNKNOWN,
+    CLIENT_VERSION_HEADER,
+};
 use crate::store::{
     API_KEY_PER_UPLOAD_LIMIT, API_KEY_ROLLING_LIMIT, PER_UPLOAD_LIMIT, ROLLING_LIMIT,
     ROLLING_WINDOW_SECS,
@@ -97,6 +100,13 @@ struct InitResponder {
 /// headers for metrics labelling.
 struct ClientHeaders {
     channel: String,
+    /// Raw `X-POSTGUARD-CLIENT-VERSION` value (`host,host_version,app,app_version`),
+    /// kept verbatim for logging so exact client versions are greppable.
+    client_version: Option<String>,
+    /// The `app` field of the client-version header, used as the
+    /// `cryptify_uploads_by_app_total` metric label. `None` when the header
+    /// is absent or malformed.
+    client_app: Option<String>,
 }
 
 #[rocket::async_trait]
@@ -106,8 +116,18 @@ impl<'r> FromRequest<'r> for ClientHeaders {
     async fn from_request(
         request: &'r rocket::Request<'_>,
     ) -> rocket::request::Outcome<Self, Self::Error> {
+        let client_version = request
+            .headers()
+            .get_one(CLIENT_VERSION_HEADER)
+            .map(str::to_string);
+        let client_app = client_version
+            .as_deref()
+            .and_then(parse_client_version)
+            .map(|cv| cv.app);
         rocket::request::Outcome::Success(ClientHeaders {
             channel: detect_channel(request.headers()),
+            client_version,
+            client_app,
         })
     }
 }
@@ -305,6 +325,13 @@ async fn upload_init(
     let init_cryptify_token = bytes_to_hex(&rand::random::<[u8; 32]>());
     let recovery_token = bytes_to_hex(&rand::random::<[u8; 32]>());
 
+    log::info!(
+        "upload_init uuid={} channel={} client_version={:?}",
+        uuid,
+        client_headers.channel,
+        client_headers.client_version
+    );
+
     store.create(
         uuid.clone(),
         FileState {
@@ -318,6 +345,8 @@ async fn upload_init(
             sender_attributes: Vec::new(),
             confirm: request.confirm,
             source_channel: client_headers.channel,
+            client_version: client_headers.client_version,
+            client_app: client_headers.client_app,
             notify_recipients: request.notify_recipients,
             api_key_tenant: api_key.tenant,
             api_key_validation_failed: api_key.validation_failed,
@@ -824,6 +853,16 @@ async fn upload_finalize(
     })?;
 
     metrics.record_upload(&state.source_channel, state.uploaded);
+    metrics.record_upload_app(state.client_app.as_deref().unwrap_or(CHANNEL_UNKNOWN));
+
+    log::info!(
+        "upload_finalize uuid={} channel={} client_version={:?} app={:?} bytes={}",
+        uuid,
+        state.source_channel,
+        state.client_version,
+        state.client_app,
+        state.uploaded
+    );
 
     if let Some(key) = accounting_key {
         store.record_upload(key, state.uploaded, now_secs);
@@ -1227,6 +1266,10 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
             "CryptifyToken",
             "Range",
             "X-Recovery-Token",
+            // Browser clients (pg-js) send this on every request; without it
+            // in the preflight allowlist the browser blocks cross-origin
+            // uploads. Captured for the per-app upload metric + logs.
+            "X-POSTGUARD-CLIENT-VERSION",
         ]))
         .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
         .max_age(Some(86400))
@@ -1891,6 +1934,8 @@ mod tests {
             sender_attributes: Vec::new(),
             confirm: false,
             source_channel: String::new(),
+            client_version: None,
+            client_app: None,
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,
@@ -2382,6 +2427,8 @@ mod tests {
                 sender_attributes: Vec::new(),
                 confirm: true,
                 source_channel: String::new(),
+                client_version: None,
+                client_app: None,
                 notify_recipients: true,
                 api_key_tenant: None,
                 api_key_validation_failed: false,
@@ -2620,6 +2667,61 @@ mod integration {
 
         let final_status = do_finalize(&client, &uuid, &token, sealed.len() as u64).await;
         assert_eq!(final_status, Status::Ok);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn upload_records_client_app_metric() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let sealed = seal_payload(&setup, b"hello metric test").await;
+
+        let (client, dir) = test_client(&setup).await;
+
+        // Init carrying a client-version header whose `app` field is pg-js.
+        let res = client
+            .post("/fileupload/init")
+            .header(ContentType::JSON)
+            .header(Header::new(
+                "X-POSTGUARD-CLIENT-VERSION",
+                "node,22.1.0,pg-js,1.2.3",
+            ))
+            .body(init_body_json(SENDER_EMAIL))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+        let mut token = res
+            .headers()
+            .get_one("cryptifytoken")
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let body = res.into_string().await.unwrap_or_default();
+        let uuid = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("uuid").and_then(|u| u.as_str().map(String::from)))
+            .unwrap_or_default();
+        assert!(!uuid.is_empty());
+
+        let (chunk_status, next) = do_chunk(&client, &uuid, &token, &sealed, 0).await;
+        assert_eq!(chunk_status, Status::Ok);
+        token = next;
+
+        let final_status = do_finalize(&client, &uuid, &token, sealed.len() as u64).await;
+        assert_eq!(final_status, Status::Ok);
+
+        // The finalized upload is attributed to app="pg-js".
+        let metrics = client
+            .get("/metrics")
+            .dispatch()
+            .await
+            .into_string()
+            .await
+            .unwrap_or_default();
+        assert!(
+            metrics.contains("cryptify_uploads_by_app_total{app=\"pg-js\"} 1"),
+            "expected pg-js app counter in metrics:\n{metrics}"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
