@@ -1368,7 +1368,10 @@ async fn rocket() -> _ {
         );
     }
 
-    let pkg_params_url = format!("{}/v2/sign/parameters", config.pkg_url());
+    let pkg_params_url = format!(
+        "{}/v2/sign/parameters",
+        config.pkg_url().trim_end_matches('/')
+    );
     let response = minreq::get(&pkg_params_url)
         .with_timeout(10)
         .send()
