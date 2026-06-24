@@ -1250,7 +1250,7 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
         .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Put]
+            vec![Method::Get, Method::Post, Method::Put, Method::Delete]
                 .into_iter()
                 .map(From::from)
                 .collect(),
@@ -2576,6 +2576,112 @@ mod integration {
         let rocket = build_rocket(figment, vk);
         let client = Client::tracked(rocket).await.expect("valid rocket");
         (client, dir)
+    }
+
+    /// Boot Rocket like [`test_client`] but with a caller-supplied
+    /// `allowed_origins` regex, so CORS-preflight behaviour can be exercised
+    /// against the exact regex shipped in `conf/config.toml`.
+    async fn cors_client(setup: &TestSetup, allowed_origins: &str) -> (Client, std::path::PathBuf) {
+        let (figment, dir) = test_figment();
+        let figment = figment.merge(("allowed_origins", allowed_origins.to_string()));
+        let vk = Parameters {
+            format_version: 0,
+            public_key: VerifyingKey(setup.ibs_pk.0.clone()),
+        };
+        let rocket = build_rocket(figment, vk);
+        let client = Client::tracked(rocket).await.expect("valid rocket");
+        (client, dir)
+    }
+
+    // A copy of the production CORS regex from `conf/config.toml`, used to
+    // assert the preflight shape (allowed origins, methods, headers) of the
+    // regex we actually ship for the Office add-in (encryption4all/postguard#154).
+    // This is a hand-maintained copy — the tests do NOT read `conf/config.toml`,
+    // so keep the two in sync when either changes.
+    const PROD_ALLOWED_ORIGINS: &str =
+        r"^https://(postguard\.(eu|nl)|addin\.postguard\.eu|localhost:3000)$";
+
+    #[rocket::async_test]
+    async fn cors_preflight_allows_addin_and_localhost_origins() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = cors_client(&setup, PROD_ALLOWED_ORIGINS).await;
+
+        for origin in ["https://addin.postguard.eu", "https://localhost:3000"] {
+            let res = client
+                .req(rocket::http::Method::Options, "/fileupload/init")
+                .header(Header::new("Origin", origin))
+                .header(Header::new("Access-Control-Request-Method", "POST"))
+                .header(Header::new(
+                    "Access-Control-Request-Headers",
+                    "Content-Type, Authorization",
+                ))
+                .dispatch()
+                .await;
+
+            // rocket_cors answers a valid preflight with a 2xx.
+            assert!(
+                res.status().code < 400,
+                "preflight from {origin} should succeed, got {}",
+                res.status()
+            );
+            assert_eq!(
+                res.headers().get_one("Access-Control-Allow-Origin"),
+                Some(origin),
+                "Allow-Origin should echo {origin}"
+            );
+
+            let allow_methods = res
+                .headers()
+                .get_one("Access-Control-Allow-Methods")
+                .expect("Allow-Methods in preflight")
+                .to_ascii_uppercase();
+            for m in ["GET", "POST", "PUT", "DELETE"] {
+                assert!(
+                    allow_methods.contains(m),
+                    "Allow-Methods `{allow_methods}` should include {m}"
+                );
+            }
+
+            let allow_headers = res
+                .headers()
+                .get_one("Access-Control-Allow-Headers")
+                .expect("Allow-Headers in preflight")
+                .to_ascii_lowercase();
+            for h in ["content-type", "authorization"] {
+                assert!(
+                    allow_headers.contains(h),
+                    "Allow-Headers `{allow_headers}` should include {h}"
+                );
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[rocket::async_test]
+    async fn cors_preflight_rejects_unlisted_origin() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = cors_client(&setup, PROD_ALLOWED_ORIGINS).await;
+
+        let res = client
+            .req(rocket::http::Method::Options, "/fileupload/init")
+            .header(Header::new("Origin", "https://evil.example.com"))
+            .header(Header::new("Access-Control-Request-Method", "POST"))
+            .dispatch()
+            .await;
+
+        // A non-matching origin must not be granted access: rocket_cors omits
+        // the Allow-Origin header entirely for a rejected preflight.
+        assert!(
+            res.headers()
+                .get_one("Access-Control-Allow-Origin")
+                .is_none(),
+            "unlisted origin must not receive an Access-Control-Allow-Origin header"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn init_body_json(recipient: &str) -> String {
