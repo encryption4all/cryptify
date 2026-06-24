@@ -16,6 +16,7 @@ pub struct RawCryptifyConfig {
     chunk_size: Option<u64>,
     session_ttl_secs: Option<u64>,
     staging_mode: Option<bool>,
+    metrics_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +36,7 @@ pub struct CryptifyConfig {
     chunk_size: u64,
     session_ttl_secs: u64,
     staging_mode: bool,
+    metrics_token: Option<String>,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -57,6 +59,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             chunk_size: config.chunk_size.unwrap_or(5_000_000),
             session_ttl_secs: config.session_ttl_secs.unwrap_or(3600),
             staging_mode: config.staging_mode.unwrap_or(false),
+            metrics_token: config.metrics_token,
         }
     }
 }
@@ -118,6 +121,13 @@ impl CryptifyConfig {
         self.staging_mode
     }
 
+    /// Bearer token required to scrape `/metrics`. `None` leaves the endpoint
+    /// open (with a startup warning); when set, requests must present
+    /// `Authorization: Bearer <token>`.
+    pub fn metrics_token(&self) -> Option<&str> {
+        self.metrics_token.as_deref()
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(server_url: &str, staging_mode: bool) -> Self {
         CryptifyConfig {
@@ -135,6 +145,7 @@ impl CryptifyConfig {
             chunk_size: 5_000_000,
             session_ttl_secs: 3600,
             staging_mode,
+            metrics_token: None,
         }
     }
 }

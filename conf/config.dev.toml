@@ -15,5 +15,8 @@ usage_db = "/app/data/usage.db"
 # pkg_url = "https://pkg.staging.yivi.app"
 pkg_url = "http://postguard-pkg:8087"
 chunk_size = 5000000
+# Leave unset in dev so /metrics is freely scrapable. In prod set this (or the
+# ROCKET_METRICS_TOKEN env var) so /metrics requires `Authorization: Bearer <token>`.
+# metrics_token = "dev-token"
 # When true, finalize logs the email it WOULD have sent and skips SMTP.
 # staging_mode = true

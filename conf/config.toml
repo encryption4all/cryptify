@@ -12,3 +12,7 @@ smtp_port = 1025
 # add-in (prod); `localhost:3000` is the Office add-in dev server.
 allowed_origins = "^https://(postguard\\.(eu|nl)|addin\\.postguard\\.eu|localhost:3000)$"
 pkg_url = "https://pkg.postguard.eu/"
+# Bearer token required to scrape /metrics. Prefer injecting it as a secret
+# via the ROCKET_METRICS_TOKEN env var rather than committing it here. When
+# unset, /metrics is publicly accessible (a startup warning is logged).
+# metrics_token = "change-me"
