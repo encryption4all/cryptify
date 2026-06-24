@@ -17,6 +17,8 @@ tags:
   description: "Download files"
 - name: "Usage"
   description: "Upload usage quotas"
+- name: "Email template"
+  description: "Email template linked to an API key"
 paths:
   /health:
     get:
@@ -410,6 +412,44 @@ paths:
                       falls out of the rolling window, partially freeing quota.
                       Null if the sender has no recorded uploads."
 
+  /email-template:
+    get:
+      tags:
+      - "Email template"
+      summary: "Get the email template linked to an API key"
+      description:
+        "Returns the email template pg-pkg has linked to the caller's API key.
+        The key is validated through the same flow the upload endpoints use:
+        send it in an `Authorization: Bearer PG-…` header. Unlike the upload
+        endpoints, a missing or invalid key is rejected here rather than
+        degraded to the default tier."
+      operationId: "getEmailTemplate"
+      security:
+      - apiKeyBearer: []
+      responses:
+        "200":
+          description: "The email template linked to the validated API key."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                  - tenant_id
+                  - email_template
+                properties:
+                  tenant_id:
+                    type: "string"
+                    description: "Tenant the API key resolved to on pg-pkg."
+                  email_template:
+                    type: "string"
+                    description: "The email template linked to the API key."
+        "401":
+          description: "No valid `PG-…` API key was presented."
+        "404":
+          description: "The API key is valid but has no email template configured."
+        "503":
+          description: "pg-pkg was unreachable while validating the API key."
+
   /filedownload/{uuid}:
     get:
       tags:
@@ -445,6 +485,13 @@ paths:
           description: "Uploaded file does not exist."
 
 components:
+  securitySchemes:
+    apiKeyBearer:
+      type: "http"
+      scheme: "bearer"
+      description:
+        "PostGuard API key, sent as `Authorization: Bearer PG-…`. Validated
+        against pg-pkg's `/v2/api-key/validate` endpoint."
   schemas:
     PayloadTooLarge:
       type: "object"
