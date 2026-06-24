@@ -2593,10 +2593,11 @@ mod integration {
         (client, dir)
     }
 
-    // The production CORS regex shipped in `conf/config.toml`. Keeping a copy
-    // here means a typo in the config — or a regression that drops one of the
-    // browser origins — fails the test suite instead of silently breaking the
-    // Office add-in (encryption4all/postguard#154).
+    // A copy of the production CORS regex from `conf/config.toml`, used to
+    // assert the preflight shape (allowed origins, methods, headers) of the
+    // regex we actually ship for the Office add-in (encryption4all/postguard#154).
+    // This is a hand-maintained copy — the tests do NOT read `conf/config.toml`,
+    // so keep the two in sync when either changes.
     const PROD_ALLOWED_ORIGINS: &str =
         r"^https://(postguard\.(eu|nl)|addin\.postguard\.eu|localhost:3000)$";
 
