@@ -300,6 +300,47 @@ impl<'r> FromRequest<'r> for ApiKey {
     }
 }
 
+/// Request guard for routes that require a *validated* pg-pkg API key.
+///
+/// Unlike [`ApiKey`], whose `FromRequest` always succeeds (degrading callers
+/// without a valid key to the anonymous "default tier"), this guard **fails**
+/// the request when no valid credentials are presented:
+/// - `NoCredentials` / `Rejected` → `401 Unauthorized`
+/// - `PkgUnreachable` → `503 Service Unavailable` (we cannot confirm the key)
+///
+/// A route carrying this guard is therefore authenticated by construction —
+/// the "authenticated" intent is enforced by the type system rather than by a
+/// guard that always succeeds and leaves the check to the handler.
+struct ValidatedApiKey {
+    tenant: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ValidatedApiKey {
+    type Error = ();
+    async fn from_request(req: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
+        let header = req.headers().get_one("Authorization");
+        let Some(client) = req.rocket().state::<PkgClient>() else {
+            log::error!("PkgClient missing from Rocket state — rejecting authenticated request");
+            return rocket::request::Outcome::Error((rocket::http::Status::ServiceUnavailable, ()));
+        };
+        match client.validate(header).await {
+            ValidationOutcome::Validated(tenant) => {
+                rocket::request::Outcome::Success(ValidatedApiKey { tenant })
+            }
+            ValidationOutcome::NoCredentials | ValidationOutcome::Rejected => {
+                rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, ()))
+            }
+            ValidationOutcome::PkgUnreachable => {
+                log::warn!(
+                    "pg-pkg unreachable during API-key validation on an authenticated route; returning 503"
+                );
+                rocket::request::Outcome::Error((rocket::http::Status::ServiceUnavailable, ()))
+            }
+        }
+    }
+}
+
 #[post("/fileupload/init", data = "<request>")]
 async fn upload_init(
     config: &State<CryptifyConfig>,
@@ -495,8 +536,22 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
 /// message can't drift silently between call sites.
 const TOKEN_MISMATCH_MSG: &str = "Cryptify Token header does not match";
 
+/// Constant-time compare of a presented `CryptifyToken` against the expected
+/// value. Both are hex-encoded SHA-256 strings; `subtle::ConstantTimeEq` keeps
+/// the timing independent of where the bytes first differ, mirroring
+/// `recovery_tokens_match`. A network timing oracle against these 256-bit
+/// high-entropy tokens is impractical, but we compare them in constant time
+/// for consistency with the recovery-token path.
+fn cryptify_tokens_match(presented: &str, expected: &str) -> bool {
+    use subtle::ConstantTimeEq;
+    if presented.len() != expected.len() {
+        return false;
+    }
+    presented.as_bytes().ct_eq(expected.as_bytes()).into()
+}
+
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
-    if header != expected {
+    if !cryptify_tokens_match(header, expected) {
         return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
     }
     Ok(())
@@ -548,9 +603,11 @@ async fn upload_chunk(
     // `classify_chunk_request` — we only commit to reading the body when
     // the request looks like either a normal next chunk or a candidate
     // replay of the last committed chunk.
-    let is_normal_next = state.uploaded == start && headers.cryptify_token == state.cryptify_token;
+    let is_normal_next = state.uploaded == start
+        && cryptify_tokens_match(&headers.cryptify_token, &state.cryptify_token);
     let is_replay_candidate = state.last_chunk.as_ref().is_some_and(|last| {
-        last.prev_uploaded == start && headers.cryptify_token == last.prev_token
+        last.prev_uploaded == start
+            && cryptify_tokens_match(&headers.cryptify_token, &last.prev_token)
     });
     if !is_normal_next && !is_replay_candidate {
         if state.uploaded != start {
@@ -672,12 +729,12 @@ fn classify_chunk_request(
     start: u64,
     body: &[u8],
 ) -> ChunkClassification {
-    if state.uploaded == start && request_token == state.cryptify_token {
+    if state.uploaded == start && cryptify_tokens_match(request_token, &state.cryptify_token) {
         return ChunkClassification::NormalNext;
     }
 
     if let Some(last) = state.last_chunk.as_ref() {
-        if request_token == last.prev_token && start == last.prev_uploaded {
+        if cryptify_tokens_match(request_token, &last.prev_token) && start == last.prev_uploaded {
             // Recompute the rolling hash over the incoming body. Identity
             // is implicit in the rolling-token construction itself: if the
             // hash matches `response_token`, the body is byte-identical to
@@ -981,30 +1038,31 @@ struct UsageResponse {
 }
 
 #[get("/usage?<email>")]
-fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResponse> {
-    let (rolling_limit, per_upload_limit) = if api_key.tenant.is_some() {
-        (API_KEY_ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT)
-    } else {
-        (ROLLING_LIMIT, PER_UPLOAD_LIMIT)
-    };
+fn usage(
+    store: &State<Store>,
+    api_key: ValidatedApiKey,
+    email: Option<String>,
+) -> Json<UsageResponse> {
     let now = chrono::offset::Utc::now().timestamp();
-    // For API-key callers the rolling window is accounted per tenant, not
-    // per sender email — query the same key the finalize path records under.
-    let lookup_key = match api_key.tenant.as_deref() {
-        Some(tenant) => format!("api-key:{}", tenant),
-        None => email.clone(),
-    };
+    // Usage is accounted per validated tenant, keyed by the tenant proven via
+    // the `Authorization` header — never by a caller-supplied email. The
+    // `ValidatedApiKey` guard has already rejected any unauthenticated caller
+    // with 401, so there is no way to query usage for an arbitrary address and
+    // hence no user-enumeration / activity-monitoring oracle. The `email`
+    // query parameter is retained only so the response can echo it back for
+    // frontends; it does not influence the lookup.
+    let lookup_key = format!("api-key:{}", api_key.tenant);
     let usage = store.get_usage(&lookup_key, now);
     let resets_at = usage
         .oldest_expires_at
         .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
         .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     Json(UsageResponse {
-        email,
+        email: email.unwrap_or_default(),
         used_bytes: usage.used_bytes,
-        limit_bytes: rolling_limit,
+        limit_bytes: API_KEY_ROLLING_LIMIT,
         window_days: (ROLLING_WINDOW_SECS / 86_400) as u64,
-        per_upload_limit_bytes: per_upload_limit,
+        per_upload_limit_bytes: API_KEY_PER_UPLOAD_LIMIT,
         resets_at,
     })
 }
@@ -1483,6 +1541,44 @@ mod tests {
         assert_ne!(
             compute_hash(b"token-a", b"data"),
             compute_hash(b"token-b", b"data")
+        );
+    }
+
+    #[test]
+    fn cryptify_tokens_match_accepts_equal_and_rejects_different() {
+        assert!(cryptify_tokens_match("abc123", "abc123"));
+        assert!(!cryptify_tokens_match("abc123", "abc124"));
+        // Differing lengths must not match (and must not panic).
+        assert!(!cryptify_tokens_match("abc", "abc123"));
+        assert!(!cryptify_tokens_match("", "abc"));
+    }
+
+    // Mounts only the `/usage` route with the state its guard depends on
+    // (`Store` + `PkgClient`). The `PkgClient` url is never contacted for the
+    // unauthenticated case: `PkgClient::validate(None)` short-circuits to
+    // `NoCredentials` before any network call.
+    async fn usage_client() -> Client {
+        let rocket = rocket::build()
+            .mount("/", routes![usage])
+            .manage(Store::new(Arc::new(Metrics::new())))
+            .manage(PkgClient::new("http://localhost:1".to_string()));
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    // Regression test for GHSA-5rhx-xgvv-h78h: an unauthenticated caller (no
+    // `Authorization: Bearer PG-…` header) must be rejected with 401 rather
+    // than served usage for an arbitrary, caller-supplied email address.
+    #[rocket::async_test]
+    async fn usage_rejects_unauthenticated_request() {
+        let client = usage_client().await;
+        let res = client
+            .get("/usage?email=alice@example.com")
+            .dispatch()
+            .await;
+        assert_eq!(
+            res.status(),
+            Status::Unauthorized,
+            "unauthenticated /usage must be 401, not a usage oracle for an arbitrary email"
         );
     }
 
