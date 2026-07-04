@@ -495,6 +495,13 @@ fn compute_hash(cryptify_token: &[u8], data: &[u8]) -> String {
 /// message can't drift silently between call sites.
 const TOKEN_MISMATCH_MSG: &str = "Cryptify Token header does not match";
 
+/// Caller-facing body for 5xx (`InternalServerError` / `ServiceUnavailable`)
+/// responses. Detailed diagnostics are written server-side via `log::error!`
+/// rather than returned to HTTP clients, so operators keep observability
+/// without leaking internal implementation details to callers
+/// (GHSA-r95f-qf3j-xccw).
+const GENERIC_INTERNAL_ERROR_MSG: &str = "an internal error occurred";
+
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
     if header != expected {
         return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
@@ -598,8 +605,11 @@ async fn upload_chunk(
         // client knows the higher tier *might* have applied if pg-pkg had
         // been reachable. Within-default uploads keep flowing as today.
         if state.api_key_validation_failed {
+            log::error!(
+                "pg-pkg was unreachable while validating the API key; cannot apply the higher upload tier"
+            );
             return Err(Error::ServiceUnavailable(Some(
-                "pg-pkg was unreachable while validating the API key; cannot apply the higher upload tier".to_owned(),
+                GENERIC_INTERNAL_ERROR_MSG.to_owned(),
             )));
         }
         return Err(Error::PayloadTooLarge(PayloadTooLargeBody {
@@ -625,11 +635,15 @@ async fn upload_chunk(
 
     file.seek(std::io::SeekFrom::Start(start))
         .await
-        .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+        .map_err(|e| {
+            log::error!("could not seek in upload file: {}", e);
+            Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
+        })?;
 
-    file.write_all(&body)
-        .await
-        .map_err(|_| Error::InternalServerError(Some("Could not write file".to_owned())))?;
+    file.write_all(&body).await.map_err(|e| {
+        log::error!("could not write chunk to upload file: {}", e);
+        Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
+    })?;
 
     let prev_token = headers.cryptify_token;
     let shasum = compute_hash(prev_token.as_bytes(), &body);
@@ -771,21 +785,28 @@ async fn upload_finalize(
 
     let mut file = File::open(Path::new(config.data_dir()).join(uuid))
         .await
-        .map_err(|_| Error::InternalServerError(Some("could not open file".to_string())))?
+        .map_err(|e| {
+            log::error!("could not open upload file for finalize: {}", e);
+            Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
+        })?
         .compat();
 
     let attributes = Unsealer::<_, UnsealerStreamConfig>::new(&mut file, &vk.public_key)
         .await
-        .map_err(|_| Error::InternalServerError(Some("couldn't read postguard file".to_string())))?
+        .map_err(|e| {
+            log::error!("could not read postguard file during finalize: {}", e);
+            Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
+        })?
         .pub_id
         .con;
 
     let sender = attributes
         .iter()
         .find(|x| x.atype == "pbdf.sidn-pbdf.email.email")
-        .ok_or(Error::InternalServerError(Some(
-            "no email attribute".to_string(),
-        )))?
+        .ok_or_else(|| {
+            log::error!("finalized upload has no email attribute in postguard metadata");
+            Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
+        })?
         .value
         .clone();
 
@@ -848,8 +869,8 @@ async fn upload_finalize(
     state.sender_attributes = sender_attributes;
 
     send_email(config, &state, uuid).await.map_err(|e| {
-        log::error!("{}", e);
-        Error::InternalServerError(Some("could not send email".to_owned()))
+        log::error!("could not send notification email: {}", e);
+        Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
     })?;
 
     metrics.record_upload(&state.source_channel, state.uploaded);
@@ -2776,6 +2797,46 @@ mod integration {
 
         let final_status = do_finalize(&client, &uuid, &token, sealed.len() as u64).await;
         assert_eq!(final_status, Status::Ok);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Finalizing a session whose bytes are not a valid postguard stream makes
+    /// the `Unsealer` fail, driving `upload_finalize` down its 500 path. The
+    /// response body must carry only the generic message — never the internal
+    /// diagnostic detail, which now goes to the server log (GHSA-r95f-qf3j-xccw).
+    #[rocket::async_test]
+    async fn finalize_internal_error_body_is_generic() {
+        let mut rng = rand08::thread_rng();
+        let setup = TestSetup::new(&mut rng);
+        let (client, dir) = test_client(&setup).await;
+
+        // Upload arbitrary bytes: the chunk path only advances the rolling
+        // token, it does not validate the postguard framing.
+        let garbage = b"this is not a postguard sealed stream";
+        let (uuid, token, status) = do_init(&client, SENDER_EMAIL).await;
+        assert_eq!(status, Status::Ok);
+        let (chunk_status, next) = do_chunk(&client, &uuid, &token, garbage, 0).await;
+        assert_eq!(chunk_status, Status::Ok);
+
+        let res = client
+            .post(format!("/fileupload/finalize/{}", uuid))
+            .header(Header::new("CryptifyToken", next))
+            .header(Header::new(
+                "Content-Range",
+                format!("bytes */{}", garbage.len()),
+            ))
+            .dispatch()
+            .await;
+
+        assert_eq!(res.status(), Status::InternalServerError);
+        let body = res.into_string().await.unwrap_or_default();
+        assert_eq!(body, GENERIC_INTERNAL_ERROR_MSG);
+        // Guard against re-introducing the old leaky diagnostics.
+        assert!(
+            !body.contains("postguard") && !body.contains("file"),
+            "500 body must not leak internal detail, got: {body}"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
