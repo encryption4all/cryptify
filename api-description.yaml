@@ -355,23 +355,37 @@ paths:
     get:
       tags:
       - "Usage"
-      summary: "Get rolling upload usage for a sender email"
+      summary: "Get rolling upload usage for the authenticated tenant"
       description:
-        "Returns the bytes uploaded by the given email address in the last 14 days,
-        together with the applicable limits. Frontends use this to warn the user
-        before they hit the limit."
+        "Returns the bytes uploaded by the authenticated API-key tenant in the
+        last 14 days, together with the applicable limits. **Requires a valid
+        `Authorization: Bearer PG-…` API key**: usage is accounted per validated
+        tenant and is never looked up by a caller-supplied email, so an
+        unauthenticated caller cannot query an arbitrary address. Requests
+        without a valid key are rejected with 401."
       operationId: "getUsage"
       parameters:
+      - in: "header"
+        name: "Authorization"
+        description:
+          "`Bearer PG-…` API key validated against pg-pkg. Required; a missing,
+          malformed, or rejected key returns 401."
+        schema:
+          type: "string"
+        required: true
       - in: "query"
         name: "email"
-        description: "The sender email address to query."
-        required: true
+        description:
+          "Optional. Echoed back in the response `email` field for the
+          frontend's convenience. It does NOT influence the usage lookup, which
+          is keyed to the validated tenant."
+        required: false
         schema:
           type: "string"
           format: "email"
       responses:
         "200":
-          description: "Usage information for the given email."
+          description: "Usage information for the authenticated tenant."
           content:
             application/json:
               schema:
@@ -393,14 +407,14 @@ paths:
                   limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Rolling-window upload limit in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
+                    description: "Rolling-window upload limit in bytes for the authenticated API-key tenant (100 GB)."
                   window_days:
                     type: "integer"
                     description: "Length of the rolling window in days."
                   per_upload_limit_bytes:
                     type: "integer"
                     format: "int64"
-                    description: "Maximum size of a single upload in bytes for the requesting sender (5 GB for non-API-key uploads, 100 GB for API-key uploads)."
+                    description: "Maximum size of a single upload in bytes for the authenticated API-key tenant (100 GB)."
                   resets_at:
                     type: "string"
                     format: "date-time"
@@ -409,6 +423,11 @@ paths:
                       "RFC-3339 timestamp at which the oldest recorded upload
                       falls out of the rolling window, partially freeing quota.
                       Null if the sender has no recorded uploads."
+        "401":
+          description:
+            "No valid `Authorization: Bearer PG-…` API key was presented. Usage
+            can only be queried by the authenticated tenant it is accounted
+            for."
 
   /filedownload/{uuid}:
     get:

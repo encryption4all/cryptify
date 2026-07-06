@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- require a validated API key on `GET /usage` and reject unauthenticated callers with 401 (GHSA-5rhx-xgvv-h78h)
+- compare `cryptify_token` values in constant time, matching the recovery-token path
+
 ## [0.1.27](https://github.com/encryption4all/cryptify/compare/v0.1.26...v0.1.27) - 2026-05-16
 
 ### Added
