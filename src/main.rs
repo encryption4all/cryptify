@@ -180,14 +180,24 @@ struct ValidateResponse {
     #[allow(dead_code)]
     #[serde(default)]
     organisation_name: Option<String>,
+    /// Email template linked to this API key on pg-pkg (postguard#86).
+    /// `None` when the tenant has no template configured. Surfaced by the
+    /// `GET /email-template` endpoint so API-key callers can fetch the
+    /// notification body associated with their key.
+    #[serde(default)]
+    email_template: Option<String>,
 }
 
 #[derive(Debug)]
 enum ValidationOutcome {
     /// No `Authorization: Bearer PG-…` header — caller is default tier.
     NoCredentials,
-    /// pg-pkg confirmed the key. Tenant id (uuid) accompanies.
-    Validated(String),
+    /// pg-pkg confirmed the key. Carries the tenant id (uuid) and the
+    /// email template linked to the key, if any.
+    Validated {
+        tenant: String,
+        email_template: Option<String>,
+    },
     /// pg-pkg returned an authoritative rejection (401/403). Caller is
     /// degraded to default tier — their fake/expired key won't earn the
     /// higher tier, but they can still upload up to the default cap.
@@ -222,7 +232,12 @@ impl PkgClient {
             match self.http.get(&url).bearer_auth(&token).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     match resp.json::<ValidateResponse>().await {
-                        Ok(body) => return ValidationOutcome::Validated(body.tenant_id),
+                        Ok(body) => {
+                            return ValidationOutcome::Validated {
+                                tenant: body.tenant_id,
+                                email_template: body.email_template,
+                            }
+                        }
                         Err(e) => {
                             log::error!("pg-pkg /api-key/validate parse failed: {}", e);
                             return ValidationOutcome::PkgUnreachable;
@@ -259,9 +274,12 @@ impl PkgClient {
 /// Result of validating an `Authorization: Bearer PG-…` header against
 /// pg-pkg. `tenant` is `Some` only on success; `validation_failed` is true
 /// only when a PG-prefixed bearer was supplied but pg-pkg was unreachable.
+/// `email_template` carries the template pg-pkg linked to the key, when the
+/// key validated and a template is configured.
 struct ApiKey {
     tenant: Option<String>,
     validation_failed: bool,
+    email_template: Option<String>,
 }
 
 #[rocket::async_trait]
@@ -274,17 +292,23 @@ impl<'r> FromRequest<'r> for ApiKey {
             return rocket::request::Outcome::Success(ApiKey {
                 tenant: None,
                 validation_failed: false,
+                email_template: None,
             });
         };
         let outcome = client.validate(header).await;
         let api_key = match outcome {
-            ValidationOutcome::Validated(t) => ApiKey {
-                tenant: Some(t),
+            ValidationOutcome::Validated {
+                tenant,
+                email_template,
+            } => ApiKey {
+                tenant: Some(tenant),
                 validation_failed: false,
+                email_template,
             },
             ValidationOutcome::NoCredentials | ValidationOutcome::Rejected => ApiKey {
                 tenant: None,
                 validation_failed: false,
+                email_template: None,
             },
             ValidationOutcome::PkgUnreachable => {
                 log::warn!(
@@ -293,10 +317,52 @@ impl<'r> FromRequest<'r> for ApiKey {
                 ApiKey {
                     tenant: None,
                     validation_failed: true,
+                    email_template: None,
                 }
             }
         };
         rocket::request::Outcome::Success(api_key)
+    }
+}
+
+/// Request guard for routes that require a *validated* pg-pkg API key.
+///
+/// Unlike [`ApiKey`], whose `FromRequest` always succeeds (degrading callers
+/// without a valid key to the anonymous "default tier"), this guard **fails**
+/// the request when no valid credentials are presented:
+/// - `NoCredentials` / `Rejected` → `401 Unauthorized`
+/// - `PkgUnreachable` → `503 Service Unavailable` (we cannot confirm the key)
+///
+/// A route carrying this guard is therefore authenticated by construction —
+/// the "authenticated" intent is enforced by the type system rather than by a
+/// guard that always succeeds and leaves the check to the handler.
+struct ValidatedApiKey {
+    tenant: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ValidatedApiKey {
+    type Error = ();
+    async fn from_request(req: &'r rocket::Request<'_>) -> rocket::request::Outcome<Self, ()> {
+        let header = req.headers().get_one("Authorization");
+        let Some(client) = req.rocket().state::<PkgClient>() else {
+            log::error!("PkgClient missing from Rocket state — rejecting authenticated request");
+            return rocket::request::Outcome::Error((rocket::http::Status::ServiceUnavailable, ()));
+        };
+        match client.validate(header).await {
+            ValidationOutcome::Validated { tenant, .. } => {
+                rocket::request::Outcome::Success(ValidatedApiKey { tenant })
+            }
+            ValidationOutcome::NoCredentials | ValidationOutcome::Rejected => {
+                rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, ()))
+            }
+            ValidationOutcome::PkgUnreachable => {
+                log::warn!(
+                    "pg-pkg unreachable during API-key validation on an authenticated route; returning 503"
+                );
+                rocket::request::Outcome::Error((rocket::http::Status::ServiceUnavailable, ()))
+            }
+        }
     }
 }
 
@@ -502,8 +568,22 @@ const TOKEN_MISMATCH_MSG: &str = "Cryptify Token header does not match";
 /// (GHSA-r95f-qf3j-xccw).
 const GENERIC_INTERNAL_ERROR_MSG: &str = "an internal error occurred";
 
+/// Constant-time compare of a presented `CryptifyToken` against the expected
+/// value. Both are hex-encoded SHA-256 strings; `subtle::ConstantTimeEq` keeps
+/// the timing independent of where the bytes first differ, mirroring
+/// `recovery_tokens_match`. A network timing oracle against these 256-bit
+/// high-entropy tokens is impractical, but we compare them in constant time
+/// for consistency with the recovery-token path.
+fn cryptify_tokens_match(presented: &str, expected: &str) -> bool {
+    use subtle::ConstantTimeEq;
+    if presented.len() != expected.len() {
+        return false;
+    }
+    presented.as_bytes().ct_eq(expected.as_bytes()).into()
+}
+
 fn check_cryptify_token(header: &str, expected: &str) -> Result<(), Error> {
-    if header != expected {
+    if !cryptify_tokens_match(header, expected) {
         return Err(Error::BadRequest(Some(TOKEN_MISMATCH_MSG.to_owned())));
     }
     Ok(())
@@ -555,9 +635,11 @@ async fn upload_chunk(
     // `classify_chunk_request` — we only commit to reading the body when
     // the request looks like either a normal next chunk or a candidate
     // replay of the last committed chunk.
-    let is_normal_next = state.uploaded == start && headers.cryptify_token == state.cryptify_token;
+    let is_normal_next = state.uploaded == start
+        && cryptify_tokens_match(&headers.cryptify_token, &state.cryptify_token);
     let is_replay_candidate = state.last_chunk.as_ref().is_some_and(|last| {
-        last.prev_uploaded == start && headers.cryptify_token == last.prev_token
+        last.prev_uploaded == start
+            && cryptify_tokens_match(&headers.cryptify_token, &last.prev_token)
     });
     if !is_normal_next && !is_replay_candidate {
         if state.uploaded != start {
@@ -686,12 +768,12 @@ fn classify_chunk_request(
     start: u64,
     body: &[u8],
 ) -> ChunkClassification {
-    if state.uploaded == start && request_token == state.cryptify_token {
+    if state.uploaded == start && cryptify_tokens_match(request_token, &state.cryptify_token) {
         return ChunkClassification::NormalNext;
     }
 
     if let Some(last) = state.last_chunk.as_ref() {
-        if request_token == last.prev_token && start == last.prev_uploaded {
+        if cryptify_tokens_match(request_token, &last.prev_token) && start == last.prev_uploaded {
             // Recompute the rolling hash over the incoming body. Identity
             // is implicit in the rolling-token construction itself: if the
             // hash matches `response_token`, the body is byte-identical to
@@ -1002,32 +1084,88 @@ struct UsageResponse {
 }
 
 #[get("/usage?<email>")]
-fn usage(store: &State<Store>, api_key: ApiKey, email: String) -> Json<UsageResponse> {
-    let (rolling_limit, per_upload_limit) = if api_key.tenant.is_some() {
-        (API_KEY_ROLLING_LIMIT, API_KEY_PER_UPLOAD_LIMIT)
-    } else {
-        (ROLLING_LIMIT, PER_UPLOAD_LIMIT)
-    };
+fn usage(
+    store: &State<Store>,
+    api_key: ValidatedApiKey,
+    email: Option<String>,
+) -> Json<UsageResponse> {
     let now = chrono::offset::Utc::now().timestamp();
-    // For API-key callers the rolling window is accounted per tenant, not
-    // per sender email — query the same key the finalize path records under.
-    let lookup_key = match api_key.tenant.as_deref() {
-        Some(tenant) => format!("api-key:{}", tenant),
-        None => email.clone(),
-    };
+    // Usage is accounted per validated tenant, keyed by the tenant proven via
+    // the `Authorization` header — never by a caller-supplied email. The
+    // `ValidatedApiKey` guard has already rejected any unauthenticated caller
+    // with 401, so there is no way to query usage for an arbitrary address and
+    // hence no user-enumeration / activity-monitoring oracle. The `email`
+    // query parameter is retained only so the response can echo it back for
+    // frontends; it does not influence the lookup.
+    let lookup_key = format!("api-key:{}", api_key.tenant);
     let usage = store.get_usage(&lookup_key, now);
     let resets_at = usage
         .oldest_expires_at
         .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
         .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     Json(UsageResponse {
-        email,
+        email: email.unwrap_or_default(),
         used_bytes: usage.used_bytes,
-        limit_bytes: rolling_limit,
+        limit_bytes: API_KEY_ROLLING_LIMIT,
         window_days: (ROLLING_WINDOW_SECS / 86_400) as u64,
-        per_upload_limit_bytes: per_upload_limit,
+        per_upload_limit_bytes: API_KEY_PER_UPLOAD_LIMIT,
         resets_at,
     })
+}
+
+/// Body returned by `GET /email-template` for a validated API key that has
+/// a template configured on pg-pkg.
+#[derive(Serialize)]
+struct EmailTemplateResponse {
+    /// Tenant the API key resolved to on pg-pkg.
+    tenant_id: String,
+    /// The email template linked to the key.
+    email_template: String,
+}
+
+/// Map a validated (or rejected) [`ApiKey`] to the `GET /email-template`
+/// outcome. Kept as a pure function so every branch — authorized, no
+/// template, rejected key, pg-pkg unreachable — is unit-testable without
+/// standing up the HTTP stack or a live pg-pkg.
+fn resolve_email_template(api_key: ApiKey) -> Result<EmailTemplateResponse, Error> {
+    match api_key.tenant {
+        Some(tenant_id) => match api_key.email_template {
+            Some(email_template) => Ok(EmailTemplateResponse {
+                tenant_id,
+                email_template,
+            }),
+            // The key is valid but no template is linked to it on pg-pkg.
+            None => Err(Error::NotFound(Some(
+                "No email template is configured for this API key".to_owned(),
+            ))),
+        },
+        // No tenant: either no/invalid key (validation_failed == false) or
+        // pg-pkg was unreachable while validating (validation_failed == true).
+        None if api_key.validation_failed => {
+            // Keep the pg-pkg dependency detail server-side rather than
+            // leaking it in the response body (GHSA-r95f-qf3j-xccw); mirrors
+            // the upload-tier 503 in `upload_chunk`.
+            log::error!(
+                "pg-pkg was unreachable while validating the API key for GET /email-template"
+            );
+            Err(Error::ServiceUnavailable(Some(
+                GENERIC_INTERNAL_ERROR_MSG.to_owned(),
+            )))
+        }
+        None => Err(Error::Unauthorized(Some(
+            "A valid `Authorization: Bearer PG-…` API key is required".to_owned(),
+        ))),
+    }
+}
+
+/// Return the email template linked to the caller's API key on pg-pkg. The
+/// key is validated through the same `ApiKey` request guard the upload
+/// endpoints use. Returns 401 when no valid key is presented, 404 when the
+/// key is valid but has no template configured, and 503 when pg-pkg could
+/// not be reached to validate the key.
+#[get("/email-template")]
+fn email_template(api_key: ApiKey) -> Result<Json<EmailTemplateResponse>, Error> {
+    resolve_email_template(api_key).map(Json)
 }
 
 /// Staging-only endpoint that returns the rendered notification email(s)
@@ -1318,6 +1456,7 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
                 upload_finalize,
                 upload_status,
                 usage,
+                email_template,
                 download,
                 staging_preview
             ],
@@ -1504,6 +1643,44 @@ mod tests {
         assert_ne!(
             compute_hash(b"token-a", b"data"),
             compute_hash(b"token-b", b"data")
+        );
+    }
+
+    #[test]
+    fn cryptify_tokens_match_accepts_equal_and_rejects_different() {
+        assert!(cryptify_tokens_match("abc123", "abc123"));
+        assert!(!cryptify_tokens_match("abc123", "abc124"));
+        // Differing lengths must not match (and must not panic).
+        assert!(!cryptify_tokens_match("abc", "abc123"));
+        assert!(!cryptify_tokens_match("", "abc"));
+    }
+
+    // Mounts only the `/usage` route with the state its guard depends on
+    // (`Store` + `PkgClient`). The `PkgClient` url is never contacted for the
+    // unauthenticated case: `PkgClient::validate(None)` short-circuits to
+    // `NoCredentials` before any network call.
+    async fn usage_client() -> Client {
+        let rocket = rocket::build()
+            .mount("/", routes![usage])
+            .manage(Store::new(Arc::new(Metrics::new())))
+            .manage(PkgClient::new("http://localhost:1".to_string()));
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    // Regression test for GHSA-5rhx-xgvv-h78h: an unauthenticated caller (no
+    // `Authorization: Bearer PG-…` header) must be rejected with 401 rather
+    // than served usage for an arbitrary, caller-supplied email address.
+    #[rocket::async_test]
+    async fn usage_rejects_unauthenticated_request() {
+        let client = usage_client().await;
+        let res = client
+            .get("/usage?email=alice@example.com")
+            .dispatch()
+            .await;
+        assert_eq!(
+            res.status(),
+            Status::Unauthorized,
+            "unauthenticated /usage must be 401, not a usage oracle for an arbitrary email"
         );
     }
 
@@ -3053,5 +3230,201 @@ mod integration {
         assert_eq!(status, Status::BadRequest);
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// Tests for `GET /email-template` (issue #54). Covers both the pure
+/// branch-mapping helper and the full route through the production
+/// `ApiKey` request guard, exercised against a mock pg-pkg server so the
+/// real validation flow (reqwest → `/v2/api-key/validate`) is on the path.
+#[cfg(test)]
+mod email_template_tests {
+    use super::*;
+    use rocket::http::{Header, Status};
+    use rocket::local::asynchronous::Client;
+    use std::time::Duration;
+
+    // ----- Pure unit tests for the branch-mapping helper -----
+
+    #[test]
+    fn resolve_returns_template_for_validated_key_with_template() {
+        let api_key = ApiKey {
+            tenant: Some("tenant-123".to_owned()),
+            validation_failed: false,
+            email_template: Some("Hello {{name}}".to_owned()),
+        };
+        let resp = resolve_email_template(api_key).expect("validated key with template resolves");
+        assert_eq!(resp.tenant_id, "tenant-123");
+        assert_eq!(resp.email_template, "Hello {{name}}");
+    }
+
+    #[test]
+    fn resolve_returns_404_for_validated_key_without_template() {
+        let api_key = ApiKey {
+            tenant: Some("tenant-123".to_owned()),
+            validation_failed: false,
+            email_template: None,
+        };
+        match resolve_email_template(api_key) {
+            Err(Error::NotFound(_)) => {}
+            _ => panic!("expected NotFound for a valid key with no template"),
+        }
+    }
+
+    #[test]
+    fn resolve_returns_401_for_missing_or_invalid_key() {
+        let api_key = ApiKey {
+            tenant: None,
+            validation_failed: false,
+            email_template: None,
+        };
+        match resolve_email_template(api_key) {
+            Err(Error::Unauthorized(_)) => {}
+            _ => panic!("expected Unauthorized when no tenant resolved"),
+        }
+    }
+
+    #[test]
+    fn resolve_returns_503_when_pkg_unreachable() {
+        let api_key = ApiKey {
+            tenant: None,
+            validation_failed: true,
+            email_template: None,
+        };
+        match resolve_email_template(api_key) {
+            Err(Error::ServiceUnavailable(_)) => {}
+            _ => panic!("expected ServiceUnavailable when pg-pkg was unreachable"),
+        }
+    }
+
+    // ----- End-to-end tests through the real ApiKey guard -----
+
+    /// Authorization-header capture for the mock pg-pkg route.
+    struct MockAuth(Option<String>);
+
+    #[rocket::async_trait]
+    impl<'r> FromRequest<'r> for MockAuth {
+        type Error = std::convert::Infallible;
+        async fn from_request(
+            req: &'r rocket::Request<'_>,
+        ) -> rocket::request::Outcome<Self, Self::Error> {
+            rocket::request::Outcome::Success(MockAuth(
+                req.headers().get_one("Authorization").map(str::to_owned),
+            ))
+        }
+    }
+
+    /// Stand-in for pg-pkg's `GET /v2/api-key/validate`. Mirrors the
+    /// authoritative responses the real `PkgClient` distinguishes:
+    /// 200 + tenant (optionally with `email_template`) for a recognised
+    /// key, 401 for anything else.
+    #[get("/v2/api-key/validate")]
+    fn mock_validate(auth: MockAuth) -> Result<Json<serde_json::Value>, Status> {
+        match auth.0.as_deref() {
+            Some("Bearer PG-key-with-template") => Ok(Json(serde_json::json!({
+                "tenant_id": "tenant-abc",
+                "organisation_name": "Acme",
+                "email_template": "Beste {{naam}}, u heeft bestanden ontvangen."
+            }))),
+            Some("Bearer PG-key-no-template") => Ok(Json(serde_json::json!({
+                "tenant_id": "tenant-xyz"
+            }))),
+            _ => Err(Status::Unauthorized),
+        }
+    }
+
+    /// Launch the mock pg-pkg on a real ephemeral port and return its base
+    /// URL. A real listener is required because the `ApiKey` guard reaches
+    /// it via reqwest over TCP, not Rocket's in-process local client.
+    async fn spawn_mock_pkg() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+
+        let figment = rocket::Config::figment()
+            .merge(("port", port))
+            .merge(("address", "127.0.0.1"))
+            .merge(("log_level", "off"));
+        let rocket = rocket::custom(figment).mount("/", routes![mock_validate]);
+        rocket::tokio::spawn(async move {
+            let _ = rocket.launch().await;
+        });
+
+        // Wait until the listener accepts connections so the first guard
+        // call doesn't race startup. The PkgClient retry budget would cover
+        // it anyway, but readiness keeps the test fast and quiet.
+        for _ in 0..200 {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break;
+            }
+            rocket::tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        format!("http://127.0.0.1:{}", port)
+    }
+
+    /// Cryptify client mounting only `/email-template`, with a `PkgClient`
+    /// pointed at `pkg_url`.
+    async fn email_template_client(pkg_url: String) -> Client {
+        let rocket = rocket::build()
+            .mount("/", routes![email_template])
+            .manage(PkgClient::new(pkg_url));
+        Client::tracked(rocket).await.expect("valid rocket")
+    }
+
+    #[rocket::async_test]
+    async fn returns_template_for_valid_key() {
+        let pkg_url = spawn_mock_pkg().await;
+        let client = email_template_client(pkg_url).await;
+
+        let res = client
+            .get("/email-template")
+            .header(Header::new("Authorization", "Bearer PG-key-with-template"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Ok);
+
+        let body: serde_json::Value = res.into_json().await.expect("json body");
+        assert_eq!(body["tenant_id"].as_str(), Some("tenant-abc"));
+        assert_eq!(
+            body["email_template"].as_str(),
+            Some("Beste {{naam}}, u heeft bestanden ontvangen.")
+        );
+    }
+
+    #[rocket::async_test]
+    async fn returns_401_for_missing_key() {
+        // No Authorization header: the guard short-circuits to NoCredentials
+        // without calling pg-pkg, so the PkgClient URL is never dialled.
+        let client = email_template_client("http://127.0.0.1:1".to_owned()).await;
+        let res = client.get("/email-template").dispatch().await;
+        assert_eq!(res.status(), Status::Unauthorized);
+    }
+
+    #[rocket::async_test]
+    async fn returns_401_for_invalid_key() {
+        // A PG-prefixed key the mock rejects with 401 → guard yields no
+        // tenant → endpoint returns 401.
+        let pkg_url = spawn_mock_pkg().await;
+        let client = email_template_client(pkg_url).await;
+
+        let res = client
+            .get("/email-template")
+            .header(Header::new("Authorization", "Bearer PG-not-a-real-key"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::Unauthorized);
+    }
+
+    #[rocket::async_test]
+    async fn returns_404_for_valid_key_without_template() {
+        let pkg_url = spawn_mock_pkg().await;
+        let client = email_template_client(pkg_url).await;
+
+        let res = client
+            .get("/email-template")
+            .header(Header::new("Authorization", "Bearer PG-key-no-template"))
+            .dispatch()
+            .await;
+        assert_eq!(res.status(), Status::NotFound);
     }
 }

@@ -25,6 +25,13 @@ pub struct UploadSessionNotFoundBody {
 #[derive(Debug)]
 pub enum Error {
     BadRequest(Option<String>),
+    /// 401 — the request did not present a valid API key on an endpoint
+    /// that requires one. Distinct from the upload flow, which degrades a
+    /// missing/invalid key to the default tier rather than rejecting.
+    Unauthorized(Option<String>),
+    /// 404 — the resource (e.g. the email template for a validated API
+    /// key) does not exist. Carries an optional human-readable message.
+    NotFound(Option<String>),
     UnprocessableEntity(Option<String>),
     InternalServerError(Option<String>),
     PayloadTooLarge(PayloadTooLargeBody),
@@ -50,6 +57,16 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for Error {
     fn respond_to(self, request: &'r rocket::Request<'_>) -> response::Result<'o> {
         match self {
             Error::BadRequest(e) => response::status::BadRequest(e).respond_to(request),
+            Error::Unauthorized(e) => response::status::Custom::<String>(
+                rocket::http::Status::Unauthorized,
+                e.unwrap_or_else(|| "".to_owned()),
+            )
+            .respond_to(request),
+            Error::NotFound(e) => response::status::Custom::<String>(
+                rocket::http::Status::NotFound,
+                e.unwrap_or_else(|| "".to_owned()),
+            )
+            .respond_to(request),
             // response::status::Custom apparently doesn't support Option<R>
             Error::UnprocessableEntity(e) => response::status::Custom::<String>(
                 rocket::http::Status::UnprocessableEntity,
