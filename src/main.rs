@@ -1465,6 +1465,7 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
         .manage(Store::with_idle_ttl(
             std::time::Duration::from_secs(config.session_ttl_secs()),
             metrics.clone(),
+            config.usage_db(),
         ))
         .manage(vk)
         .manage(pkg_client)
