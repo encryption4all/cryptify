@@ -880,6 +880,8 @@ mod tests {
             ],
             confirm: true,
             source_channel: String::new(),
+            client_version: None,
+            client_app: None,
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,

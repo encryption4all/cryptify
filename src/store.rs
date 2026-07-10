@@ -35,6 +35,15 @@ pub struct FileState {
     /// Traffic source this upload originated from ("website", "outlook",
     /// "thunderbird", "api", ...). Used only for metrics labelling.
     pub source_channel: String,
+    /// Raw `X-POSTGUARD-CLIENT-VERSION` header value
+    /// (`host,host_version,app,app_version`) sent by the client, captured at
+    /// init. Logged verbatim at init and finalize so exact client versions are
+    /// greppable. `None` when the header was absent.
+    pub client_version: Option<String>,
+    /// The `app` field parsed out of `client_version` (e.g. "pg-js",
+    /// "pg-dotnet", "pg4ol"). Used as the `cryptify_uploads_by_app_total`
+    /// metric label at finalize. `None` when absent or malformed.
+    pub client_app: Option<String>,
     /// When false, the recipient notification email is suppressed (the
     /// recipients still appear in the parsed list, but the SMTP delivery
     /// loop in `send_email` is skipped). The sender confirmation, if
@@ -522,6 +531,8 @@ mod tests {
             sender_attributes: Vec::new(),
             confirm: false,
             source_channel: String::new(),
+            client_version: None,
+            client_app: None,
             notify_recipients: true,
             api_key_tenant: None,
             api_key_validation_failed: false,
