@@ -938,11 +938,15 @@ mod tests {
         );
         // The download-link block must render as a prominent, selectable
         // monospace code block that is not smaller than the 16px primary
-        // button (see issue #186). Guards against regressing the font-size.
+        // button (see issue #186). Pin a contiguous substring unique to the
+        // restyled `<a>` (the primary button is `display:inline-block` and not
+        // monospace), so a font-size regression here genuinely fails — a bare
+        // `font-size:16px` check would pass on the button alone.
         assert!(
-            rendered.html.contains("font-size:16px")
-                && rendered.html.contains("font-family:'Courier New'"),
-            "download-link block should be >=16px monospace: {}",
+            rendered.html.contains(
+                "display:block;font-family:'Courier New',Consolas,Monaco,monospace;font-size:16px;"
+            ),
+            "download-link block should be a >=16px monospace code block: {}",
             rendered.html
         );
     }
