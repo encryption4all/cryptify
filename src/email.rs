@@ -936,6 +936,15 @@ mod tests {
             "subject: {}",
             rendered.subject
         );
+        // The download-link block must render as a prominent, selectable
+        // monospace code block that is not smaller than the 16px primary
+        // button (see issue #186). Guards against regressing the font-size.
+        assert!(
+            rendered.html.contains("font-size:16px")
+                && rendered.html.contains("font-family:'Courier New'"),
+            "download-link block should be >=16px monospace: {}",
+            rendered.html
+        );
     }
 
     #[test]
