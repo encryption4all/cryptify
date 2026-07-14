@@ -17,6 +17,7 @@ pub struct RawCryptifyConfig {
     session_ttl_secs: Option<u64>,
     staging_mode: Option<bool>,
     metrics_token: Option<String>,
+    usage_db: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +38,11 @@ pub struct CryptifyConfig {
     session_ttl_secs: u64,
     staging_mode: bool,
     metrics_token: Option<String>,
+    /// Filesystem path to the SQLite database backing the rolling-quota
+    /// usage state. When set, per-sender usage survives process restarts
+    /// (the in-memory map in `Store` is only a cache). `None` keeps usage
+    /// entirely in memory, as it was before persistence was added.
+    usage_db: Option<String>,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -60,6 +66,7 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             session_ttl_secs: config.session_ttl_secs.unwrap_or(3600),
             staging_mode: config.staging_mode.unwrap_or(false),
             metrics_token: config.metrics_token,
+            usage_db: config.usage_db,
         }
     }
 }
@@ -128,6 +135,12 @@ impl CryptifyConfig {
         self.metrics_token.as_deref()
     }
 
+    /// Path to the SQLite database backing rolling-quota usage, if
+    /// configured. `None` means usage is kept in memory only.
+    pub fn usage_db(&self) -> Option<&str> {
+        self.usage_db.as_deref()
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(server_url: &str, staging_mode: bool) -> Self {
         CryptifyConfig {
@@ -146,6 +159,41 @@ impl CryptifyConfig {
             session_ttl_secs: 3600,
             staging_mode,
             metrics_token: None,
+            usage_db: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rocket::figment::{providers::Serialized, Figment};
+
+    fn base_config() -> serde_json::Value {
+        serde_json::json!({
+            "server_url": "http://localhost",
+            "data_dir": "/tmp/data",
+            "email_from": "Test <test@example.com>",
+            "smtp_url": "localhost",
+            "smtp_port": 1025u16,
+            "allowed_origins": ".*",
+            "pkg_url": "http://localhost",
+        })
+    }
+
+    #[test]
+    fn usage_db_is_parsed_when_present() {
+        let mut raw = base_config();
+        raw["usage_db"] = serde_json::json!("/app/data/usage.db");
+        let config: CryptifyConfig = Figment::from(Serialized::defaults(raw)).extract().unwrap();
+        assert_eq!(config.usage_db(), Some("/app/data/usage.db"));
+    }
+
+    #[test]
+    fn usage_db_defaults_to_none_when_absent() {
+        let config: CryptifyConfig = Figment::from(Serialized::defaults(base_config()))
+            .extract()
+            .unwrap();
+        assert_eq!(config.usage_db(), None);
     }
 }
