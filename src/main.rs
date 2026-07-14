@@ -1426,6 +1426,43 @@ pub fn default_figment() -> Figment {
     rocket::Config::figment()
 }
 
+/// Build the CORS fairing. Shared by the production launch path and the
+/// preflight smoke tests so the header allow-list under test is the one
+/// actually deployed (a test-local copy is how `X-Cryptify-Source` regressed
+/// unnoticed when the website started sending it).
+fn build_cors(allowed_origins: AllowedOrigins) -> rocket_cors::Cors {
+    CorsOptions::default()
+        .allowed_origins(allowed_origins)
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Put, Method::Delete]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        // Browser preflight needs to allow our custom request headers.
+        // `Authorization` is here for the Bearer-API-key tier flow;
+        // `cryptifytoken`, `content-range`, and `content-type` ride on
+        // chunk PUTs; `x-recovery-token` authenticates GET /…/status;
+        // `x-cryptify-source` tags requests for per-channel metrics.
+        .allowed_headers(AllowedHeaders::some(&[
+            "Authorization",
+            "Content-Type",
+            "Content-Range",
+            "CryptifyToken",
+            "Range",
+            "X-Cryptify-Source",
+            "X-Recovery-Token",
+            // Browser clients (pg-js) send this on every request; without it
+            // in the preflight allowlist the browser blocks cross-origin
+            // uploads. Captured for the per-app upload metric + logs.
+            "X-POSTGUARD-CLIENT-VERSION",
+        ]))
+        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
+        .max_age(Some(86400))
+        .to_cors()
+        .expect("unable to configure CORS")
+}
+
 /// Build a Rocket instance from a pre-loaded config figment and verifying key.
 ///
 /// Extracted so integration tests can inject their own figment (temp data_dir,
@@ -1449,34 +1486,7 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
 
     let rocket = rocket::custom(figment.merge(("limits", limits)));
 
-    let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::some_regex(&[config.allowed_origins()]))
-        .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Put, Method::Delete]
-                .into_iter()
-                .map(From::from)
-                .collect(),
-        )
-        // Browser preflight needs to allow our custom request headers.
-        // `Authorization` is here for the Bearer-API-key tier flow;
-        // `cryptifytoken`, `content-range`, and `content-type` ride on
-        // chunk PUTs; `x-recovery-token` authenticates GET /…/status.
-        .allowed_headers(AllowedHeaders::some(&[
-            "Authorization",
-            "Content-Type",
-            "Content-Range",
-            "CryptifyToken",
-            "Range",
-            "X-Recovery-Token",
-            // Browser clients (pg-js) send this on every request; without it
-            // in the preflight allowlist the browser blocks cross-origin
-            // uploads. Captured for the per-app upload metric + logs.
-            "X-POSTGUARD-CLIENT-VERSION",
-        ]))
-        .expose_headers(["cryptifytoken"].iter().map(ToString::to_string).collect())
-        .max_age(Some(86400))
-        .to_cors()
-        .expect("unable to configure CORS");
+    let cors = build_cors(AllowedOrigins::some_regex(&[config.allowed_origins()]));
 
     let metrics = Arc::new(Metrics::new());
     rocket::tokio::spawn(storage_sampler(
@@ -1873,23 +1883,7 @@ mod tests {
             }),
         ));
 
-        let cors = CorsOptions::default()
-            .allowed_origins(AllowedOrigins::all())
-            .allowed_methods(
-                vec![Method::Get, Method::Post, Method::Put]
-                    .into_iter()
-                    .map(From::from)
-                    .collect(),
-            )
-            .allowed_headers(AllowedHeaders::some(&[
-                "Authorization",
-                "Content-Type",
-                "Content-Range",
-                "CryptifyToken",
-                "X-Recovery-Token",
-            ]))
-            .to_cors()
-            .expect("valid cors");
+        let cors = build_cors(AllowedOrigins::all());
 
         let rocket = rocket::custom(figment)
             .attach(cors)
@@ -2087,6 +2081,50 @@ mod tests {
         assert!(
             allow_headers_lc.contains("x-recovery-token"),
             "Access-Control-Allow-Headers `{}` should include x-recovery-token",
+            allow_headers
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    // Browser preflight regression: the website tags its uploads with
+    // `X-Cryptify-Source` (postguard-website#228), which rides on every
+    // pg-js request including `POST /fileupload/init`. If the header drops
+    // out of the CORS allow-list, rocket_cors rejects the preflight with a
+    // 403 that carries no `Access-Control-Allow-Origin`, and browsers
+    // refuse the upload before it starts.
+    #[rocket::async_test]
+    async fn init_preflight_advertises_x_cryptify_source() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cryptify-test-{}",
+            uuid::Uuid::new_v4().hyphenated()
+        ));
+        let client = status_client_with_cors(&data_dir).await;
+
+        let res = client
+            .req(rocket::http::Method::Options, "/fileupload/init")
+            .header(Header::new("Origin", "https://example.com"))
+            .header(Header::new("Access-Control-Request-Method", "POST"))
+            .header(Header::new(
+                "Access-Control-Request-Headers",
+                "Content-Type, X-Cryptify-Source",
+            ))
+            .dispatch()
+            .await;
+
+        assert!(
+            res.status().code < 400,
+            "expected 2xx preflight, got {}",
+            res.status()
+        );
+        let allow_headers = res
+            .headers()
+            .get_one("Access-Control-Allow-Headers")
+            .expect("CORS allow-headers in preflight response");
+        let allow_headers_lc = allow_headers.to_ascii_lowercase();
+        assert!(
+            allow_headers_lc.contains("x-cryptify-source"),
+            "Access-Control-Allow-Headers `{}` should include x-cryptify-source",
             allow_headers
         );
 
