@@ -68,10 +68,15 @@ Release-plz automation.
   file to extract attributes; `sender` (`pbdf.sidn-pbdf.email.email`) becomes
   known.
 - **Purge timer:** `state.expirations` (a `BTreeMap` populated in `Store::create`
-  at `src/store.rs:80` with `Instant::now() + Duration::from_secs(60 * 15)`) is
-  what `purge_task` walks, a hard 15-minute eviction from creation. `FileState.expires`
-  (current_time + 14d) is NOT what drives eviction; it's a different field, never
-  read by the purge loop. When tracing eviction, follow `state.expirations`.
+  at `src/store.rs:292` with `Instant::now() + self.shared.idle_ttl`) is what
+  `purge_task` walks. `idle_ttl` defaults to `DEFAULT_UPLOAD_SESSION_IDLE_TIMEOUT_SECS`
+  (`60 * 60`, 1 hour); this is a resettable idle timeout, not a hard deadline from
+  creation. `Store::touch` (`src/store.rs:318`) removes the old `expirations` key and
+  re-inserts `Instant::now() + idle_ttl` on each chunk PUT and status check, so the
+  hour counts from the last activity (see the `touch_extends_eviction_deadline` test
+  at `src/store.rs:545`). `FileState.expires` (current_time + 14d) is NOT what drives
+  eviction; it's a different field, never read by the purge loop. When tracing
+  eviction, follow `state.expirations`.
 - Purge does not delete the on-disk file. Rejecting at finalize must manually
   `tokio::fs::remove_file` and `store.remove(uuid)`.
 - In-memory only, no persistence. Process restart wipes all upload sessions and
