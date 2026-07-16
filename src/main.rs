@@ -217,6 +217,14 @@ const PKG_VALIDATE_RETRY_BUDGET: Duration = Duration::from_secs(30);
 const PKG_VALIDATE_INITIAL_BACKOFF: Duration = Duration::from_millis(250);
 const PKG_VALIDATE_MAX_BACKOFF: Duration = Duration::from_secs(5);
 
+/// Total wall-clock budget for fetching the IBS verifying key from pg-pkg at
+/// startup. Long enough to ride out a PKG that is still booting during a
+/// rolling deploy; when the budget is exhausted the process still exits with
+/// a clear error, so a misconfigured `pkg_url` does not fail silently.
+const PKG_PARAMS_RETRY_BUDGET: Duration = Duration::from_secs(120);
+const PKG_PARAMS_INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+const PKG_PARAMS_MAX_BACKOFF: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Deserialize)]
 struct ValidateResponse {
     tenant_id: String,
@@ -1525,6 +1533,47 @@ pub fn build_rocket(figment: Figment, vk: Parameters<VerifyingKey>) -> Rocket<Bu
         .manage(metrics)
 }
 
+/// Fetch the IBS verifying key from pg-pkg, retrying transient failures
+/// (unreachable, non-2xx, unparsable body) with exponential backoff instead of
+/// panicking on the first attempt: a brief PKG unavailability window — e.g. a
+/// rolling deploy where cryptify comes up before pg-pkg — must not take
+/// cryptify down with it. Returns `None` once the budget is exhausted.
+async fn try_fetch_verifying_key(
+    pkg_params_url: &str,
+    budget: Duration,
+    initial_backoff: Duration,
+    max_backoff: Duration,
+) -> Option<Parameters<VerifyingKey>> {
+    let deadline = rocket::tokio::time::Instant::now() + budget;
+    let mut backoff = initial_backoff;
+
+    loop {
+        // minreq is blocking; keep it off the async workers.
+        let url = pkg_params_url.to_owned();
+        let result =
+            rocket::tokio::task::spawn_blocking(move || minreq::get(&url).with_timeout(10).send())
+                .await
+                .expect("blocking fetch task panicked");
+
+        match result {
+            Ok(response) => match response.json::<Parameters<VerifyingKey>>() {
+                Ok(vk) => return Some(vk),
+                Err(e) => log::warn!(
+                    "Failed to parse verification key from {pkg_params_url}: {e} — will retry"
+                ),
+            },
+            Err(e) => log::warn!("Failed to reach PKG at {pkg_params_url}: {e} — will retry"),
+        }
+
+        let now = rocket::tokio::time::Instant::now();
+        if now + backoff >= deadline {
+            return None;
+        }
+        rocket::tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
 #[launch]
 async fn rocket() -> _ {
     let figment = default_figment();
@@ -1543,19 +1592,19 @@ async fn rocket() -> _ {
         "{}/v2/sign/parameters",
         config.pkg_url().trim_end_matches('/')
     );
-    let response = minreq::get(&pkg_params_url)
-        .with_timeout(10)
-        .send()
-        .unwrap_or_else(|e| panic!("Failed to reach PKG at {}: {}", pkg_params_url, e));
-
-    let vk = response
-        .json::<Parameters<VerifyingKey>>()
-        .unwrap_or_else(|e| {
-            panic!(
-                "Failed to parse verification key from {}: {}",
-                pkg_params_url, e
-            )
-        });
+    let vk = try_fetch_verifying_key(
+        &pkg_params_url,
+        PKG_PARAMS_RETRY_BUDGET,
+        PKG_PARAMS_INITIAL_BACKOFF,
+        PKG_PARAMS_MAX_BACKOFF,
+    )
+    .await
+    .unwrap_or_else(|| {
+        panic!(
+            "Could not fetch a valid verification key from {} within {:?}",
+            pkg_params_url, PKG_PARAMS_RETRY_BUDGET
+        )
+    });
 
     build_rocket(figment, vk)
 }
@@ -3575,5 +3624,96 @@ mod email_template_tests {
             .dispatch()
             .await;
         assert_eq!(res.status(), Status::NotFound);
+    }
+
+    /// Serve `/v2/sign/parameters` from a plain thread: the first `failures`
+    /// requests get a 503, subsequent ones the given JSON body. Returns the
+    /// URL and a counter of requests seen.
+    fn spawn_flaky_params_server(
+        failures: usize,
+        body: String,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_srv = hits.clone();
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let n = hits_srv.fetch_add(1, Ordering::SeqCst);
+                let resp = if n < failures {
+                    "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                } else {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                };
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        (format!("http://127.0.0.1:{port}/v2/sign/parameters"), hits)
+    }
+
+    /// Regression test for encryption4all/postguard#235: cryptify panicked at
+    /// startup when the PKG was briefly unreachable. The verifying-key fetch
+    /// must retry transient failures and succeed once the PKG comes up.
+    #[rocket::async_test]
+    async fn verifying_key_fetch_survives_transient_pkg_outage() {
+        use std::sync::atomic::Ordering;
+
+        let mut rng = rand08::thread_rng();
+        let setup = pg_core::test::TestSetup::new(&mut rng);
+        let vk_json = serde_json::to_string(&Parameters {
+            format_version: 0,
+            public_key: VerifyingKey(setup.ibs_pk.0.clone()),
+        })
+        .expect("serialize test verifying key");
+
+        // Fails twice, then serves a valid key.
+        let (url, hits) = spawn_flaky_params_server(2, vk_json);
+
+        let vk = try_fetch_verifying_key(
+            &url,
+            Duration::from_secs(10),
+            Duration::from_millis(25),
+            Duration::from_millis(100),
+        )
+        .await;
+
+        assert!(vk.is_some(), "fetch must succeed after transient failures");
+        assert!(
+            hits.load(Ordering::SeqCst) >= 3,
+            "expected at least 3 attempts (2 failures + 1 success)"
+        );
+    }
+
+    /// When the PKG never becomes reachable, the fetch gives up after the
+    /// budget (the caller then exits with a clear error) instead of retrying
+    /// forever.
+    #[rocket::async_test]
+    async fn verifying_key_fetch_gives_up_after_budget() {
+        // Always fails (no request ever gets past `failures`).
+        let (url, _hits) = spawn_flaky_params_server(usize::MAX, String::new());
+
+        let vk = try_fetch_verifying_key(
+            &url,
+            Duration::from_millis(200),
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        )
+        .await;
+
+        assert!(vk.is_none(), "fetch must give up once the budget is spent");
     }
 }
