@@ -1556,6 +1556,13 @@ async fn try_fetch_verifying_key(
                 .expect("blocking fetch task panicked");
 
         match result {
+            // minreq returns Ok for any completed HTTP exchange, so surface a
+            // non-2xx (e.g. a 503 while the PKG is still booting) as a status
+            // problem rather than a confusing parse failure.
+            Ok(response) if !(200..300).contains(&response.status_code) => log::warn!(
+                "PKG at {pkg_params_url} returned status {} — will retry",
+                response.status_code
+            ),
             Ok(response) => match response.json::<Parameters<VerifyingKey>>() {
                 Ok(vk) => return Some(vk),
                 Err(e) => log::warn!(
