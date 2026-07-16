@@ -18,6 +18,7 @@ pub struct RawCryptifyConfig {
     staging_mode: Option<bool>,
     metrics_token: Option<String>,
     usage_db: Option<String>,
+    email_attribute: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +44,11 @@ pub struct CryptifyConfig {
     /// (the in-memory map in `Store` is only a cache). `None` keeps usage
     /// entirely in memory, as it was before persistence was added.
     usage_db: Option<String>,
+    /// Attribute type carrying the sender's email in the signing identity
+    /// (postguard#236). Finalize requires this attribute to be present.
+    /// Test environments override it with a test-scheme type (e.g.
+    /// `irma-demo.sidn-pbdf.email.email`); production keeps the default.
+    email_attribute: String,
 }
 
 impl From<RawCryptifyConfig> for CryptifyConfig {
@@ -67,6 +73,9 @@ impl From<RawCryptifyConfig> for CryptifyConfig {
             staging_mode: config.staging_mode.unwrap_or(false),
             metrics_token: config.metrics_token,
             usage_db: config.usage_db,
+            email_attribute: config
+                .email_attribute
+                .unwrap_or_else(|| "pbdf.sidn-pbdf.email.email".to_owned()),
         }
     }
 }
@@ -141,6 +150,12 @@ impl CryptifyConfig {
         self.usage_db.as_deref()
     }
 
+    /// The attribute type carrying the sender's email in the signing
+    /// identity. Defaults to the production `pbdf.sidn-pbdf.email.email`.
+    pub fn email_attribute(&self) -> &str {
+        &self.email_attribute
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(server_url: &str, staging_mode: bool) -> Self {
         CryptifyConfig {
@@ -160,6 +175,7 @@ impl CryptifyConfig {
             staging_mode,
             metrics_token: None,
             usage_db: None,
+            email_attribute: "pbdf.sidn-pbdf.email.email".to_owned(),
         }
     }
 }
@@ -195,5 +211,21 @@ mod tests {
             .extract()
             .unwrap();
         assert_eq!(config.usage_db(), None);
+    }
+
+    #[test]
+    fn email_attribute_defaults_to_production_type() {
+        let config: CryptifyConfig = Figment::from(Serialized::defaults(base_config()))
+            .extract()
+            .unwrap();
+        assert_eq!(config.email_attribute(), "pbdf.sidn-pbdf.email.email");
+    }
+
+    #[test]
+    fn email_attribute_is_overridable() {
+        let mut raw = base_config();
+        raw["email_attribute"] = serde_json::json!("irma-demo.sidn-pbdf.email.email");
+        let config: CryptifyConfig = Figment::from(Serialized::defaults(raw)).extract().unwrap();
+        assert_eq!(config.email_attribute(), "irma-demo.sidn-pbdf.email.email");
     }
 }
