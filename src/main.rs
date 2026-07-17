@@ -933,11 +933,17 @@ async fn upload_finalize(
         .pub_id
         .con;
 
+    // The attribute type carrying the sender's email is configurable
+    // (postguard#236): test environments use a test-scheme type since pbdf
+    // credentials cannot be issued outside production.
+    let email_attribute = config.email_attribute();
     let sender = attributes
         .iter()
-        .find(|x| x.atype == "pbdf.sidn-pbdf.email.email")
+        .find(|x| x.atype == email_attribute)
         .ok_or_else(|| {
-            log::error!("finalized upload has no email attribute in postguard metadata");
+            log::error!(
+                "finalized upload has no email attribute ({email_attribute}) in postguard metadata"
+            );
             Error::InternalServerError(Some(GENERIC_INTERNAL_ERROR_MSG.to_owned()))
         })?
         .value
@@ -945,7 +951,7 @@ async fn upload_finalize(
 
     let sender_attributes: Vec<(String, String)> = attributes
         .into_iter()
-        .filter(|x| x.atype != "pbdf.sidn-pbdf.email.email")
+        .filter(|x| x.atype != email_attribute)
         .filter_map(|x| {
             let atype = x.atype;
             x.value.map(|v| (atype, v))
