@@ -183,7 +183,12 @@ paths:
                         page refresh, tab crash, or navigate-away-and-back.
                         Hex-encoded 32-byte random."
           "400":
-            description: "The `recipient` address could not be parsed."
+            description:
+              "The `recipient` address could not be parsed. A body that is not
+              syntactically valid JSON is rejected the same way but by the body
+              guard, so that response is Rocket's default error page rather
+              than the plain-text message below; a body that parses as JSON but
+              does not fit `InitBody` is the 422."
             content:
               text/plain:
                 schema:
@@ -229,7 +234,13 @@ paths:
       - in: "header"
         name: "Content-Range"
         description:
-          "Which offset of a file is sent, example: `bytes 200-1000/*`."
+          "Which offset of a file is sent, example: `bytes 200-1000/*`.\n\n
+          **The end byte is EXCLUSIVE**, unlike RFC 7233. The server takes the
+          chunk length to be `end - start`, so `bytes 200-1000/*` carries 800
+          bytes at offset 200, not 801, and a chunk of length `n` at offset
+          `off` is sent as `bytes <off>-<off+n>/*`. Sending the RFC's inclusive
+          end makes the body one byte longer than the declared range and is
+          rejected with 400. `start == end` is rejected too."
         schema:
           type: "string"
         required: true
@@ -567,10 +578,10 @@ paths:
       summary: "Download a file"
       description:
         "Streams the PostGuard-sealed file. Byte ranges are supported so an
-        interrupted download can resume: `Accept-Ranges: bytes` is always
-        advertised, a single `Range` is answered with 206, and an
-        unsatisfiable one with 416. The server does not set a `Content-Type`
-        on the body."
+        interrupted download can resume: `Accept-Ranges: bytes` is advertised
+        on every response that reaches the file (200, 206 and 416, but not the
+        404), a single `Range` is answered with 206, and an unsatisfiable one
+        with 416. The server does not set a `Content-Type` on the body."
       operationId: "downloadFile"
       parameters:
       - in: "path"
@@ -639,11 +650,18 @@ paths:
         "416":
           description: "The `Range` header could not be satisfied."
           headers:
+            Accept-Ranges:
+              required: true
+              schema:
+                type: "string"
+                enum: ["bytes"]
             Content-Range:
               required: true
               description: "`bytes */<total>`."
               schema:
                 type: "string"
+        "500":
+          description: "Seeking to the start of the requested range failed."
 
   /staging/preview/{uuid}:
     get:
@@ -842,4 +860,6 @@ components:
           nullable: true
           description:
             "The sender's confirmation copy, or null when the upload was
-            initialized with `confirm: false` or the rendering failed."
+            initialized with `confirm: false`, the sender's email is not known
+            yet because the upload has not been finalized (the usual case when
+            previewing), or the rendering failed."
