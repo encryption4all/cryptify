@@ -41,6 +41,15 @@ Release-plz automation.
   running". Use `#[rocket::async_test]` and `async fn`, even when the body never
   awaits.
 
+## Dependencies
+- cryptify has no IRMA/Yivi client of its own. Attributes arrive already signed
+  inside the PostGuard-sealed file and are read back through `pg-core`'s Unsealer,
+  so nothing here talks to a Yivi session server.
+- `pg-core` depends on the `irma` crate, so `irma` stays in `Cargo.lock` as a
+  transitive dep even though cryptify does not declare it. A dependency audit that
+  reads the lockfile will still see it; check `Cargo.toml` to tell direct from
+  transitive.
+
 ## Running the binary
 - Needs a reachable PKG server (`pkg_url`) at startup or it panics on
   `/v2/sign/parameters`. For config tests, prefer a serde-roundtrip unit test over
