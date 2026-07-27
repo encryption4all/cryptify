@@ -45,10 +45,11 @@ Release-plz automation.
 - cryptify has no IRMA/Yivi client of its own. Attributes arrive already signed
   inside the PostGuard-sealed file and are read back through `pg-core`'s Unsealer,
   so nothing here talks to a Yivi session server.
-- `pg-core` depends on the `irma` crate, so `irma` stays in `Cargo.lock` as a
-  transitive dep even though cryptify does not declare it. A dependency audit that
-  reads the lockfile will still see it; check `Cargo.toml` to tell direct from
-  transitive.
+- `pg-core` depends on the `irma` crate, so `irma` 0.2.1 is still compiled into the
+  binary even though cryptify does not declare it (`cargo tree -i irma`). It drags
+  in `reqwest` 0.11.27 too, alongside cryptify's own `reqwest` 0.13.4. Dropping the
+  direct declaration does not take `irma` out of the build; check `Cargo.toml` to
+  tell direct from transitive.
 
 ## Running the binary
 - Needs a reachable PKG server (`pkg_url`) at startup or it panics on
