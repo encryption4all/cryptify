@@ -3869,9 +3869,10 @@ mod api_description_tests {
 /// The two halves are tied together rather than kept in step by hand:
 /// [`the_workflow_uses_the_settings_this_module_pins`] reads the committed
 /// workflow and asserts its `fail-on` and `include-checks` are [`FAIL_ON`] and
-/// [`INCLUDE_CHECKS`]. Edit either side alone and that test says so. It reads
-/// nothing but the repo tree, so unlike the mutation test it runs on every
-/// runner.
+/// [`INCLUDE_CHECKS`], and that the job still runs at all — on `pull_request`,
+/// with no path filter and no `if:`. Edit either side alone and that test says
+/// so. It reads nothing but the repo tree, so unlike the mutation test it runs
+/// on every runner.
 ///
 /// The engine is not vendored, so these tests need `oasdiff` on `PATH` (or
 /// `OASDIFF` pointing at it) and skip when it is absent, which is the case on
@@ -3934,9 +3935,35 @@ mod api_gate_tests {
         values.into_iter().next()
     }
 
+    /// The non-comment lines of the workflow's `on:` block, from `on:` up to
+    /// `jobs:`.
+    ///
+    /// Deliberately loose about the YAML shape, because `on:` is legal as a
+    /// mapping, a list or a bare scalar and all three name the event inside
+    /// this window. Matching the mapping form byte-for-byte would go red on a
+    /// rewrite that changes nothing about when the gate runs, and a check that
+    /// cries wolf is the one that gets deleted.
+    fn trigger_block() -> Vec<&'static str> {
+        WORKFLOW
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with('#'))
+            .skip_while(|line| !line.starts_with("on:"))
+            .take_while(|line| !line.starts_with("jobs:"))
+            .collect()
+    }
+
     /// The constants above are only worth something if they describe the job
     /// that actually runs. Nothing else checks that: a wrong pair fails open,
     /// and so does a right pair the workflow never got.
+    ///
+    /// A gate that is present and correctly configured but never *triggered*
+    /// fails open the same way and is the one thing the settings cannot show,
+    /// so the trigger is asserted first: on `pull_request`, with no path filter
+    /// and no `if:`. The workflow's own header comment names the foreseeable
+    /// edit ("There is deliberately no `on: paths:` filter"), and a later
+    /// `paths:` would skip the gate on every PR that does not touch the spec
+    /// while everything below here stayed green.
     ///
     /// This needs no `oasdiff`, so it runs in CI where the mutation test skips.
     /// It is red on the branch that changes the settings until a maintainer
@@ -3948,6 +3975,33 @@ mod api_gate_tests {
             WORKFLOW.contains("uses: oasdiff/oasdiff-action/breaking@"),
             "{WORKFLOW_PATH} no longer runs oasdiff-action/breaking, so this \
              module pins the settings of a job that is gone"
+        );
+
+        let triggers = trigger_block();
+        assert!(
+            triggers.iter().any(|line| line.contains("pull_request")),
+            "{WORKFLOW_PATH} no longer triggers on `pull_request`, so the \
+             settings pinned below belong to a gate that never sees one: \
+             {triggers:?}"
+        );
+        assert!(
+            !triggers
+                .iter()
+                .any(|line| line.starts_with("paths:") || line.starts_with("paths-ignore:")),
+            "{WORKFLOW_PATH} has a path filter on its trigger, so the gate is \
+             skipped on the PRs that do not touch the spec rather than passing \
+             them, and as a required check it leaves those PRs pending forever: \
+             {triggers:?}"
+        );
+        assert!(
+            !WORKFLOW
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.starts_with('#'))
+                .any(|line| line.starts_with("if:")),
+            "{WORKFLOW_PATH} has an `if:` condition, so the gate can be skipped \
+             on the very PRs it exists to judge while the settings below still \
+             read correctly"
         );
 
         let expected = [

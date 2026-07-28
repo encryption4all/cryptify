@@ -118,7 +118,9 @@ open: the job goes green and nobody learns the change went through. So
 `mod api_gate_tests` in `src/main.rs` mutates the real spec one way per rule,
 runs the real engine with the flags the action's entrypoint builds, and asserts
 stop-or-pass. It also reads the committed workflow and asserts its two inputs
-are the constants the module pins, so the two cannot drift apart quietly.
+are the constants the module pins, and that the job still triggers on
+`pull_request` with no path filter and no `if:` — settings on a gate that never
+runs fail open just as quietly. So the two cannot drift apart unnoticed.
 
 The settings the gate needs are `fail-on: WARN` plus
 `include-checks: response-non-success-status-removed,response-property-enum-value-removed`.
