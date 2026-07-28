@@ -110,6 +110,63 @@ The spec is also the external contract for pg-js, pg-dotnet, and the add-ins, so
 a breaking edit to it needs a new versioned route rather than an in-place change
 (cryptify's routes are unversioned, so there is no other escape hatch).
 
+## The oasdiff gate's settings are pinned by a test, not only by the workflow
+
+`.github/workflows/api-diff.yml` diffs the PR's `api-description.yaml` against
+the base branch. Its whole behaviour is two step inputs, and a wrong pair fails
+open: the job goes green and nobody learns the change went through. So
+`mod api_gate_tests` in `src/main.rs` mutates the real spec one way per rule,
+runs the real engine with the flags the action's entrypoint builds, and asserts
+stop-or-pass. Keep the two in step; the constants are named after the inputs.
+
+The settings are `fail-on: WARN` plus
+`include-checks: response-non-success-status-removed,response-property-enum-value-removed`.
+Measured on this spec against oasdiff v1.26.1, `fail-on: ERR` on its own passes
+several changes the contract forbids. A `401` that becomes a `403` and a
+dropped response enum value rate ERR but are opt-in, so they never run unless
+named, which is what `include-checks` is for. The rest rate WARN, not ERR: a removed
+or renamed optional response property, a removed request parameter, a removed
+request property, and the constraint-narrowing `*-set` family. Those gaps are
+spec-independent, so they apply here even though this spec marks most fields
+`required` (which does make a removed *required* response property an ERR).
+
+WARN adds 31 checks on top of ERR's 213. All but one are changes the contract
+already forbids. The exception is `response-property-enum-value-added`: adding
+a value to `UploadSessionNotFound.reason` or `PayloadTooLarge.limit` fails the
+gate even though a wider response enum is additive on paper, and today's
+consumers do tolerate it (pg-js reads `reason` as `parsed.reason ?? 'unknown'`,
+a plain string, and the tb-addon passes it through). It is kept anyway: nothing
+stops a future client from switching on those codes, and a red gate that asks
+for a decision beats a silent pass. It is also the only rule here that WARN
+alone enforces, so it is the first casualty of a revert to ERR, which is why
+the test pins it.
+
+Two things to know before reaching for a suppression. `--warn-ignore` and
+`--err-ignore` do not take check ids or partial regexes: the ignore file is
+matched by asking whether an ignore line *contains* the rendered change text,
+so a line has to spell out the whole thing in lowercase, per affected
+operation, including the new value:
+
+```
+in api put /fileupload/{uuid} added the new `quota_exceeded` enum value to the `reason` response property for the response status `404`
+```
+
+A bare `response-property-enum-value-added`, or even `.*`, suppresses nothing
+(verified on v1.26.1). So there is no standing "ignore this check" setting;
+every future enum value needs its own lines. And `x-extensible-enum` in place
+of `enum:`, which oasdiff's own message suggests, makes it skip that property
+altogether: adding a value passes, but so does *removing* one, so that trade
+buys the false positive back with a gap.
+
+The test needs the engine, which no runner has, so it skips in CI while
+`every_api_gate_mutation_still_applies` still runs, so a spec edit that strands
+a mutation anchor is caught there regardless. To run it for real:
+
+```
+go install github.com/oasdiff/oasdiff@v1.26.1   # the version the action tag pins
+cargo test --all-targets api_gate
+```
+
 ## Content-Range end byte is EXCLUSIVE on the chunk PUT
 `upload_chunk` rejects `start >= end` and takes the chunk length to be
 `end - start`, so `bytes 200-1000/*` is 800 bytes at offset 200, not the 801 that
