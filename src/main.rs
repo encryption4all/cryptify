@@ -3862,12 +3862,16 @@ mod api_description_tests {
 /// `include-checks`, and getting them wrong **fails open**: the job goes green
 /// and nobody learns that the change it was supposed to stop went through.
 ///
-/// So the inputs are pinned here as well as in the workflow. This module
-/// mutates the real spec one way per rule, runs the real engine with the flags
-/// the action's entrypoint builds, and asserts which mutations the gate stops.
-/// Change [`FAIL_ON`] or [`INCLUDE_CHECKS`] without changing the workflow to
-/// match and the two drift apart with nothing to say so; change the workflow
-/// without running this and the gate weakens silently.
+/// So the inputs are pinned here. This module mutates the real spec one way
+/// per rule, runs the real engine with the flags the action's entrypoint
+/// builds, and asserts which mutations the gate stops.
+///
+/// The two halves are tied together rather than kept in step by hand:
+/// [`the_workflow_uses_the_settings_this_module_pins`] reads the committed
+/// workflow and asserts its `fail-on` and `include-checks` are [`FAIL_ON`] and
+/// [`INCLUDE_CHECKS`]. Edit either side alone and that test says so. It reads
+/// nothing but the repo tree, so unlike the mutation test it runs on every
+/// runner.
 ///
 /// The engine is not vendored, so these tests need `oasdiff` on `PATH` (or
 /// `OASDIFF` pointing at it) and skip when it is absent, which is the case on
@@ -3895,6 +3899,86 @@ mod api_gate_tests {
     /// opt-in, so they do not run unless named.
     const INCLUDE_CHECKS: &str =
         "response-non-success-status-removed,response-property-enum-value-removed";
+
+    /// The gate itself, embedded so the two constants above cannot claim
+    /// settings the committed job does not use.
+    const WORKFLOW: &str = include_str!("../.github/workflows/api-diff.yml");
+
+    /// Path of the workflow, for failure messages.
+    const WORKFLOW_PATH: &str = ".github/workflows/api-diff.yml";
+
+    /// The value of the `key: value` step input in the workflow, or `None`
+    /// when the key is absent.
+    ///
+    /// Hand-rolled rather than parsed with a YAML crate to keep the dependency
+    /// tree unchanged, the same way `mod api_description_tests` above reads the
+    /// spec. It relies on the input sitting alone on its line; comment lines
+    /// are skipped, so the header comment's prose about `fail-on` does not
+    /// count. More than one occurrence is a panic, because then "the
+    /// workflow's setting" is not a single thing.
+    fn workflow_input(key: &str) -> Option<String> {
+        let prefix = format!("{key}:");
+        let values: Vec<String> = WORKFLOW
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with('#'))
+            .filter_map(|line| line.strip_prefix(prefix.as_str()))
+            .map(|value| value.trim().trim_matches(['"', '\'']).to_owned())
+            .collect();
+        assert!(
+            values.len() <= 1,
+            "{WORKFLOW_PATH} sets {key} {} times, so which one the gate runs \
+             with is anyone's guess: {values:?}",
+            values.len()
+        );
+        values.into_iter().next()
+    }
+
+    /// The constants above are only worth something if they describe the job
+    /// that actually runs. Nothing else checks that: a wrong pair fails open,
+    /// and so does a right pair the workflow never got.
+    ///
+    /// This needs no `oasdiff`, so it runs in CI where the mutation test skips.
+    /// It is red on the branch that changes the settings until a maintainer
+    /// applies the workflow patch (the App has no `workflows: write`), which is
+    /// the intended order: the test goes green when the gate is real.
+    #[test]
+    fn the_workflow_uses_the_settings_this_module_pins() {
+        assert!(
+            WORKFLOW.contains("uses: oasdiff/oasdiff-action/breaking@"),
+            "{WORKFLOW_PATH} no longer runs oasdiff-action/breaking, so this \
+             module pins the settings of a job that is gone"
+        );
+
+        let expected = [
+            ("fail-on", Some(FAIL_ON)),
+            ("include-checks", Some(INCLUDE_CHECKS)),
+        ];
+        let wrong: Vec<String> = expected
+            .iter()
+            .filter_map(|(key, want)| {
+                let got = workflow_input(key);
+                (got.as_deref() != *want).then(|| {
+                    format!(
+                        "  {key}: the gate runs with {}, this module pins {}",
+                        got.as_deref().unwrap_or("nothing"),
+                        want.unwrap_or("nothing"),
+                    )
+                })
+            })
+            .collect();
+
+        assert!(
+            wrong.is_empty(),
+            "{WORKFLOW_PATH} and this module disagree about what the gate \
+             does:\n{}\n\
+             Whichever side is behind, the other is a claim nothing backs: at \
+             fail-on=ERR with no include-checks the gate passes ten of the \
+             changes the spec's contract forbids, and the mutation test below \
+             would certify settings it does not use.",
+            wrong.join("\n"),
+        );
+    }
 
     /// Whether the gate stops a change, i.e. whether the job goes red.
     #[derive(Debug, PartialEq, Eq)]
@@ -4152,13 +4236,12 @@ mod api_gate_tests {
     /// would be no way to make a breaking change at all.
     fn add_versioned_route_beside_the_unversioned_one(spec: &str) -> String {
         let (from, to) = block(spec, "  /usage:\n", "  /email-template:\n");
-        let versioned = spec[from..to]
-            .replacen("  /usage:", "  /v2/usage:", 1)
-            .replacen(
-                "operationId: \"getUsage\"",
-                "operationId: \"getUsageV2\"",
-                1,
-            );
+        let versioned = once(&spec[from..to], "  /usage:\n", "  /v2/usage:\n");
+        let versioned = once(
+            &versioned,
+            "operationId: \"getUsage\"\n",
+            "operationId: \"getUsageV2\"\n",
+        );
         once(
             spec,
             "  /email-template:\n",

@@ -110,17 +110,26 @@ The spec is also the external contract for pg-js, pg-dotnet, and the add-ins, so
 a breaking edit to it needs a new versioned route rather than an in-place change
 (cryptify's routes are unversioned, so there is no other escape hatch).
 
-## The oasdiff gate's settings are pinned by a test, not only by the workflow
+## The oasdiff gate's settings, and the test that pins them
 
 `.github/workflows/api-diff.yml` diffs the PR's `api-description.yaml` against
 the base branch. Its whole behaviour is two step inputs, and a wrong pair fails
 open: the job goes green and nobody learns the change went through. So
 `mod api_gate_tests` in `src/main.rs` mutates the real spec one way per rule,
 runs the real engine with the flags the action's entrypoint builds, and asserts
-stop-or-pass. Keep the two in step; the constants are named after the inputs.
+stop-or-pass. It also reads the committed workflow and asserts its two inputs
+are the constants the module pins, so the two cannot drift apart quietly.
 
-The settings are `fail-on: WARN` plus
+The settings the gate needs are `fail-on: WARN` plus
 `include-checks: response-non-success-status-removed,response-property-enum-value-removed`.
+**The committed workflow does not have them yet**: it is still `fail-on: ERR`
+with no `include-checks`. The new pair sits in the `api-diff.yml` patch on
+PR #203 and needs a maintainer to apply it, because the App cannot push
+`.github/workflows/`. Until that lands, the gate is passing everything in the
+list below, and `the_workflow_uses_the_settings_this_module_pins` is red saying
+so. Tighten this paragraph back to plain present tense in that same PR once the
+maintainer's commit is on the branch.
+
 Measured on this spec against oasdiff v1.26.1, `fail-on: ERR` on its own passes
 several changes the contract forbids. A `401` that becomes a `403` and a
 dropped response enum value rate ERR but are opt-in, so they never run unless
@@ -130,7 +139,9 @@ request property, and the constraint-narrowing `*-set` family. Those gaps are
 spec-independent, so they apply here even though this spec marks most fields
 `required` (which does make a removed *required* response property an ERR).
 
-WARN adds 31 checks on top of ERR's 213. All but one are changes the contract
+WARN adds 30 checks on top of ERR's 212 (`oasdiff checks -s warn -f json`; the
+table output has two rows more than that, a header and a trailing blank). All
+but one of the 30 are changes the contract
 already forbids. The exception is `response-property-enum-value-added`: adding
 a value to `UploadSessionNotFound.reason` or `PayloadTooLarge.limit` fails the
 gate even though a wider response enum is additive on paper, and today's
@@ -158,9 +169,11 @@ of `enum:`, which oasdiff's own message suggests, makes it skip that property
 altogether: adding a value passes, but so does *removing* one, so that trade
 buys the false positive back with a gap.
 
-The test needs the engine, which no runner has, so it skips in CI while
-`every_api_gate_mutation_still_applies` still runs, so a spec edit that strands
-a mutation anchor is caught there regardless. To run it for real:
+The mutation test needs the engine, which no runner has, so it skips in CI. The
+other two do run there: `every_api_gate_mutation_still_applies` catches a spec
+edit that strands an anchor, and
+`the_workflow_uses_the_settings_this_module_pins` catches the workflow and the
+constants disagreeing. To run the mutation test for real:
 
 ```
 go install github.com/oasdiff/oasdiff@v1.26.1   # the version the action tag pins
