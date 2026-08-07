@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28](https://github.com/encryption4all/cryptify/compare/v0.1.27...v0.1.28) - 2026-08-07
+
+### Added
+
+- configurable email attribute type for the finalize sender check ([#193](https://github.com/encryption4all/cryptify/pull/193))
+- *(metrics)* require a bearer token on /metrics when configured ([#177](https://github.com/encryption4all/cryptify/pull/177))
+- persist rolling-quota usage to SQLite (usage_db) ([#176](https://github.com/encryption4all/cryptify/pull/176))
+- add GET /email-template endpoint keyed on API key ([#175](https://github.com/encryption4all/cryptify/pull/175))
+- *(metrics)* capture X-POSTGUARD-CLIENT-VERSION client identity ([#174](https://github.com/encryption4all/cryptify/pull/174))
+- *(email)* remove circle around signer-verified checkmark ([#173](https://github.com/encryption4all/cryptify/pull/173))
+- *(email)* replace unicode checkmark with inline PNG image ([#172](https://github.com/encryption4all/cryptify/pull/172))
+- *(email)* staging-only /staging/preview/<uuid> + shared render API ([#171](https://github.com/encryption4all/cryptify/pull/171))
+- *(metrics)* pre-seed known channels at zero on startup ([#165](https://github.com/encryption4all/cryptify/pull/165))
+- expose Prometheus /metrics endpoint for usage dashboards ([#102](https://github.com/encryption4all/cryptify/pull/102))
+
+### Fixed
+
+- retry the startup verifying-key fetch instead of panicking ([#192](https://github.com/encryption4all/cryptify/pull/192))
+- *(cors)* allow X-Cryptify-Source in browser preflights ([#189](https://github.com/encryption4all/cryptify/pull/189))
+- *(email)* larger, selectable download-link code block in recipient email ([#187](https://github.com/encryption4all/cryptify/pull/187))
+- return generic body from 5xx responses, log detail server-side ([#185](https://github.com/encryption4all/cryptify/pull/185))
+- require validated API key on GET /usage (GHSA-5rhx-xgvv-h78h) ([#183](https://github.com/encryption4all/cryptify/pull/183))
+- *(cors)* allow Office add-in origins (addin.postguard.eu + localhost:3000) and DELETE method ([#179](https://github.com/encryption4all/cryptify/pull/179))
+- *(email)* address postguard#197 deliverability + show disclosed signer name ([#170](https://github.com/encryption4all/cryptify/pull/170))
+
+### Other
+
+- retire Docker build/push, publishing moved to postguard ([#206](https://github.com/encryption4all/cryptify/pull/206))
+- README banner — development moved to postguard, crate is cryptify/
+- tune the oasdiff gate's severity settings and pin them with a test ([#203](https://github.com/encryption4all/cryptify/pull/203))
+- add the oasdiff breaking-change gate ([#201](https://github.com/encryption4all/cryptify/pull/201))
+- true up api-description.yaml with the mounted routes ([#200](https://github.com/encryption4all/cryptify/pull/200))
+- remove unused irma dependency ([#199](https://github.com/encryption4all/cryptify/pull/199))
+- remove unused qrcode, strum and strum_macros deps ([#195](https://github.com/encryption4all/cryptify/pull/195))
+- extend CLAUDE.md with migrated agent notes ([#190](https://github.com/encryption4all/cryptify/pull/190))
+- update dependencies ([#181](https://github.com/encryption4all/cryptify/pull/181))
+- *(deps)* cargo update lockfile ([#168](https://github.com/encryption4all/cryptify/pull/168))
+- replace pkg_url with https://pkg.postguard.eu/ ([#178](https://github.com/encryption4all/cryptify/pull/178))
+- bump pg-core 0.6.0 → 0.6.1 ([#164](https://github.com/encryption4all/cryptify/pull/164))
+- add semantic PR title check workflow ([#162](https://github.com/encryption4all/cryptify/pull/162))
+
 ### Security
 
 - require a validated API key on `GET /usage` and reject unauthenticated callers with 401 (GHSA-5rhx-xgvv-h78h)
