@@ -2,6 +2,11 @@
 
 > For full documentation, visit [docs.postguard.eu](https://docs.postguard.eu/repos/cryptify).
 
+> [!IMPORTANT]
+> **Development moved to [encryption4all/postguard](https://github.com/encryption4all/postguard), under `cryptify/`.**
+> That repository builds the crate as a workspace member sharing a single lockfile with `pg-core`/`pg-pkg`. Open issues have moved there too.
+> This repository is kept for history and will be archived once its Docker publish pipeline cuts over to `postguard`. Until then, this repository's CI is still the only publisher of `ghcr.io/encryption4all/cryptify` — do not remove its build/push steps yet.
+
 File encryption and sharing service based on identity attributes. Cryptify is the file storage and delivery backend used by the PostGuard website and JavaScript SDK. When users upload encrypted files through PostGuard, they are stored and served by Cryptify.
 
 Cryptify is a Rust service built on the Rocket framework.
