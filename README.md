@@ -3,9 +3,9 @@
 > For full documentation, visit [docs.postguard.eu](https://docs.postguard.eu/repos/cryptify).
 
 > [!IMPORTANT]
-> **Development moved to [encryption4all/postguard](https://github.com/encryption4all/postguard), under `cryptify/`.**
-> That repository builds the crate as a workspace member sharing a single lockfile with `pg-core`/`pg-pkg`. Open issues have moved there too.
-> This repository is kept for history and will be archived once its Docker publish pipeline cuts over to `postguard`. Until then, this repository's CI is still the only publisher of `ghcr.io/encryption4all/cryptify` — do not remove its build/push steps yet.
+> **This repository is archived. Development moved to [encryption4all/postguard](https://github.com/encryption4all/postguard), under `cryptify/`.**
+> That repository builds the crate as a workspace member sharing a single lockfile with `pg-core`/`pg-pkg`, and its `delivery.yml` is now the sole publisher of `ghcr.io/encryption4all/cryptify` — the image name is unchanged, so nothing deployed has to be repointed. The open issues moved there too.
+> This repository is kept read-only for history. It no longer builds, publishes, or releases anything.
 
 File encryption and sharing service based on identity attributes. Cryptify is the file storage and delivery backend used by the PostGuard website and JavaScript SDK. When users upload encrypted files through PostGuard, they are stored and served by Cryptify.
 
@@ -33,7 +33,11 @@ env ROCKET_CONFIG=conf/config.dev.toml cargo run
 
 ## Releasing
 
-Releases are automated with [release-plz](https://release-plz.ieni.dev/). Merging to `main` triggers a release, and Docker images are published automatically.
+Nothing is released from this repository any more. `cryptify` is versioned by
+[encryption4all/postguard](https://github.com/encryption4all/postguard)'s workspace
+`release-plz` (tags `cryptify-v*`), and its images are published by that repository's
+`delivery.yml`. The last release cut here was `v0.1.27`; `cryptify-v0.1.28` onward
+carry the workspace tag shape.
 
 ## License
 
