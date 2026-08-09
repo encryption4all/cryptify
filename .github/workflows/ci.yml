@@ -3,12 +3,15 @@ name: CI
 # Pipeline overview
 # =================
 #
-# Rust quality gate plus release-plz's release/changelog-PR management.
+# Rust quality gate only. This repository publishes and releases nothing.
 #
 # Docker publishing moved to encryption4all/postguard, which builds this
 # crate as a workspace member and pushes the same ghcr.io/encryption4all/
-# cryptify image name (postguard#293). This workflow no longer builds or
-# pushes any image.
+# cryptify image name (postguard#293). Versioning followed it: the workspace
+# release-plz owns the crate and tags it `cryptify-v*`, so the release-plz
+# jobs that used to live here were retired too (postguard#294) — left in
+# place they re-opened a duplicate `chore: release` PR on every push to
+# main, which archiving would then strand read-only.
 
 on:
   push:
@@ -19,7 +22,7 @@ on:
 jobs:
 
   # Rust quality gate: fmt, clippy, tests. Runs on every PR and on push to
-  # main, in parallel to release-plz (does not block it).
+  # main.
   quality:
     name: Rust quality (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -38,57 +41,3 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --all-targets
-
-  # Release unpublished packages.
-  release-plz-release:
-    name: Release-plz release
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: read
-      id-token: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Run release-plz
-        id: release-plz
-        uses: release-plz/action@v0.5
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-  # Create a PR with the new versions and changelog, preparing the next release.
-  release-plz-pr:
-    name: Release-plz PR
-    needs: release-plz-release
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Run release-plz
-        uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
